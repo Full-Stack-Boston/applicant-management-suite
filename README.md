@@ -1,138 +1,161 @@
-# Application Management Suite (AMS)
+# Applicant Management Suite (AMS)
 
-[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg)](https://sonarcloud.io/summary/new_code?id=jonaldoalix_pf-website)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=jonaldoalix_pf-website&metric=alert_status&token=064aa0568350f4cbed18a5bf8d10d93cde544ec0)](https://sonarcloud.io/summary/new_code?id=jonaldoalix_pf-website)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=jonaldoalix_pf-website&metric=bugs&token=064aa0568350f4cbed18a5bf8d10d93cde544ec0)](https://sonarcloud.io/summary/new_code?id=jonaldoalix_pf-website)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=jonaldoalix_pf-website&metric=code_smells&token=064aa0568350f4cbed18a5bf8d10d93cde544ec0)](https://sonarcloud.io/summary/new_code?id=jonaldoalix_pf-website)
-![MUI Dashboard](https://img.shields.io/badge/MUI-primary?style=for-the-badge&logo=mui)
-![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-![Firebase](https://img.shields.io/badge/Firebase-039BE5?style=for-the-badge&logo=Firebase&logoColor=white)
+**Public flagship** for scholarship and grants operations: applicants apply and upload materials; committees review, interview, and decide; administrators run the program end to end.
 
-This repository contains the full stack for the **Application Management Suite (AMS)**: a React frontend for applicants/administrators and a Firebase Cloud Functions backend for logic and automation. 
+**Live demo:** [ams.fullstackboston.com](https://ams.fullstackboston.com)  
+**Repository:** [jonaldoalix/applicant-management-suite](https://github.com/jonaldoalix/applicant-management-suite)
 
-It is designed as a robust administration dashboard for managing applications, financial grants, and scholarships. This project demonstrates complex state management, data visualization using Recharts, and deep integration with Firebase Firestore.
-
-## 🚀 Key Features & Highlights
-- **Real-time Analytics:** View application benchmarks and 3-year trailing award trends dynamically visualized via Recharts. Bar scaling is algorithmically balanced.
-- **Data Generation:** Includes Node.js scripts capable of securely seeding hundreds of dynamically generated, randomized mock applicants, profiles, and financial metrics directly into Firestore.
-- **Robust State Management:** Built leveraging React Context APIs, hooks, and Jotai for scalable, prop-drilled-free global state.
-- **Responsive Architecture:** Crafted utilizing Material-UI (MUI), ensuring the dashboard flawlessly adapts to both desktop administration and mobile interactions.
-- **Security & Privacy:** The codebase contains no sensitive real-world client data. All mock information on display is synthetically generated via `seedData.js` and `seedInbox.js`.
+AMS is the portfolio-ready product surface. Client production deployments (such as the Parker Memorial Fund site) share the same architecture and can track this suite for toolchain and product upgrades.
 
 ---
 
-## 🏗 Tech Stack
+## What it demonstrates
 
-| Domain | Technologies |
-| :--- | :--- |
-| **Frontend** | React 18, Material UI (MUI v5), Jotai (State), React Router 6, SCSS |
-| **Backend** | Node.js 20, Firebase Cloud Functions (v2), Firestore Triggers |
-| **Auth & DB** | Firebase Authentication, Firestore (NoSQL), Cloud Storage |
-| **Integrations** | **Daily.co** (Video Interviews), **Twilio** (SMS), **Zoho Mail** (Email Sync) |
-| **Quality** | SonarCloud, ESLint, Jest |
-
----
-
-## 📂 Project Structure
-
-* **`src/`**: React Frontend application source code.
-    * Components, Pages, State Store, and UI Logic.
-* **`functions/`**: Backend Cloud Functions.
-    * **`src/modules/`**: Core business logic (Auth, Interviews, Search, etc.).
-    * **`src/scripts/`**: ETL & Data Migration tools (Seeding, Backfills).
-* **`public/`**: Static assets (Images, Manifests).
+- End-to-end application lifecycle (intake → review → interviews → awards)
+- Admin datagrid workflows with folder/alias inbox filtering and bulk actions
+- Contact center messaging (email / SMS templates) and notes with privacy toggles
+- Real-time dashboards and award trend charts (Recharts)
+- Video interview rooms via Daily.co, with scheduling and RSVP flows
+- Firebase Auth, Firestore, Storage, and Cloud Functions Gen2 backends
+- Synthetic seed data only — no real applicant PII is required to explore the suite
 
 ---
 
-## 💻 Getting Started
+## Tech stack
 
-### Local Setup
-1. Clone the repository.
-   ```bash
-   git clone https://github.com/jonaldoalix/applicant-management-suite.git
-   ```
-2. Install dependencies.
-   ```bash
-   npm install
-   cd functions && npm install
-   ```
+| Layer | Choice |
+|-------|--------|
+| Runtime | Node.js **24** |
+| App build | **Vite 8** |
+| UI | React 18, **MUI 9**, MUI X Data Grid / Date Pickers 9 |
+| Routing | React Router **7.18** |
+| State | React Context + Jotai |
+| Backend | Firebase Auth, Firestore, Storage, Cloud Functions |
+| Integrations | Daily.co (video), Twilio (SMS), Zoho Mail (sync) |
+| Quality | ESLint, TypeScript check, Vitest + coverage (80% lines), OSV-Scanner |
 
-### 🛠 Configure Environment Variables
-This project **will not build** without a `.env` file because of the custom `build-static.js` script. 
+Client sources are TypeScript (`.ts` / `.tsx`). Cloud Functions remain modular JavaScript under `functions/src/modules/`.
 
-Create a file named `.env` in the root directory and populate it:
+---
 
-```ini
-# --- Firebase & Google Configuration ---
-REACT_APP_googleApiKey=REPLACE_WITH_REAL_VALUE
-REACT_APP_apiKey=REPLACE_WITH_REAL_VALUE
-REACT_APP_authDomain=REPLACE_WITH_REAL_VALUE
-REACT_APP_projectId=REPLACE_WITH_REAL_VALUE
-REACT_APP_storageBucket=REPLACE_WITH_REAL_VALUE
-REACT_APP_messagingSenderId=REPLACE_WITH_REAL_VALUE
-REACT_APP_appId=REPLACE_WITH_REAL_APP_VALUE
-REACT_APP_measurementId=REPLACE_WITH_REAL_VALUE
-REACT_APP_configKey=REPLACE_WITH_REAL_VALUE
-REACT_APP_environment=development # (development, testing, production)
+## Repository layout
 
-# --- Brand & Metadata ---
-REACT_APP_ORGANIZATION_SHORT_NAME="AMS"
-REACT_APP_URL="https://ams.fullstackboston.com"
-REACT_APP_META_DESCRIPTION="Demo application showcasing the Applicant Management Suite built by Full Stack Boston."
-REACT_APP_FAVICON="favicon-32x32.png"
-REACT_APP_APPLE_TOUCH_ICON="android-chrome-192x192.png"
-REACT_APP_MS_TILE_ICON="touch-icon-ipad-retina.png"
-
-# --- Dev Settings ---
-GENERATE_SOURCEMAP=false
-HTTPS=true
-SSL_CRT_FILE=./localhost+2.pem
-SSL_KEY_FILE=./localhost+2-key.pem
+```
+src/                 React app (pages, components, context, config)
+functions/           Cloud Functions + seed / migration scripts
+scripts/             build-static.js (env-driven HTML / manifest)
+docs/dockge.md       Optional Docker Compose notes for Dockge
+compose.yaml         Local Docker/Vite helper for temporary hosting
 ```
 
 ---
 
-## 📜 Frontend Commands (Root)
+## Getting started
+
+### Prerequisites
+
+- Node.js 24+ (see `.nvmrc`)
+- Firebase project credentials for a **demo** environment
+- Optional: `localhost+2.pem` / `localhost+2-key.pem` for local HTTPS (gitignored)
+
+### Install
+
+```bash
+git clone https://github.com/jonaldoalix/applicant-management-suite.git
+cd applicant-management-suite
+npm install
+cd functions && npm install && cd ..
+```
+
+### Environment
+
+The app will not build without a root `.env`. `scripts/build-static.js` runs before `npm start` / `npm run build` and regenerates `public/index.html` and `public/manifest.json` from `.env` and `package.json`.
+
+Copy the template below and replace every `REPLACE_…` value. Never commit a filled `.env`.
+
+```ini
+# --- Firebase & Google ---
+REACT_APP_googleApiKey=REPLACE_WITH_YOUR_KEY
+REACT_APP_apiKey=REPLACE_WITH_YOUR_KEY
+REACT_APP_authDomain=REPLACE_WITH_YOUR_PROJECT.firebaseapp.com
+REACT_APP_projectId=REPLACE_WITH_YOUR_PROJECT
+REACT_APP_storageBucket=REPLACE_WITH_YOUR_PROJECT.appspot.com
+REACT_APP_messagingSenderId=REPLACE_WITH_YOUR_SENDER_ID
+REACT_APP_appId=REPLACE_WITH_YOUR_APP_ID
+REACT_APP_measurementId=REPLACE_WITH_YOUR_MEASUREMENT_ID
+REACT_APP_configKey=REPLACE_WITH_YOUR_CONFIG_KEY
+REACT_APP_environment=development
+
+# --- Brand & metadata ---
+REACT_APP_ORGANIZATION_NAME="Applicant Management Suite"
+REACT_APP_ORGANIZATION_SHORT_NAME="AMS"
+REACT_APP_URL="https://ams.fullstackboston.com"
+REACT_APP_META_DESCRIPTION="Applicant Management Suite — scholarship and grants operations demo."
+REACT_APP_FAVICON="favicon-32x32.png"
+REACT_APP_APPLE_TOUCH_ICON="android-chrome-192x192.png"
+REACT_APP_MS_TILE_ICON="android-chrome-192x192.png"
+REACT_APP_THEME_COLOR="#0288D1"
+REACT_APP_PRELOAD_BG_DARK="#161C24"
+REACT_APP_PRELOAD_BG_LIGHT="#F4F6F8"
+
+# --- Dev ---
+GENERATE_SOURCEMAP=false
+HTTPS=false
+```
+
+### Run
+
+```bash
+npm start
+```
+
+Vite serves the app (default local URL printed in the terminal). Prefer `HTTPS=false` unless you have local certificates configured.
+
+---
+
+## Scripts
 
 | Command | Description |
-| :--- | :--- |
-| `npm start` | Runs build scripts and starts the React dev server. |
-| `npm run build` | Compiles the React app for production into the `build/` directory. |
-| `npm test` | Runs the test suite in watch mode with code coverage enabled. |
+|---------|-------------|
+| `npm start` | `build-static.js` + Vite dev server |
+| `npm run build` | Production build → `build/` |
+| `npm test` | Vitest single run |
+| `npm run test:coverage` | Vitest + coverage (fails under 80% lines) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint:prod` | ESLint on production sources |
+| `cd functions && npm run lint` | Lint Cloud Functions |
 
-## ☁️ Backend Commands (in `/functions`)
-
-| Command | Description |
-| :--- | :--- |
-| `npm run deploy` | Deploys all Cloud Functions and Security Rules to Firebase. |
-| `npm run lint` | Checks backend code for style/syntax errors. |
-
----
-
-## 🛠️ Data & Migration Tools
-
-Located in `functions/src/scripts/`. Run these locally using `node` from the `functions/` directory:
-
-* **`node src/scripts/seedData.js`**
-    * Erases the database and generates a mock system with 150+ linked records (Applicants, Profiles, Financial Metrics, Mock Awards).
-* **`node src/scripts/seedInbox.js`**
-    * Populates the email module with contextual, realistic applicant mock conversations.
-* **`node src/scripts/migrate.js`**
-    * Uploads processed historical data to Firestore.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, coverage, production build, and OSV lockfile scanning on every push to `main`.
 
 ---
 
-## 🤖 Project Architecture & Quirks
+## Seed & tooling (Cloud Functions)
 
-### Custom Build Process (`scripts/build-static.js`)
-Unlike a standard Create-React-App, this project uses a custom pre-build script.
-* **What it does:** Before `npm start` or `npm build` runs, `scripts/build-static.js` is executed.
-* **Why:** It dynamically generates `public/index.html` and `public/manifest.json` using values from your `.env` file and `package.json`.
-* **Important:** If you change the App Name, Theme Color, or Description, do NOT edit `index.html` directly. Edit the `.env` file or `package.json` instead. Each time you start the app, the HTML file will be overwritten with the new values.
+From `functions/`, after configuring Firebase Admin credentials as appropriate for your project:
+
+| Script | Purpose |
+|--------|---------|
+| `node src/scripts/seedData.js` | Wipe/seed mock applicants, apps, and financial metrics |
+| `node src/scripts/seedInbox.js` | Seed realistic mock mailbox threads |
+| `node src/scripts/migrate.js` | Upload processed historical data (when applicable) |
+
+Use only on disposable / demo Firebase projects.
 
 ---
 
-## 🧪 Code Quality & SonarCloud
-Code quality is monitored by SonarQube Cloud. Configuration is defined in `sonar-project.properties`.
-* **Tests:** Component DOM rendering and unit logic are tested with Jest/React Testing Library.
-* **Coverage:** Source files in `src/` are tracked; configuration files and web vitals are excluded.
+## Architecture notes
+
+### Env-driven static shell
+
+Do not hand-edit branding in `public/index.html` for lasting changes. Update `.env` or `package.json` and restart so `scripts/build-static.js` regenerates HTML and the web manifest.
+
+### Dockge / Compose
+
+See [`docs/dockge.md`](docs/dockge.md) and `compose.yaml` for a temporary containerized Vite spin-up (useful on a Dockge host). Force HTTP in compose when host env would otherwise inject HTTPS.
+
+---
+
+## Related
+
+- **Production client example:** [revparkermemorialfund.org](https://revparkermemorialfund.org) — same product family, organization-specific content and schema naming
+- Built and maintained by [Full Stack Boston](https://fullstackboston.com)
