@@ -1,5 +1,5 @@
 import { dialogConfig } from './dialogConfig';
-import { ApplicationStatus, InterviewStatus, UserType } from '../data/collections';
+import { UserType } from '../data/collections';
 
 // Mock collections
 vi.mock('../data/collections', () => ({
@@ -57,5 +57,11 @@ describe('dialogConfig.js', () => {
 		expect(purgeInputs.find((i) => i.name === 'userId')).toBeDefined();
 		expect(purgeInputs.find((i) => i.name === 'expel')).toBeDefined();
 		expect(purgeInputs.find((i) => i.name === 'expel').defaultValue).toBe(false);
+	});
+
+	it('registers component-backed contact-center dialogs', () => {
+		expect(dialogConfig.emailLogs.title).toMatch(/Email Delivery Logs/i);
+		expect(dialogConfig.templateManager.title).toMatch(/Manage Email Templates/i);
+		expect(dialogConfig.mergeApplicantAccountsDialog.title).toMatch(/Merge Applicant Accounts/i);
 	});
 });

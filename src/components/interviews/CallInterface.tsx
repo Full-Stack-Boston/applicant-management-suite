@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Call Interface
  * The main Video Call UI orchestration component.
@@ -12,7 +11,6 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react';
-import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useDaily, useDailyEvent, useParticipantProperty, useLocalSessionId, useScreenShare, useParticipantIds } from '@daily-co/daily-react';
 import { Avatar, Box, Typography, IconButton, Menu, MenuItem, Button, Tooltip, Divider, ListItemIcon, ButtonGroup } from '@mui/material';
@@ -27,34 +25,38 @@ import { paths } from '../../config/navigation/paths';
 
 // --- Sub-Components ---
 
-const ParticipantMenu = ({ id }) => {
+interface ParticipantMenuProps {
+	id: string;
+}
+
+const ParticipantMenu = ({ id }: ParticipantMenuProps) => {
 	const callObject = useDaily();
 	const { showAlert } = useAlert();
-	const [anchorEl, setAnchorEl] = useState(null);
+	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 	const open = Boolean(anchorEl);
 
 	const isVideoOff = useParticipantProperty(id, 'tracks.video.state') === 'off';
 	const isAudioOff = useParticipantProperty(id, 'tracks.audio.state') === 'off';
 	const userName = useParticipantProperty(id, 'user_name');
 
-	const handleMenuClick = (event) => setAnchorEl(event.currentTarget);
+	const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
 	const handleClose = () => setAnchorEl(null);
 
 	const toggleAudio = () => {
-		callObject.updateParticipant(id, { setAudio: isAudioOff });
+		callObject?.updateParticipant(id, { setAudio: isAudioOff });
 		showAlert({ message: `${userName}'s microphone has been ${isAudioOff ? 'unmuted' : 'muted'}.`, type: 'info' });
 		handleClose();
 	};
 
 	const toggleVideo = () => {
-		callObject.updateParticipant(id, { setVideo: isVideoOff });
+		callObject?.updateParticipant(id, { setVideo: isVideoOff });
 		showAlert({ message: `${userName}'s camera has been ${isVideoOff ? 'enabled' : 'disabled'}.`, type: 'info' });
 		handleClose();
 	};
 
 	const ejectParticipant = () => {
 		showAlert({ message: `Removing ${userName} from the call.`, type: 'warning' });
-		callObject.updateParticipant(id, { eject: true });
+		callObject?.updateParticipant(id, { eject: true });
 		handleClose();
 	};
 
@@ -88,12 +90,14 @@ const ParticipantMenu = ({ id }) => {
 	);
 };
 
-ParticipantMenu.propTypes = {
-	id: PropTypes.string.isRequired,
-};
+interface ParticipantTileProps {
+	id: string;
+	isAdmin: boolean;
+	isActive: boolean;
+}
 
-const ParticipantTile = ({ id, isAdmin, isActive }) => {
-	const videoRef = useRef(null);
+const ParticipantTile = ({ id, isAdmin, isActive }: ParticipantTileProps) => {
+	const videoRef = useRef<HTMLVideoElement>(null);
 	const { participantDetails } = useMeeting();
 
 	const userName = useParticipantProperty(id, 'user_name');
@@ -104,13 +108,13 @@ const ParticipantTile = ({ id, isAdmin, isActive }) => {
 	const videoTrack = useParticipantProperty(id, 'videoTrack');
 	const audioTrack = useParticipantProperty(id, 'audioTrack');
 
-	const details = participantDetails?.[id];
+	const details = participantDetails[id] as { pictureUrl?: string } | undefined;
 	const pictureUrl = details?.pictureUrl;
 
 	useEffect(() => {
 		const videoElement = videoRef.current;
 		if (videoElement) {
-			const tracks = [];
+			const tracks: MediaStreamTrack[] = [];
 			if (videoTrack) tracks.push(videoTrack);
 			if (audioTrack) tracks.push(audioTrack);
 
@@ -155,7 +159,7 @@ const ParticipantTile = ({ id, isAdmin, isActive }) => {
 			{isVideoOff && (
 				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', backgroundColor: '#333' }}>
 					{pictureUrl ? <Avatar src={pictureUrl} alt={userName} sx={{ width: 120, height: 120, border: '4px solid rgba(255,255,255,0.2)' }} /> : <Avatar sx={{ width: 120, height: 120, bgcolor: 'secondary.main' }}>{userName?.charAt(0)}</Avatar>}
-					<Box textAlign='center' color='rgba(255,255,255,0.7)'>
+					<Box sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.7)' }}>
 						<Typography variant='h6'>{userName}</Typography>
 						<Typography variant='caption'>(Camera is off{isAudioOff && ', mic is muted'})</Typography>
 					</Box>
@@ -174,14 +178,12 @@ const ParticipantTile = ({ id, isAdmin, isActive }) => {
 	);
 };
 
-ParticipantTile.propTypes = {
-	id: PropTypes.string.isRequired,
-	isAdmin: PropTypes.bool.isRequired,
-	isActive: PropTypes.bool.isRequired,
-};
+interface ScreenShareTileProps {
+	id: string;
+}
 
-const ScreenShareTile = ({ id }) => {
-	const videoRef = useRef(null);
+const ScreenShareTile = ({ id }: ScreenShareTileProps) => {
+	const videoRef = useRef<HTMLVideoElement>(null);
 	const screenVideoTrack = useParticipantProperty(id, 'screenVideoTrack');
 	const screenVideoState = useParticipantProperty(id, 'tracks.screenVideo.state');
 	const screenAudioTrack = useParticipantProperty(id, 'tracks.screenAudioTrack');
@@ -191,9 +193,9 @@ const ScreenShareTile = ({ id }) => {
 	useEffect(() => {
 		const videoElement = videoRef.current;
 		if (videoElement) {
-			const tracks = [];
+			const tracks: MediaStreamTrack[] = [];
 			if (playableTrack) tracks.push(playableTrack);
-			if (screenAudioTrack) tracks.push(screenAudioTrack);
+			if (screenAudioTrack) tracks.push(screenAudioTrack as unknown as MediaStreamTrack);
 
 			if (tracks.length > 0) {
 				videoElement.srcObject = new MediaStream(tracks);
@@ -231,10 +233,6 @@ const ScreenShareTile = ({ id }) => {
 	);
 };
 
-ScreenShareTile.propTypes = {
-	id: PropTypes.string.isRequired,
-};
-
 const CallAlerter = () => {
 	const { member } = useAuth();
 	const { showAlert } = useAlert();
@@ -245,7 +243,7 @@ const CallAlerter = () => {
 		const participant = event.participant;
 
 		setTimeout(() => {
-			const updatedParticipant = callObject.participants()[participant.session_id];
+			const updatedParticipant = callObject?.participants()[participant.session_id];
 			const name = updatedParticipant?.user_name || 'Guest';
 			showAlert({ message: `${name} has joined the call.`, type: 'info' });
 		}, 1500);
@@ -264,7 +262,7 @@ const CallAlerter = () => {
 	});
 
 	useDailyEvent('left-meeting', (event) => {
-		if (event.reason === 'ejected') {
+		if ((event as unknown as Record<string, unknown>).reason === 'ejected') {
 			showAlert({ message: 'You have been removed from the meeting by an admin.', type: 'error' });
 		}
 	});
@@ -272,7 +270,14 @@ const CallAlerter = () => {
 	return null;
 };
 
-const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }) => {
+interface CallControlsProps {
+	isAdmin: boolean;
+	onOpenDrawer?: () => void;
+	onOpenAdminDrawer?: () => void;
+	isInterview?: boolean;
+}
+
+const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }: CallControlsProps) => {
 	const { member } = useAuth();
 	const callObject = useDaily();
 	const localSessionId = useLocalSessionId();
@@ -282,30 +287,28 @@ const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }) => {
 	const isSharingScreen = useParticipantProperty(localSessionId, 'screen');
 
 	const navigate = useNavigate();
-	const [activeVideoProcessor, setActiveVideoProcessor] = useState('none');
+	const [activeVideoProcessor, setActiveVideoProcessor] = useState<'none' | 'blur'>('none');
 	// Fixed: Initialize to false so first click enables it
 	const [isCancellingOn, setIsCancellingOn] = useState(false);
 
-	const toggleMic = () => callObject.setLocalAudio(!isMicOn);
-	const toggleCam = () => callObject.setLocalVideo(!isCamOn);
+	const toggleMic = () => callObject?.setLocalAudio(!isMicOn);
+	const toggleCam = () => callObject?.setLocalVideo(!isCamOn);
 
 	const leaveCall = () => {
-		callObject.leave();
+		callObject?.leave();
 		if (member) {
-			// Using standard dashboard path for members
-			navigate('/members/dashboard');
+			navigate(paths.interviewDash);
 		} else {
-			// Using public apply path
 			navigate(generatePath(paths.apply));
 		}
 	};
 
 	const toggleBackgroundBlur = async () => {
 		if (activeVideoProcessor === 'blur') {
-			await callObject.updateInputSettings({ video: { processor: { type: 'none' } } });
+			await callObject?.updateInputSettings({ video: { processor: { type: 'none' } } });
 			setActiveVideoProcessor('none');
 		} else {
-			await callObject.updateInputSettings({
+			await callObject?.updateInputSettings({
 				video: { processor: { type: 'background-blur', config: { strength: 0.7 } } },
 			});
 			setActiveVideoProcessor('blur');
@@ -314,10 +317,10 @@ const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }) => {
 
 	const toggleNoiseCancellation = async () => {
 		if (isCancellingOn) {
-			await callObject.updateInputSettings({ audio: { processor: { type: 'none' } } });
+			await callObject?.updateInputSettings({ audio: { processor: { type: 'none' } } });
 			setIsCancellingOn(false);
 		} else {
-			await callObject.updateInputSettings({
+			await callObject?.updateInputSettings({
 				audio: { processor: { type: 'noise-cancellation' } },
 			});
 			setIsCancellingOn(true);
@@ -326,9 +329,9 @@ const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }) => {
 
 	const toggleScreenShare = () => {
 		if (isSharingScreen) {
-			callObject.stopScreenShare();
+			callObject?.stopScreenShare();
 		} else {
-			callObject.startScreenShare({
+			callObject?.startScreenShare({
 				displayMediaOptions: {
 					audio: true,
 					video: true,
@@ -379,27 +382,30 @@ const CallControls = ({ isAdmin, onOpenDrawer, onOpenAdminDrawer }) => {
 	);
 };
 
-CallControls.propTypes = {
-	isAdmin: PropTypes.bool.isRequired,
-	onOpenDrawer: PropTypes.func,
-	onOpenAdminDrawer: PropTypes.func,
-};
-
 // --- Main Component ---
 
 const CONTROLS_HEIGHT = 72;
 
-export default function CallUI({ isAdmin, onOpenDrawer, onOpenAdminDrawer, isInterview = false }) {
+interface CallUIProps {
+	isAdmin: boolean;
+	isInterview?: boolean;
+	onOpenDrawer?: () => void;
+	onOpenAdminDrawer?: () => void;
+}
+
+export default function CallUI({ isAdmin, onOpenDrawer, onOpenAdminDrawer, isInterview = false }: CallUIProps) {
 	const callObject = useDaily();
 	const { screens } = useScreenShare();
 	const participantIds = useParticipantIds();
-	const [activeSpeakerId, setActiveSpeakerId] = useState(null);
+	const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (callObject) {
-			const handleActiveSpeakerChange = (event) => setActiveSpeakerId(event.activeSpeaker.peerId);
-			callObject.on('active-speaker-change', handleActiveSpeakerChange);
-			return () => callObject.off('active-speaker-change', handleActiveSpeakerChange);
+			const handleActiveSpeakerChange = (event: unknown) => setActiveSpeakerId((event as { activeSpeaker: { peerId: string } }).activeSpeaker.peerId);
+			callObject.on('active-speaker-change', handleActiveSpeakerChange as Parameters<typeof callObject.on>[1]);
+			return () => {
+				callObject.off('active-speaker-change', handleActiveSpeakerChange as Parameters<typeof callObject.off>[1]);
+			};
 		}
 	}, [callObject]);
 
@@ -436,10 +442,3 @@ export default function CallUI({ isAdmin, onOpenDrawer, onOpenAdminDrawer, isInt
 		</Box>
 	);
 }
-
-CallUI.propTypes = {
-	isAdmin: PropTypes.bool.isRequired,
-	isInterview: PropTypes.bool,
-	onOpenDrawer: PropTypes.func,
-	onOpenAdminDrawer: PropTypes.func,
-};

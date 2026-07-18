@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import CallUI from './CallInterface'; // Import the default export
-import { useDailyEvent, useParticipantProperty, useLocalSessionId, useDaily, useScreenShare, useParticipantIds } from '@daily-co/daily-react';
+import { useParticipantProperty, useLocalSessionId, useDaily, useScreenShare, useParticipantIds } from '@daily-co/daily-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
 import { useMeeting } from '../../context/MeetingContext';
@@ -126,7 +126,7 @@ describe('CallUI (and sub-components)', () => {
 			render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
 			fireEvent.click(screen.getByText('Exit'));
 			expect(mockCallObject.leave).toHaveBeenCalled();
-			expect(mockNavigate).toHaveBeenCalledWith('/members/dashboard');
+			expect(mockNavigate).toHaveBeenCalledWith('/members/interviews/dashboard');
 		});
 	});
 });

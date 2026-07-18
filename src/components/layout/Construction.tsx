@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Construction Component
  * A placeholder for pages or sections currently in development.
@@ -7,21 +6,19 @@
  * - Accepts an optional message prop.
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
 import { Box, Typography } from '@mui/material';
-import Lottie from 'lottie-react';
+import Lottie from '../../utils/lottie';
 
 // Config
 import { Assets } from '../../config/Constants';
 
-const Construction = ({ message = 'Under Construction' }) => {
+const Construction = ({ message = 'Under Construction' }: { message?: string }) => {
 	return (
 		<Box
-			width='100%'
-			height='100%'
-			bgcolor='background.main'
 			sx={{
+				width: '100%',
+				height: '100%',
+				bgcolor: 'background.main',
 				minHeight: 280,
 				padding: 4,
 				display: 'flex',
@@ -37,8 +34,7 @@ const Construction = ({ message = 'Under Construction' }) => {
 					height: 'auto',
 					mb: 2,
 				}}>
-				{/* Note: Preserving original key spelling 'underContructionLottie' */}
-				<Lottie animationData={Assets.underContructionLottie} loop autoplay style={{ width: '100%', height: '100%' }} />
+				<Lottie animationData={Assets.underConstructionLottie} loop autoplay style={{ width: '100%', height: '100%' }} />
 			</Box>
 
 			<Typography variant='h5' color='text.secondary'>
@@ -46,10 +42,6 @@ const Construction = ({ message = 'Under Construction' }) => {
 			</Typography>
 		</Box>
 	);
-};
-
-Construction.propTypes = {
-	message: PropTypes.string,
 };
 
 export default Construction;

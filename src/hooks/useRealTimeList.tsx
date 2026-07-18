@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * REAL-TIME LIST DATA HOOK
  * ---------------------------------------------------------------------------
@@ -17,35 +16,71 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import type { DocumentData } from 'firebase/firestore';
 
 // Config & Data
 import { collections } from '../config/data/collections';
 import { getCollectionData } from '../config/data/firebase';
-import { adminLists as listConfig } from '../config/admin';
+import { adminLists } from '../config/admin';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 
+export interface ListRecord {
+	id: string;
+	profile?: string;
+	completedBy?: string;
+	applicantName?: string;
+	[key: string]: unknown;
+}
+
+interface ProfileData {
+	applicantFirstName?: string;
+	applicantLastName?: string;
+	[key: string]: unknown;
+}
+
+type ProfileEntry = ProfileData | 'loading' | 'not_found';
+
+type ListConfigEntry = (typeof adminLists)[string];
+
+interface UseRealTimeListResult {
+	data: ListRecord[];
+	loading: boolean;
+	window: Window | undefined;
+	year: string | undefined;
+}
+
+const listConfig: Record<string, ListConfigEntry | undefined> = adminLists;
+
 /**
- * @param {string} type - The key matching an entry in 'adminLists' (e.g., 'applications').
- * @param {boolean} [enabled=true] - If false, pauses fetching.
+ * @param type - The key matching an entry in 'adminLists' (e.g., 'applications').
+ * @param enabled - If false, pauses fetching.
  */
-export const useRealTimeList = (type, enabled = true) => {
+export const useRealTimeList = (type: string, enabled = true): UseRealTimeListResult => {
 	// --- State ---
-	const [rawApplications, setRawApplications] = useState([]); // Raw data from main collection
-	const [profiles, setProfiles] = useState(new Map()); // Cache of related profile docs
+	const [rawApplications, setRawApplications] = useState<ListRecord[]>([]); // Raw data from main collection
+	const [profiles, setProfiles] = useState<Map<string, ProfileEntry>>(new Map()); // Cache of related profile docs
 	const [loading, setLoading] = useState(true);
 
 	// Persist data during re-fetches to prevent "flash of empty table"
-	const previousDataRef = useRef([]);
+	const previousDataRef = useRef<ListRecord[]>([]);
 
 	// --- Contexts ---
 	const { user, member } = useAuth();
-	const { year } = useParams(); // URL Param (e.g., /admin/applications/2023)
+	const { year } = useParams<{ year?: string }>(); // URL Param (e.g., /admin/applications/2023)
 	const config = useConfig();
 
-	// Calculate the "Deadline Window" (The filter used for this list)
-	const configDeadline = useMemo(() => config.APPLICATION_DEADLINE, [config]);
-	const window = useMemo(() => (year ? new Date(new Date(configDeadline).setFullYear(Number(year))).toLocaleString() : configDeadline), [configDeadline, year]);
+	// Cycle year scope (URL :year, else site CYCLE_YEAR, else deadline year)
+	const cycleYear = useMemo(() => {
+		if (year) {
+			const parsedYear = Number(year);
+			return Number.isFinite(parsedYear) ? parsedYear : undefined;
+		}
+		const cy = config.CYCLE_YEAR;
+		if (typeof cy === 'number' && Number.isFinite(cy)) return cy;
+		const deadline = config.APPLICATION_DEADLINE as string | undefined;
+		return deadline ? new Date(deadline).getFullYear() : undefined;
+	}, [config, year]);
 
 	// --- Effect 1: Primary Subscription ---
 	useEffect(() => {
@@ -62,19 +97,25 @@ export const useRealTimeList = (type, enabled = true) => {
 		}
 		setLoading(true);
 
-		const handler = (rawData) => {
-			setRawApplications(rawData || []);
+		const handler = (rawData: DocumentData[] | null | undefined) => {
+			setRawApplications((rawData as ListRecord[]) || []);
 			setLoading(false);
 		};
 
-		let unsubscribe;
+		let unsubscribe: (() => void) | undefined;
 		// Special Case: Interviews are user-specific
-		if (type === 'interviews' && user) {
-			unsubscribe = currentConfig.fetcher(handler, user.uid, !!member);
+		if (type === 'interviews' && user && currentConfig.fetcher) {
+			unsubscribe = currentConfig.fetcher(handler, user.uid, !!member) as (() => void) | undefined;
 		}
 		// Standard Case: Fetch based on window/deadline
 		else if (typeof currentConfig.fetcher === 'function') {
-			unsubscribe = currentConfig.fetcher(handler, window, type);
+			const scopeOptionalTypes = new Set(['archives', 'inbox', 'legacyFinances', 'Member', 'Applicant']);
+			if (Number.isFinite(cycleYear) || scopeOptionalTypes.has(type)) {
+				unsubscribe = currentConfig.fetcher(handler, cycleYear, type) as (() => void) | undefined;
+			} else {
+				console.error(`useRealTimeList: Missing cycleYear for type "${type}"`);
+				setLoading(false);
+			}
 		} else {
 			console.error(`useRealTimeList: No fetcher function found for type "${type}"`);
 			setLoading(false);
@@ -83,7 +124,7 @@ export const useRealTimeList = (type, enabled = true) => {
 		return () => {
 			if (typeof unsubscribe === 'function') unsubscribe();
 		};
-	}, [type, window, year, member, user, enabled]);
+	}, [type, cycleYear, year, member, user, enabled]);
 
 	// --- Effect 2: Data Enrichment (The Join) ---
 	useEffect(() => {
@@ -98,7 +139,7 @@ export const useRealTimeList = (type, enabled = true) => {
 
 		const fetchMissingProfiles = async () => {
 			const newProfilesMap = new Map(profiles);
-			const profilesToFetch = [];
+			const profilesToFetch: { profileId: string; completedBy: string | undefined }[] = [];
 
 			// Scan raw data for missing profiles
 			for (const app of rawApplications) {
@@ -114,10 +155,10 @@ export const useRealTimeList = (type, enabled = true) => {
 			}
 
 			// Parallel Fetch
-			const promises = profilesToFetch.map(async ({ profileId, completedBy }) => {
+			const promises = profilesToFetch.map(async ({ profileId, completedBy }): Promise<{ id: string; data: ProfileEntry }> => {
 				try {
-					const profileData = await getCollectionData(completedBy, collections.profiles, profileId);
-					return { id: profileId, data: profileData || 'not_found' };
+					const profileData = await getCollectionData(completedBy ?? '', collections.profiles, profileId);
+					return { id: profileId, data: (profileData as ProfileData | null) || 'not_found' };
 				} catch (error) {
 					console.error(`Failed to fetch profile ${profileId}`, error);
 					return { id: profileId, data: 'not_found' };
@@ -144,7 +185,7 @@ export const useRealTimeList = (type, enabled = true) => {
 
 	// --- 3. Compute Final Table Data ---
 	const dataForTable = useMemo(() => {
-		if (!enabled) return [];
+		if (!enabled) return [] as ListRecord[];
 
 		const currentConfig = listConfig[type];
 		if (!currentConfig?.enrich) return rawApplications;
@@ -168,12 +209,12 @@ export const useRealTimeList = (type, enabled = true) => {
 	const currentConfig = listConfig[type];
 
 	// We are "still enriching" if we have rows but haven't fetched their names yet
-	const isStillEnriching = enabled && currentConfig?.enrich && dataForTable.some((app) => app.profile && !app.applicantName);
+	const isStillEnriching = Boolean(enabled && currentConfig?.enrich && dataForTable.some((app) => app.profile && !app.applicantName));
 
 	// True Loading = Initial fetch OR (Enriching AND No previous data to show)
 	const isInitialLoading = (enabled && loading) || (isStillEnriching && previousDataRef.current.length === 0);
 
-	let finalData;
+	let finalData: ListRecord[];
 	if (isStillEnriching) {
 		// Show stale data while enriching to prevent flicker
 		finalData = previousDataRef.current;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Admin Configuration Entry Point
  * This file aggregates the configuration modules for the Admin Dashboard.

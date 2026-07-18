@@ -5,7 +5,7 @@ const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require('fir
 // Logs the creation of any document in any collection (except specific skip lists) to the 'dblog' collection.
 exports.onDocumentCreate = onDocumentCreated('{collection}/{docId}', (event) => {
 	const { collection, docId } = event.params;
-	const skipThese = ['dblog', 'sitelog'];
+	const skipThese = ['dblog', 'sitelog', 'videoUsage', 'videoBudget'];
 	if (skipThese.includes(collection)) {
 		return null;
 	}
@@ -27,7 +27,7 @@ exports.onDocumentCreate = onDocumentCreated('{collection}/{docId}', (event) => 
 // Skips 'emails' and 'sms' collections to prevent logging noisy automated tasks.
 exports.onDocumentUpdate = onDocumentUpdated('{collection}/{docId}', (event) => {
 	const { collection, docId } = event.params;
-	const skipThese = ['emails', 'sms'];
+	const skipThese = ['emails', 'sms', 'videoUsage', 'videoBudget'];
 	if (skipThese.includes(collection)) {
 		return null;
 	}
@@ -64,7 +64,7 @@ exports.onDocumentUpdate = onDocumentUpdated('{collection}/{docId}', (event) => 
 // Logs the deletion of documents and preserves the data that was deleted.
 exports.onDocumentDelete = onDocumentDeleted('{collection}/{docId}', (event) => {
 	const { collection, docId } = event.params;
-	const skipThese = ['dblog', 'sitelog', 'emails', 'sms'];
+	const skipThese = ['dblog', 'sitelog', 'emails', 'sms', 'videoUsage', 'videoBudget'];
 	if (skipThese.includes(collection)) {
 		return null;
 	}

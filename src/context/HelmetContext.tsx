@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SEO & PAGE TITLE CONTEXT
  * ---------------------------------------------------------------------------
@@ -11,14 +10,28 @@
  * e.g. useTitle('Dashboard'); // Sets title to "Dashboard | Organization Name"
  */
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useState, useEffect, useMemo, type Dispatch, type SetStateAction, type ReactNode } from 'react';
 import { Helmet } from 'react-helmet-async';
 
 // Global Configuration
 import { brand } from '../config/Constants';
 
-const PageTitleContext = createContext(null);
+export interface PageTitleContextValue {
+	setTitle: Dispatch<SetStateAction<string>>;
+	setAppear: Dispatch<SetStateAction<boolean>>;
+}
+
+interface PageHelmetProps {
+	title: string;
+	appear: boolean;
+}
+
+interface UseTitleOptions {
+	title?: string;
+	appear?: boolean;
+}
+
+const PageTitleContext = createContext<PageTitleContextValue | undefined>(undefined);
 
 // =============================================================================
 //  1. HELMET RENDERER (The <head> Manager)
@@ -29,7 +42,7 @@ const PageTitleContext = createContext(null);
  * @param {string} title - The specific page title (e.g. "Login").
  * @param {boolean} appear - If true, allows search engines to index this page.
  */
-const PageHelmet = ({ title, appear }) => {
+const PageHelmet = ({ title, appear }: PageHelmetProps) => {
 	// Privacy Logic: If 'appear' is false, tell Google NOT to index this page.
 	const robots = appear ? 'index, follow' : 'no-index, no-follow';
 	const imageUrl = `${brand.url}${brand.ogImage}`; // Social preview image
@@ -84,20 +97,15 @@ const PageHelmet = ({ title, appear }) => {
 	);
 };
 
-PageHelmet.propTypes = {
-	title: PropTypes.string.isRequired,
-	appear: PropTypes.bool.isRequired,
-};
-
 // =============================================================================
 //  2. CONTEXT PROVIDER
 // =============================================================================
 
-export const PageTitleProvider = ({ children }) => {
-	const [title, setTitle] = useState(brand.organizationShortName);
-	const [appear, setAppear] = useState(true);
+export const PageTitleProvider = ({ children }: { children: ReactNode }) => {
+	const [title, setTitle] = useState<string>(brand.organizationShortName);
+	const [appear, setAppear] = useState<boolean>(true);
 
-	const value = useMemo(() => ({ setTitle, setAppear }), [setTitle, setAppear]);
+	const value = useMemo<PageTitleContextValue>(() => ({ setTitle, setAppear }), [setTitle, setAppear]);
 
 	return (
 		<PageTitleContext.Provider value={value}>
@@ -108,10 +116,6 @@ export const PageTitleProvider = ({ children }) => {
 	);
 };
 
-PageTitleProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 // =============================================================================
 //  3. THE HOOK
 // =============================================================================
@@ -120,11 +124,10 @@ PageTitleProvider.propTypes = {
  * Hook to set the page title and SEO visibility.
  * usage: useTitle({ title: 'Dashboard', appear: false });
  *
- * @param {object} props
- * @param {string} props.title - The text to display in the browser tab.
- * @param {boolean} [props.appear=true] - If false, adds 'no-index' meta tag.
+ * @param props.title - The text to display in the browser tab.
+ * @param props.appear - If false, adds 'no-index' meta tag (defaults true).
  */
-export const useTitle = ({ title, appear }) => {
+export const useTitle = ({ title, appear }: UseTitleOptions): void => {
 	const context = useContext(PageTitleContext);
 
 	if (!context) {

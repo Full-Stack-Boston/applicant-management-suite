@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Legacy Finances Table
  * A complex, collapsible table used to display historical financial data.
@@ -9,24 +8,69 @@
  */
 
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Box, Collapse, Typography } from '@mui/material';
 import { KeyboardArrowDown as KeyboardArrowDownIcon, KeyboardArrowUp as KeyboardArrowUpIcon, PeopleOutlined, ListAltOutlined } from '@mui/icons-material';
 
 // Context
 import { useTheme } from '../../context/ThemeContext';
+import { adminPageHeaderSx, adminPageTitleSx, getAdminPageTitleColor } from '../../config/ui/adminPageStyles';
+
+import type { ReactNode } from 'react';
+
+// --- Local Types ---
+
+interface NonSgItem {
+	program?: string;
+	request?: number | string;
+	disbursement?: number | string;
+}
+
+interface RenewableScholarship {
+	recipient_name?: string;
+	grade?: string | number;
+	committed_renewal?: number | string;
+	one_time_grant?: number | string;
+	total_disbursement?: number | string;
+}
+
+interface NonRenewableGrant {
+	recipient_name?: string;
+	grade?: string | number;
+	grant_amount?: number | string;
+}
+
+interface FinancesRow {
+	id?: string;
+	year?: number | string;
+	total_allotted_disbursement?: number | string;
+	prior_year_clawback?: number | string;
+	financial_summary?: {
+		scholarships_grants?: { amount_returned?: number; amount_available?: number | string };
+		non_scholarship_items?: { amount_returned?: number; amount_available?: number | string };
+	};
+	renewable_scholarships?: RenewableScholarship[];
+	non_renewable_grants?: NonRenewableGrant[];
+	non_sg_items?: NonSgItem[];
+}
 
 // --- Helpers ---
 
-const formatCurrency = (value) => {
-	const num = Number.parseFloat(value);
+const formatCurrency = (value: number | string | null | undefined) => {
+	const num = Number.parseFloat(String(value ?? ''));
 	if (Number.isNaN(num) || value === null) return 'N/A';
 	return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 };
 
 // --- Sub-Components ---
 
-const DetailSection = ({ title, icon, children, darkMode }) => (
+interface DetailSectionProps {
+	title: string;
+	icon?: ReactNode;
+	children: ReactNode;
+	darkMode?: boolean;
+}
+
+const DetailSection = ({ title, icon, children, darkMode }: DetailSectionProps) => (
 	<Box sx={{ marginY: '15px' }}>
 		<Typography variant='h6' gutterBottom component='div' color={darkMode ? 'primary.main' : 'highlight.main'} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 			{icon}
@@ -36,14 +80,7 @@ const DetailSection = ({ title, icon, children, darkMode }) => (
 	</Box>
 );
 
-DetailSection.propTypes = {
-	title: PropTypes.string.isRequired,
-	icon: PropTypes.node,
-	children: PropTypes.node.isRequired,
-	darkMode: PropTypes.bool,
-};
-
-const Row = ({ row, darkMode }) => {
+const Row = ({ row, darkMode }: { row: FinancesRow; darkMode?: boolean }) => {
 	const [open, setOpen] = useState(false);
 
 	// Calculate derived values
@@ -83,13 +120,13 @@ const Row = ({ row, darkMode }) => {
 					{formatCurrency(totalReturns)}
 				</TableCell>
 				<TableCell align='center' sx={tableCellStyles}>
-					<Box display='flex' flexDirection='row' justifyContent='center' alignItems='center' flexWrap='nowrap' width='100%'>
+					<Box sx={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'nowrap', width: '100%' }}>
 						<PeopleOutlined fontSize='small' sx={{ mr: 0.5 }} />
 						<Typography variant='body2'>{row.renewable_scholarships?.length ?? 0} Applicants</Typography>
 					</Box>
 				</TableCell>
 				<TableCell align='center' sx={tableCellStyles}>
-					<Box display='flex' flexDirection='row' justifyContent='center' alignItems='center'>
+					<Box sx={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
 						<PeopleOutlined fontSize='small' sx={{ mr: 0.5 }} />
 						<Typography variant='body2'>{row.non_renewable_grants?.length ?? 0} Applicants</Typography>
 					</Box>
@@ -160,7 +197,7 @@ const Row = ({ row, darkMode }) => {
 										<Table size='small' aria-label='renewable scholarships'>
 											<TableHead>
 												<TableRow>
-													<TableCell sx={detailTableHeadStyles}>Scout Name</TableCell>
+													<TableCell sx={detailTableHeadStyles}>Applicant Name</TableCell>
 													<TableCell sx={detailTableHeadStyles}>Grade</TableCell>
 													<TableCell align='right' sx={detailTableHeadStyles}>
 														Committed
@@ -175,9 +212,9 @@ const Row = ({ row, darkMode }) => {
 											</TableHead>
 											<TableBody>
 												{row.renewable_scholarships.map((item) => (
-													<TableRow key={item.scout_name}>
+													<TableRow key={item.recipient_name}>
 														<TableCell component='th' scope='row'>
-															{item.scout_name}
+															{item.recipient_name}
 														</TableCell>
 														<TableCell>{item.grade}</TableCell>
 														<TableCell align='right'>{formatCurrency(item.committed_renewal)}</TableCell>
@@ -198,7 +235,7 @@ const Row = ({ row, darkMode }) => {
 										<Table size='small' aria-label='non-renewable grants'>
 											<TableHead>
 												<TableRow>
-													<TableCell sx={detailTableHeadStyles}>Scout Name</TableCell>
+													<TableCell sx={detailTableHeadStyles}>Applicant Name</TableCell>
 													<TableCell sx={detailTableHeadStyles}>Grade</TableCell>
 													<TableCell align='right' sx={detailTableHeadStyles}>
 														Grant Amount
@@ -207,9 +244,9 @@ const Row = ({ row, darkMode }) => {
 											</TableHead>
 											<TableBody>
 												{row.non_renewable_grants.map((item) => (
-													<TableRow key={item.scout_name}>
+													<TableRow key={item.recipient_name}>
 														<TableCell component='th' scope='row'>
-															{item.scout_name}
+															{item.recipient_name}
 														</TableCell>
 														<TableCell>{item.grade}</TableCell>
 														<TableCell align='right'>{formatCurrency(item.grant_amount)}</TableCell>
@@ -228,23 +265,9 @@ const Row = ({ row, darkMode }) => {
 	);
 };
 
-Row.propTypes = {
-	row: PropTypes.shape({
-		year: PropTypes.number.isRequired,
-		total_allotted_disbursement: PropTypes.number,
-		prior_year_clawback: PropTypes.number,
-		financial_summary: PropTypes.object,
-		renewable_scholarships: PropTypes.array,
-		non_renewable_grants: PropTypes.array,
-		non_sg_items: PropTypes.array,
-		id: PropTypes.string,
-	}).isRequired,
-	darkMode: PropTypes.bool,
-};
-
 // --- Main Component ---
 
-const LegacyFinancesTable = ({ data, titleIn }) => {
+const LegacyFinancesTable = ({ data, titleIn }: { data?: FinancesRow[]; titleIn?: string }) => {
 	const { darkMode, boxShadow } = useTheme();
 
 	const tableCellStyles = {
@@ -256,8 +279,8 @@ const LegacyFinancesTable = ({ data, titleIn }) => {
 	return (
 		<Box sx={{ width: '100%', borderRadius: '12px' }}>
 			{titleIn && (
-				<Box borderRadius='12px' boxShadow={boxShadow} bgcolor={darkMode ? 'background.main' : 'white'} display='flex' alignItems='center' justifyContent='left' padding={1} paddingX={2} marginBottom={2}>
-					<Typography fontSize='24px' color={darkMode ? 'primary.main' : 'highlight.main'}>
+				<Box sx={{ ...adminPageHeaderSx(boxShadow ?? ''), mb: 2 }}>
+					<Typography color={getAdminPageTitleColor(darkMode)} sx={adminPageTitleSx}>
 						{titleIn}
 					</Typography>
 				</Box>
@@ -307,11 +330,6 @@ const LegacyFinancesTable = ({ data, titleIn }) => {
 			</TableContainer>
 		</Box>
 	);
-};
-
-LegacyFinancesTable.propTypes = {
-	data: PropTypes.array,
-	titleIn: PropTypes.string,
 };
 
 export default LegacyFinancesTable;

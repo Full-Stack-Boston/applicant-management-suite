@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Admin Layout
  * The main wrapper for all administrative pages.
@@ -9,8 +8,7 @@
  * - Responsive transitions.
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
+import type { ReactNode } from 'react';
 import { Box } from '@mui/material';
 
 // Context
@@ -19,10 +17,11 @@ import { useTheme } from '../../context/ThemeContext';
 
 // Components
 import Sidebar from '../sidebar/Sidebar';
+import { SIDEBAR_LAYOUT_TRANSITION } from '../sidebar/sidebarLayout';
 import Navbar from '../navbar/Navbar';
 
 // Sub-component to consume Context
-const MainContent = ({ children }) => {
+const MainContent = ({ children }: { children: ReactNode }) => {
 	const { collapsed } = useSidebar();
 	const { boxShadow } = useTheme();
 
@@ -34,8 +33,11 @@ const MainContent = ({ children }) => {
 			sx={{
 				marginLeft: `${sidebarWidth}px`,
 				width: `calc(100% - ${sidebarWidth}px)`,
+				maxWidth: `calc(100vw - ${sidebarWidth}px)`,
+				minWidth: 0,
 				height: '100%',
-				transition: 'margin-left 0.3s, width 0.3s',
+				boxSizing: 'border-box',
+				transition: SIDEBAR_LAYOUT_TRANSITION,
 				display: 'flex',
 				flexDirection: 'column',
 				bgcolor: 'background.paper',
@@ -43,7 +45,7 @@ const MainContent = ({ children }) => {
 			{/* Top Navigation Bar */}
 			<Box
 				sx={{
-					height: `50px`,
+					height: '50px',
 					bgcolor: 'background.paper',
 					width: '100%',
 					flexShrink: 0,
@@ -55,14 +57,20 @@ const MainContent = ({ children }) => {
 			{/* Main Scrollable Content Area */}
 			<Box
 				sx={{
-					paddingY: 2,
-					paddingX: 4,
+					paddingY: { xs: 2, md: 1.5 },
+					paddingX: { xs: 1, md: 2 },
 					overflowY: 'auto',
 					overflowX: 'hidden',
 					flexGrow: 1,
-					bgcolor: 'highlight.main',
+					minHeight: 0,
+					minWidth: 0,
+					width: '100%',
+					boxSizing: 'border-box',
+					bgcolor: 'background.canvas',
 					borderTopLeftRadius: '12px',
-					boxShadow: `inset ${boxShadow}`, // Inner shadow for depth
+					boxShadow: `inset ${boxShadow}`,
+					display: 'flex',
+					flexDirection: 'column',
 				}}>
 				{children}
 			</Box>
@@ -70,33 +78,24 @@ const MainContent = ({ children }) => {
 	);
 };
 
-MainContent.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 // Main Layout Wrapper
-const AdminLayout = ({ children }) => {
+const AdminLayout = ({ children }: { children: ReactNode }) => {
 	return (
 		<SidebarProvider>
-			<Box display='flex' sx={{ height: '100vh', bgcolor: 'background.paper' }}>
+			<Box
+				sx={{
+					height: '100vh',
+					width: '100%',
+					maxWidth: '100vw',
+					overflow: 'hidden',
+					bgcolor: 'background.paper',
+					position: 'relative',
+				}}>
 				<Sidebar />
-				<Box
-					sx={{
-						flexGrow: 1,
-						height: '100%',
-						bgcolor: 'background.paper',
-						display: 'flex',
-						flexDirection: 'column',
-					}}>
-					<MainContent>{children}</MainContent>
-				</Box>
+				<MainContent>{children}</MainContent>
 			</Box>
 		</SidebarProvider>
 	);
-};
-
-AdminLayout.propTypes = {
-	children: PropTypes.node.isRequired,
 };
 
 export default AdminLayout;

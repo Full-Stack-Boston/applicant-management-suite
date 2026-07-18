@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import * as TableConfig from './tableConfig';
-import { getAttachmentLabel, getStatusIcon, parseDisplayName, getRsvpLabel, StackedDateCell, SenderSubjectCell, RecipientSubjectCell, UserLastLogin, DynamicApplicantProfilePicture, DynamicMemberProfilePicture } from './tableConfig';
+import { getAttachmentLabel, getStatusIcon, parseDisplayName, getRsvpLabel, StackedDateCell, SenderSubjectCell, RecipientSubjectCell, UserLastLogin, UserLastSeen, UserActivityStack, DynamicApplicantProfilePicture, DynamicMemberProfilePicture } from './tableConfig';
 import {
 	ResendRequestButton,
 	InvalidateRequestButton,
@@ -132,6 +132,7 @@ vi.mock('../../hooks/useEmailActions', () => ({
 vi.mock('../data/firebase', () => ({
 	__esModule: true,
 	getUserAuthRecord: jest.fn(),
+	subscribeUserLastSeen: jest.fn(() => () => {}),
 	getCollectionData: jest.fn(),
 	updateCollectionData: jest.fn(),
 	getDocumentsByIDs: jest.fn(),
@@ -264,25 +265,70 @@ describe('tableConfig.js', () => {
 		});
 
 		describe('Profile Pictures', () => {
-			it('renders Applicant Profile Picture', async () => {
-				render(<DynamicApplicantProfilePicture user='app1' />);
-				// Wait for async state update
-				const avatar = await screen.findByAltText('avatar');
-				expect(avatar).toBeInTheDocument();
+			beforeEach(() => {
+				TableConfig.clearPictureUrlCache();
 			});
 
-			it('renders Member Profile Picture', async () => {
-				render(<DynamicMemberProfilePicture user='mem1' />);
-				// Wait for async state update
+			it('renders Applicant Profile Picture from src without fetching', async () => {
+				render(<DynamicApplicantProfilePicture user='app1' src='row-pic.jpg' />);
 				const avatar = await screen.findByAltText('avatar');
 				expect(avatar).toBeInTheDocument();
+				expect(avatar).toHaveAttribute('src', 'row-pic.jpg');
+				expect(FirebaseService.getCollectionData).not.toHaveBeenCalled();
+			});
+
+			it('renders Applicant Profile Picture after fetch when src is missing', async () => {
+				render(<DynamicApplicantProfilePicture user='app1' />);
+				const avatar = await screen.findByAltText('avatar');
+				expect(avatar).toBeInTheDocument();
+				await waitFor(() => {
+					expect(avatar).toHaveAttribute('src', 'test.jpg');
+				});
+			});
+
+			it('renders Member Profile Picture after fetch when src is missing', async () => {
+				render(<DynamicMemberProfilePicture user='mem1' />);
+				const avatar = await screen.findByAltText('avatar');
+				expect(avatar).toBeInTheDocument();
+				await waitFor(() => {
+					expect(avatar).toHaveAttribute('src', 'test.jpg');
+				});
+			});
+
+			it('keeps a fixed avatar visible while fetching (no full-page loader)', () => {
+				FirebaseService.getCollectionData.mockImplementation(() => new Promise(() => {}));
+				render(<DynamicApplicantProfilePicture user='slow-app' />);
+				expect(screen.getByAltText('avatar')).toBeInTheDocument();
+				expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
 			});
 		});
 
 		describe('UserLastLogin', () => {
-			it('renders last login time', async () => {
+			it('renders relative last login time', async () => {
 				render(<UserLastLogin userId='u1' />);
-				// Wait for async state update
+				expect(await screen.findByText(/ago|just now/i)).toBeInTheDocument();
+			});
+		});
+
+		describe('UserLastSeen', () => {
+			it('renders relative last seen time', async () => {
+				FirebaseService.subscribeUserLastSeen.mockImplementation((_uid, callback) => {
+					callback(new Date('2023-01-01T12:00:00Z'));
+					return () => {};
+				});
+				render(<UserLastSeen userId='u1' />);
+				expect(await screen.findByText(/ago|just now/i)).toBeInTheDocument();
+			});
+		});
+
+		describe('UserActivityStack', () => {
+			it('renders seen and login labels', async () => {
+				FirebaseService.subscribeUserLastSeen.mockImplementation((_uid, callback) => {
+					callback(new Date('2023-01-01T12:00:00Z'));
+					return () => {};
+				});
+				render(<UserActivityStack userId='u1' />);
+				expect(await screen.findByText(/ago|just now/i)).toBeInTheDocument();
 				expect(await screen.findByText(/1\/01\/23/)).toBeInTheDocument();
 			});
 		});
@@ -569,6 +615,9 @@ describe('tableConfig.js', () => {
 			status: 'Submitted',
 			rsvpStatus: 'yes',
 			tags: ['tag1'],
+			timestamp: 1704067200000,
+			sender: 'sender@example.com',
+			subject: 'Hello',
 			financial_summary: {
 				scholarships_grants: { amount_available: 1000, amount_returned: 0 },
 				non_scholarship_items: { amount_available: 500, amount_returned: 0 },
@@ -580,26 +629,28 @@ describe('tableConfig.js', () => {
 			if (!columns) return;
 
 			it(`executes valueGetters and formatters for config set #${index}`, async () => {
-				for (const col of columns) {
-					if (col.valueGetter) {
-						try {
-							const result = col.valueGetter({ row: mockRowData, value: [] });
-							expect(result).toBeDefined();
-						} catch (e) {}
+				for (const col of columns.filter((c) => c.valueGetter)) {
+					try {
+						col.valueGetter({ row: mockRowData, value: [] });
+					} catch {
+						// Sparse rows / missing deps — getters may throw; ensure they are callable.
 					}
-					if (col.valueFormatter) {
-						try {
-							const result = col.valueFormatter({ value: 1000, row: mockRowData });
-							expect(result).toBeDefined();
-						} catch (e) {}
+				}
+				for (const col of columns.filter((c) => c.valueFormatter)) {
+					try {
+						col.valueFormatter({ value: 1000, row: mockRowData });
+					} catch {
+						// Formatters may throw on incomplete fixtures.
 					}
-					if (col.renderCell) {
-						try {
-							// Await simple act to help flush effects and reduce warnings
-							await act(async () => {
-								render(col.renderCell({ row: mockRowData, value: 'Test Value' }));
-							});
-						} catch (e) {}
+				}
+				for (const col of columns.filter((c) => c.renderCell)) {
+					try {
+						// Await simple act to help flush effects and reduce warnings
+						await act(async () => {
+							render(col.renderCell({ row: mockRowData, value: 'Test Value' }));
+						});
+					} catch {
+						// Some cells require richer context; skip render failures
 					}
 				}
 			});

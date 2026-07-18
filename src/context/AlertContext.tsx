@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ALERT & NOTIFICATION CONTEXT
  * ---------------------------------------------------------------------------
@@ -15,16 +14,20 @@
  * handleError(errorObj, 'contextName');
  */
 
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, type ReactNode, type ReactElement } from 'react';
 import { Snackbar, Alert, Slide } from '@mui/material';
 
 // Config & Logging
 import { AlertMessages } from '../config/Constants';
 import { logEvent } from '../config/data/firebase';
 
+export interface AlertItem {
+	message: string;
+	type: 'success' | 'error' | 'warning' | 'info';
+}
+
 // Map raw Firebase auth codes to human-readable messages
-const firebaseErrorMessages = {
+const firebaseErrorMessages: Record<string, string> = {
 	'auth/email-already-in-use': 'This email is already registered. Please log in.',
 	'auth/weak-password': 'Your password is too weak. Please use a stronger password.',
 	'auth/invalid-email': 'Invalid email address format.',
@@ -36,18 +39,31 @@ const firebaseErrorMessages = {
 	'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
 };
 
-const AlertContext = createContext();
+export interface AlertContextValue {
+	showAnnouncement: (params: { message?: string }) => ReactElement | null;
+	showAlert: (categoryOrCustom: string | { message: string; type?: string }, type?: string | null) => void;
+	handleError: (error: unknown, context?: string, show?: boolean | null) => void;
+}
 
-export const AlertProvider = ({ children }) => {
+const AlertContext = createContext<AlertContextValue | undefined>(undefined);
+
+export const AlertProvider = ({ children }: { children: ReactNode }) => {
 	// FIFO Queue for alerts to prevent stacking
-	const [alertQueue, setAlertQueue] = useState([]);
-	const [currentAlert, setCurrentAlert] = useState(null);
+	const [alertQueue, setAlertQueue] = useState<AlertItem[]>([]);
+	const [currentAlert, setCurrentAlert] = useState<AlertItem | null>(null);
+	// Keep showAlert/handleError identities stable. Depending on currentAlert made every toast
+	// recreate those callbacks, which re-ran Daily join effects (leave+join loop on participant join/leave).
+	const currentAlertRef = useRef<AlertItem | null>(null);
+
+	useEffect(() => {
+		currentAlertRef.current = currentAlert;
+	}, [currentAlert]);
 
 	/**
 	 * Helper component to render a static banner (not a toast).
 	 * Used inside forms or pages for persistent messages.
 	 */
-	const showAnnouncement = useCallback(({ message }) => {
+	const showAnnouncement = useCallback(({ message }: { message?: string }) => {
 		if (!message) return null;
 		return (
 			<Alert severity='info' sx={{ width: '100%', mt: 1, boxSizing: 'border-box' }}>
@@ -58,38 +74,36 @@ export const AlertProvider = ({ children }) => {
 
 	/**
 	 * Adds a new alert to the display queue.
-	 * @param {object|string} categoryOrCustom - Either a config key (from Constants.js) OR a custom object { message, type }.
-	 * @param {string} [type] - If using a config key, this specifies the sub-type (e.g., 'success', 'failed').
+	 * @param categoryOrCustom - Either a config key (from Constants.js) OR a custom object { message, type }.
+	 * @param type - If using a config key, this specifies the sub-type (e.g., 'success', 'failed').
 	 */
-	const showAlert = useCallback(
-		(categoryOrCustom, type = null) => {
-			let newAlert;
+	const showAlert = useCallback((categoryOrCustom: string | { message: string; type?: string }, type: string | null = null) => {
+		let newAlert: AlertItem;
 
-			// Scenario A: Using a pre-defined message from Constants.js
-			// usage: showAlert('login', 'success')
-			if (typeof categoryOrCustom === 'string' && type) {
-				newAlert = AlertMessages[categoryOrCustom]?.[type] || { message: 'Unknown alert', type: 'info' };
-			}
-			// Scenario B: Passing a custom message object
-			// usage: showAlert({ message: 'Hello World', type: 'success' })
-			else if (typeof categoryOrCustom === 'object' && categoryOrCustom.message) {
-				newAlert = { message: categoryOrCustom.message, type: categoryOrCustom.type || 'info' };
-			} else {
-				console.error('❌ Invalid alert parameters passed to showAlert.');
-				return;
-			}
+		// Scenario A: Using a pre-defined message from Constants.js
+		// usage: showAlert('login', 'success')
+		if (typeof categoryOrCustom === 'string' && type) {
+			const messages = AlertMessages as Record<string, Record<string, AlertItem> | undefined>;
+			newAlert = messages[categoryOrCustom]?.[type] || { message: 'Unknown alert', type: 'info' };
+		}
+		// Scenario B: Passing a custom message object
+		// usage: showAlert({ message: 'Hello World', type: 'success' })
+		else if (typeof categoryOrCustom === 'object' && categoryOrCustom.message) {
+			newAlert = { message: categoryOrCustom.message, type: (categoryOrCustom.type || 'info') as AlertItem['type'] };
+		} else {
+			console.error('❌ Invalid alert parameters passed to showAlert.');
+			return;
+		}
 
-			setAlertQueue((prevQueue) => {
-				// Deduplicate: Don't stack the exact same message twice in a row
-				const lastAlert = prevQueue.at(-1) || currentAlert;
-				if (lastAlert && lastAlert.message === newAlert.message && lastAlert.type === newAlert.type) {
-					return prevQueue;
-				}
-				return [...prevQueue, newAlert];
-			});
-		},
-		[currentAlert]
-	);
+		setAlertQueue((prevQueue) => {
+			// Deduplicate: Don't stack the exact same message twice in a row
+			const lastAlert = prevQueue[prevQueue.length - 1] || currentAlertRef.current;
+			if (lastAlert && lastAlert.message === newAlert.message && lastAlert.type === newAlert.type) {
+				return prevQueue;
+			}
+			return [...prevQueue, newAlert];
+		});
+	}, []);
 
 	// --- Queue Processor ---
 	// Watches the queue and moves the next item to 'currentAlert' when ready
@@ -107,17 +121,17 @@ export const AlertProvider = ({ children }) => {
 	/**
 	 * Standardized Error Handler.
 	 * Parses the error, displays a user-friendly message, and logs it to Firestore.
-	 * @param {Error} error - The caught error object.
-	 * @param {string} context - Where this error occurred (e.g. 'login-form').
-	 * @param {boolean} [show] - Force show the alert (defaults to true in prod, false in dev to reduce noise).
+	 * @param error - The caught error object.
+	 * @param context - Where this error occurred (e.g. 'login-form').
+	 * @param show - Force show the alert (defaults to true in prod, false in dev to reduce noise).
 	 */
 	const handleError = useCallback(
-		(error, context = 'general', show = null) => {
+		(error: unknown, context = 'general', show: boolean | null = null) => {
 			// Default: Show alerts in production, but let devs see console in dev
 			const shouldShow = show === null ? true : show; // Force true for better UX in both envs usually
 
-			const errorCode = error?.code || '';
-			const userFriendlyMessage = firebaseErrorMessages[errorCode] || error?.message || 'An unexpected error occurred.';
+			const errorCode = (error as { code?: string })?.code || '';
+			const userFriendlyMessage = firebaseErrorMessages[errorCode] || (error as { message?: string })?.message || 'An unexpected error occurred.';
 
 			if (shouldShow) {
 				showAlert({ message: userFriendlyMessage, type: 'error' });
@@ -132,7 +146,7 @@ export const AlertProvider = ({ children }) => {
 		[showAlert]
 	);
 
-	const contextValue = useMemo(() => ({ showAnnouncement, showAlert, handleError }), [showAnnouncement, showAlert, handleError]);
+	const contextValue = useMemo<AlertContextValue>(() => ({ showAnnouncement, showAlert, handleError }), [showAnnouncement, showAlert, handleError]);
 
 	return (
 		<AlertContext.Provider value={contextValue}>
@@ -140,7 +154,7 @@ export const AlertProvider = ({ children }) => {
 
 			{/* Global Snackbar Component */}
 			{currentAlert && (
-				<Snackbar open={Boolean(currentAlert)} autoHideDuration={5000} onClose={closeAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }} TransitionComponent={Slide}>
+				<Snackbar open={Boolean(currentAlert)} autoHideDuration={5000} onClose={closeAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }} slots={{ transition: Slide }}>
 					<Alert
 						onClose={closeAlert}
 						severity={currentAlert.type}
@@ -161,12 +175,14 @@ export const AlertProvider = ({ children }) => {
 	);
 };
 
-AlertProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 /**
  * Hook to access the Alert Context.
  * Usage: const { showAlert } = useAlert();
  */
-export const useAlert = () => useContext(AlertContext);
+export const useAlert = (): AlertContextValue => {
+	const context = useContext(AlertContext);
+	if (context === undefined) {
+		throw new Error('useAlert must be used within an AlertProvider');
+	}
+	return context;
+};

@@ -11,6 +11,41 @@ dayjs.extend(timezone);
 dayjs.extend(utc);
 
 const { brand, configKeys, templates, collections } = require('./config');
+const { maybeSimulateEmail } = require('./emailDelivery');
+
+const coerceCycleYear = (windowOrYear) => {
+	if (typeof windowOrYear === 'number' && Number.isFinite(windowOrYear)) return windowOrYear;
+	if (typeof windowOrYear === 'string' && /^\d{4}$/.test(windowOrYear.trim())) {
+		return Number(windowOrYear.trim());
+	}
+	if (windowOrYear != null && windowOrYear !== '') {
+		const year = new Date(String(windowOrYear)).getFullYear();
+		return Number.isNaN(year) ? null : year;
+	}
+	return null;
+};
+
+const resolveApplicationCycleYear = (app) => {
+	if (typeof app?.cycleYear === 'number' && !Number.isNaN(app.cycleYear)) return app.cycleYear;
+	if (typeof app?.cycleYear === 'string' && /^\d{4}$/.test(app.cycleYear.trim())) {
+		return Number(app.cycleYear.trim());
+	}
+	if (app?.window) {
+		const year = new Date(String(app.window)).getFullYear();
+		return Number.isNaN(year) ? null : year;
+	}
+	return null;
+};
+
+const siteConfigCycleYear = (config) => {
+	if (typeof config?.CYCLE_YEAR === 'number' && Number.isFinite(config.CYCLE_YEAR)) return config.CYCLE_YEAR;
+	if (typeof config?.CYCLE_YEAR === 'string' && /^\d{4}$/.test(String(config.CYCLE_YEAR).trim())) {
+		return Number(String(config.CYCLE_YEAR).trim());
+	}
+	const deadline = config?.APPLICATION_DEADLINE;
+	if (deadline?.toDate) return deadline.toDate().getFullYear();
+	return deadline ? new Date(deadline).getFullYear() : new Date().getFullYear();
+};
 
 // ==================================================================
 //  CONFIGURATION & SEARCH UTILITIES
@@ -25,14 +60,27 @@ const getConfigFromDb = async () => {
 	const configDoc = await db.collection(collections.siteConfig).doc(configKeys.configVersionId).get();
 
 	if (configDoc.exists) {
-		return configDoc.data();
+		return {
+			emailDeliveryMode: 'demo',
+			OWNER_LEAD_EMAIL: brand.systemEmail,
+			OWNER_LEAD_CC: '',
+			SYSTEM_EMAIL: `"${brand.organizationShortName}" <${brand.systemEmail}>`,
+			SYSTEM_REPLY_TO: `"${brand.organizationShortName}" <${brand.systemEmail}>`,
+			SYSTEM_CC_EMAILS: [],
+			videoBudget: { mode: 'off', monthlyBaseMinutes: 10000 },
+			...configDoc.data(),
+		};
 	}
 
 	console.error('Site configuration not found! Using defaults.');
 	return {
+		emailDeliveryMode: 'demo',
+		OWNER_LEAD_EMAIL: brand.systemEmail,
+		OWNER_LEAD_CC: '',
 		SYSTEM_EMAIL: `"${brand.organizationShortName}" <${brand.systemEmail}>`,
 		SYSTEM_REPLY_TO: `"${brand.organizationShortName}" <${brand.systemEmail}>`,
 		SYSTEM_CC_EMAILS: [],
+		videoBudget: { mode: 'off', monthlyBaseMinutes: 10000 },
 	};
 };
 
@@ -180,21 +228,25 @@ const sendSingleInvitationHelper = async (interviewId, db, config) => {
 
 	const icsUrl = await uploadICSFile(interviewId, icsContent);
 
-	// Build Email
-	const emailData = {
-		to: `${applicant.firstName} ${applicant.lastName} <${applicant.email}>`,
-		from: config.SYSTEM_EMAIL,
-		replyTo: config.SYSTEM_REPLY_TO,
-		cc: config.SYSTEM_CC_EMAILS,
-		message: templates.interviewInvitation(brand, {
-			waitingRoomURL,
-			icsDownloadLink: icsUrl,
-			name: applicant.firstName,
-			interviewDate: new Date(start).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
-			interviewTime: new Date(start).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }),
-			interviewId,
-		}),
-	};
+	// Build Email (simulated in demo mode so Trigger Email does not deliver)
+	const emailData = maybeSimulateEmail(
+		{
+			to: `${applicant.firstName} ${applicant.lastName} <${applicant.email}>`,
+			from: config.SYSTEM_EMAIL,
+			replyTo: config.SYSTEM_REPLY_TO,
+			cc: config.SYSTEM_CC_EMAILS,
+			message: templates.interviewInvitation(brand, {
+				waitingRoomURL,
+				icsDownloadLink: icsUrl,
+				name: applicant.firstName,
+				interviewDate: new Date(start).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+				interviewTime: new Date(start).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }),
+				interviewId,
+			}),
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+		},
+		config
+	);
 
 	// Queue Email & Update Status
 	await db.collection(collections.emails).add(emailData);
@@ -210,4 +262,7 @@ module.exports = {
 	generateICSFile,
 	uploadICSFile,
 	sendSingleInvitationHelper,
+	resolveApplicationCycleYear,
+	siteConfigCycleYear,
+	coerceCycleYear,
 };

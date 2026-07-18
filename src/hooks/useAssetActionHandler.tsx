@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ASSET ACTION CONTROLLER HOOK
  * ---------------------------------------------------------------------------
@@ -24,8 +23,30 @@ import { useDialog } from '../context/DialogContext';
 import { useAlert } from '../context/AlertContext';
 import { changeUserEmail } from '../config/data/firebase';
 
+interface NavTo {
+	path: string;
+	params: Record<string, string | number | undefined>;
+}
+
+export interface AssetAction {
+	navTo?: (asset: AssetRecord) => NavTo;
+	onClick?: () => void;
+	dialogId?: string;
+	[key: string]: unknown;
+}
+
+export interface AssetRecord {
+	id: string;
+	[key: string]: unknown;
+}
+
+interface DialogResult {
+	newEmail?: string;
+	[key: string]: unknown;
+}
+
 /**
- * @param {string} errorContext - The logging context tag if an error occurs.
+ * @param errorContext - The logging context tag if an error occurs.
  */
 export const useAssetActionHandler = (errorContext = 'updateLoginEmail') => {
 	const navigate = useNavigate();
@@ -34,13 +55,10 @@ export const useAssetActionHandler = (errorContext = 'updateLoginEmail') => {
 
 	/**
 	 * Executes the requested action on the target asset.
-	 * @param {object} action - The action configuration object.
-	 * @param {function} [action.navTo] - Returns { path, params } for routing.
-	 * @param {function} [action.onClick] - Direct function to execute.
-	 * @param {string} [action.dialogId] - ID of a dialog to open (e.g. 'changeLoginEmail').
-	 * @param {object} asset - The data object (User, Application) being acted upon.
+	 * @param action - The action configuration object ({ navTo, onClick, dialogId }).
+	 * @param asset - The data object (User, Application) being acted upon.
 	 */
-	const handleAction = async (action, asset) => {
+	const handleAction = async (action: AssetAction, asset: AssetRecord): Promise<void> => {
 		// --- 1. Navigation Actions ---
 		if (action.navTo) {
 			const { path, params } = action.navTo(asset);
@@ -62,10 +80,11 @@ export const useAssetActionHandler = (errorContext = 'updateLoginEmail') => {
 		if (dialogId === 'changeLoginEmail') {
 			showDialog({
 				id: 'changeLoginEmail',
-				callback: async (result) => {
-					if (result?.newEmail) {
+				callback: async (result: unknown) => {
+					const dialogResult = result as DialogResult | null;
+					if (dialogResult?.newEmail) {
 						try {
-							await changeUserEmail({ uid: asset.id, newEmail: result.newEmail.trim() });
+							await changeUserEmail({ uid: asset.id, newEmail: dialogResult.newEmail.trim() });
 							showAlert({ message: 'Login email updated successfully!', type: 'success' });
 						} catch (error) {
 							handleError(error, errorContext);

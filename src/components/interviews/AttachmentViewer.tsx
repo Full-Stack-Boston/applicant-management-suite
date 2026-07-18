@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Attachment Viewer
  * Fetches and displays documents associated with an application.
@@ -10,7 +9,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { Box, Typography, CircularProgress, Alert } from '@mui/material';
 
 // Firebase
@@ -21,7 +19,12 @@ import { collections } from '../../config/data/collections';
 // Utils
 import { convertPDFBlobToImages, createBlobUrl } from '../../config/Constants';
 
-const PDFPreview = ({ displayName, pages }) => (
+interface PDFPreviewProps {
+	displayName: string;
+	pages: string[];
+}
+
+const PDFPreview = ({ displayName, pages }: PDFPreviewProps) => (
 	<Box sx={{ mb: 4 }}>
 		<Typography variant='h6' gutterBottom>
 			{displayName}
@@ -44,15 +47,29 @@ const PDFPreview = ({ displayName, pages }) => (
 	</Box>
 );
 
-PDFPreview.propTypes = {
-	displayName: PropTypes.string.isRequired,
-	pages: PropTypes.arrayOf(PropTypes.string).isRequired,
-};
+interface AttachmentMeta {
+	refLoc?: string;
+	displayName?: string;
+	[key: string]: unknown;
+}
 
-export default function AttachmentViewer({ application }) {
-	const [previews, setPreviews] = useState(null);
+interface PreviewEntry {
+	displayName: string;
+	pages: string[];
+}
+
+interface AttachmentViewerProps {
+	application: {
+		attachments?: string;
+		completedBy?: string;
+		[key: string]: unknown;
+	};
+}
+
+export default function AttachmentViewer({ application }: AttachmentViewerProps) {
+	const [previews, setPreviews] = useState<Record<string, PreviewEntry> | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
-	const [error, setError] = useState(null);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -65,14 +82,14 @@ export default function AttachmentViewer({ application }) {
 
 			try {
 				// Fetch attachment metadata from Firestore
-				const attachmentsData = await getCollectionData(application.completedBy, collections.attachments, application.attachments);
+				const attachmentsData = (await getCollectionData(application.completedBy, collections.attachments, application.attachments)) as Record<string, AttachmentMeta> | null;
 
 				if (!attachmentsData || Object.keys(attachmentsData).length === 0) {
 					if (isMounted) setPreviews({});
 					return;
 				}
 
-				const fetchedPreviews = {};
+				const fetchedPreviews: Record<string, PreviewEntry> = {};
 
 				// Process files in parallel
 				await Promise.all(
@@ -81,7 +98,7 @@ export default function AttachmentViewer({ application }) {
 
 						try {
 							const blob = await getBlob(ref(storage, meta.refLoc));
-							let pages = [];
+							let pages: string[] = [];
 
 							// Handle PDFs vs Images
 							if (meta.displayName?.toLowerCase().endsWith('.pdf')) {
@@ -96,7 +113,7 @@ export default function AttachmentViewer({ application }) {
 								pages,
 							};
 						} catch (err) {
-							console.error(`Failed to process attachment ${key}:`, err.message);
+							console.error(`Failed to process attachment ${key}:`, (err as Error).message);
 						}
 					})
 				);
@@ -146,7 +163,3 @@ export default function AttachmentViewer({ application }) {
 		</Box>
 	);
 }
-
-AttachmentViewer.propTypes = {
-	application: PropTypes.object.isRequired,
-};

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SIDEBAR NAVIGATION CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -20,6 +19,8 @@
  */
 
 import React, { useMemo } from 'react';
+import type { ReactNode } from 'react';
+import type { MemberPermissions } from '../../types/domain';
 import { Inbox as InboxIcon, DashboardOutlined as DashboardIcon, ListAltOutlined as ApplicationIcon, VideoCameraFrontOutlined as InterviewIcon, Groups2Outlined as MembersIcon, StackedBarChartOutlined as FinancesIcon, FiberNewOutlined as NewIcon, KeyboardReturnOutlined as ReturningIcon, SchoolOutlined as SchoolIcon, Inventory2Outlined as InventoryIcon, ArchiveOutlined as ArchiveIcon, SettingsOutlined as SettingsIcon, AssignmentLateOutlined as IncompleteStatusIcon, AssignmentTurnedInOutlined as GoodStatusIcon, AssignmentReturnOutlined as RejectedStatusIcon, AssignmentOutlined as NeutralStatusIcon, ForwardToInboxOutlined as ContactCenterIcon, MailOutlined as RequestIcon, EventAvailable as EventIcon } from '@mui/icons-material';
 
 // Context & Config
@@ -27,12 +28,36 @@ import { useAuth } from '../../context/AuthContext';
 import { generatePath } from './routeUtils';
 import { paths } from './paths';
 
+interface SidebarPage {
+	icon: ReactNode;
+	link: string;
+	text: string;
+	requiredPermissions: string[];
+}
+
+interface SidebarSection {
+	title: string;
+	pages: SidebarPage[];
+}
+
+interface ProcessedPage {
+	icon: ReactNode;
+	link: string;
+	text: string;
+	disable: boolean | undefined;
+}
+
+interface ProcessedSection {
+	title: string;
+	pages: ProcessedPage[];
+}
+
 // Dynamic year for generating history links (e.g. "2023 Applications")
-const currYear = new Date().getFullYear();
+const currYear: number = new Date().getFullYear();
 
 // --- Sidebar Structure ---
 
-const sidebarTemplate = [
+const sidebarTemplate: SidebarSection[] = [
 	{
 		title: 'MAIN',
 		pages: [
@@ -55,7 +80,7 @@ const sidebarTemplate = [
 			},
 			{
 				icon: <ApplicationIcon className='icon' />,
-				link: generatePath(paths.allApps),
+				link: generatePath(paths.allAppsInYear, { year: currYear }),
 				text: 'Applications',
 				requiredPermissions: ['admin', 'applications'],
 			},
@@ -161,9 +186,9 @@ const sidebarTemplate = [
  * Checks if a user object has a specific permission.
  * Supports nested keys (e.g. 'interviews.canAccess').
  */
-const hasPermission = (permissions, permPath) => {
+const hasPermission = (permissions: MemberPermissions, permPath: string): unknown => {
 	if (!permissions) return false;
-	return permPath.split('.').reduce((acc, part) => (acc ? acc[part] : undefined), permissions);
+	return permPath.split('.').reduce<unknown>((acc, part) => (acc ? (acc as Record<string, unknown>)[part] : undefined), permissions);
 };
 
 /**
@@ -172,9 +197,9 @@ const hasPermission = (permissions, permPath) => {
  * 1. If user has global 'admin' permission -> Enabled.
  * 2. If not admin, check if user has ANY of the required permissions.
  */
-const processPagePermissions = (page, permissions) => {
+const processPagePermissions = (page: SidebarPage, permissions: MemberPermissions): ProcessedPage => {
 	const { requiredPermissions, ...restOfPage } = page;
-	let isDisabled;
+	let isDisabled: boolean | undefined;
 
 	if (requiredPermissions) {
 		const hasAdminPerm = hasPermission(permissions, 'admin');
@@ -199,11 +224,11 @@ const processPagePermissions = (page, permissions) => {
  * Custom Hook that returns the computed Sidebar menu.
  * Re-calculates whenever the logged-in 'member' object changes.
  */
-export const useSidebarMenu = () => {
+export const useSidebarMenu = (): ProcessedSection[] => {
 	const { member } = useAuth();
 
-	return useMemo(() => {
-		const permissions = member?.permissions || {};
+	return useMemo((): ProcessedSection[] => {
+		const permissions: MemberPermissions = member?.permissions || {};
 		return sidebarTemplate.map((section) => ({
 			...section,
 			pages: section.pages.map((page) => processPagePermissions(page, permissions)),

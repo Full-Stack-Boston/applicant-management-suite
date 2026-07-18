@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Visually Hidden Input
  * A styled component used to hide native input elements (like type="file")

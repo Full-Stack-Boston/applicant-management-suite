@@ -45,27 +45,32 @@ async function main() {
 	let namesChanged = 0;
 	let gradesChanged = 0;
 
+	const processList = (list) => {
+		let localNames = 0;
+		let localGrades = 0;
+		for (const item of list || []) {
+			const newName = stripParentheticals(item.recipient_name);
+			if (item.recipient_name !== newName) {
+				item.recipient_name = newName;
+				localNames++;
+			}
+
+			const newGrade = cleanGrade(stripParentheticals(item.grade));
+			if (item.grade !== newGrade) {
+				item.grade = newGrade;
+				localGrades++;
+			}
+		}
+		return { localNames, localGrades };
+	};
+
 	for (const yearObj of allData) {
 		if (!yearObj) continue;
 
-		const processList = (list) => {
-			for (const item of list || []) {
-				const newName = stripParentheticals(item.scout_name);
-				if (item.scout_name !== newName) {
-					item.scout_name = newName;
-					namesChanged++;
-				}
-
-				const newGrade = cleanGrade(stripParentheticals(item.grade));
-				if (item.grade !== newGrade) {
-					item.grade = newGrade;
-					gradesChanged++;
-				}
-			}
-		};
-
-		processList(yearObj.renewable_scholarships);
-		processList(yearObj.non_renewable_grants);
+		const renewable = processList(yearObj.renewable_scholarships);
+		const grants = processList(yearObj.non_renewable_grants);
+		namesChanged += renewable.localNames + grants.localNames;
+		gradesChanged += renewable.localGrades + grants.localGrades;
 	}
 
 	console.log(`Summary: Cleaned ${namesChanged} names and ${gradesChanged} grades.`);

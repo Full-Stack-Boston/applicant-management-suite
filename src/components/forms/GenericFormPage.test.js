@@ -1,7 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import GenericFormPage from './GenericFormPage';
-import { useAlert } from '../../context/AlertContext';
 import * as FirebaseService from '../../config/data/firebase';
 import { UploadType } from '../../config/data/collections';
 
@@ -261,7 +260,7 @@ describe('GenericFormPage Component', () => {
 		test('renders array form and list', () => {
 			render(<GenericFormPage sectionName='history' {...baseProps} />);
 			expect(screen.getByText('Jobs')).toBeInTheDocument();
-			expect(screen.getByText('No items have been added yet.')).toBeInTheDocument();
+			expect(screen.getByText('Nothing added yet')).toBeInTheDocument();
 		});
 
 		test('handles adding a valid array item', () => {
@@ -307,33 +306,12 @@ describe('GenericFormPage Component', () => {
 			};
 			render(<GenericFormPage sectionName='history' {...props} />);
 
-			// We render two items, so we expect to see their titles
 			expect(screen.getByText('Old Job')).toBeInTheDocument();
 			expect(screen.getByText('New Job')).toBeInTheDocument();
 
-			// Locate the delete button for the first item.
-			// Material UI icons are usually SVGs. We can look for buttons that are NOT "Add" or file triggers.
-			const buttons = screen.getAllByRole('button');
-			// Filter out "Add" button and our mock buttons (if they rendered, but list items are in Cards)
-			// The List renders IconButton -> DeleteForeverIcon.
-			// The simplest way in testing-library without test-ids on the icon button is finding by exclusion or structure.
+			const deleteButtons = screen.getAllByLabelText('Remove item');
+			fireEvent.click(deleteButtons[0]);
 
-			// Assuming the first button in the list items is the delete button for "Old Job".
-			// The "Add" button is rendered AFTER the list if layout isn't 'right'.
-			// Actually, looking at code: Form is rendered, then button "Add", THEN list is rendered below or side.
-			// If we blindly click the button corresponding to "Old Job" removal...
-
-			// Let's assume the last button rendered is "Add"? No, "Add" is in the form.
-			// Let's use the fact that we have 2 items.
-			// We can traverse from the text "Old Job".
-			const itemTitle = screen.getByText('Old Job');
-			// The structure is Card -> [Box, IconButton]
-			const card = itemTitle.closest('.MuiPaper-root');
-			const deleteBtn = card.querySelector('button');
-
-			fireEvent.click(deleteBtn);
-
-			// Expect setApplication to be called with the array filtered
 			expect(mockSetApplication).toHaveBeenCalledWith(
 				expect.objectContaining({
 					history: expect.objectContaining({
@@ -341,8 +319,7 @@ describe('GenericFormPage Component', () => {
 					}),
 				})
 			);
-		});
-	});
+		});	});
 
 	// --- 4. VALIDATION LOGIC ---
 	describe('Validation Hooks', () => {

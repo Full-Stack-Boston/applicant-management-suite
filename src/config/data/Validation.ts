@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VALIDATION HELPERS & DATA MODELS
  * ---------------------------------------------------------------------------
@@ -10,6 +9,25 @@
 
 import { v4 as uuid } from 'uuid';
 import { ApplicationStatus, ApplicationType } from './collections';
+import type {
+	ApplicationStub,
+	ApplicationTemplate,
+	ApplicationTemplateShort,
+	AttachmentRequest,
+	AttachmentSlot,
+	AttachmentsForm,
+	AttachmentsFormShort,
+	AwardForm,
+	ContributionsForm,
+	EducationForm,
+	ExperienceForm,
+	ExpensesForm,
+	FamilyForm,
+	IncomesForm,
+	ProfileForm,
+	ProjectionsForm,
+} from '../../types/forms';
+import type { Applicant } from '../../types/domain';
 
 // =============================================================================
 //  1. INPUT VALIDATORS (RegEx Helpers)
@@ -18,49 +36,49 @@ import { ApplicationStatus, ApplicationType } from './collections';
 /**
  * Checks if value contains only letters (no spaces or numbers).
  */
-export function lettersOnly(value) {
+export function lettersOnly(value: string): boolean {
 	return /^[a-zA-Z]*$/.test(value);
 }
 
 /**
  * Checks if value contains only letters and spaces (e.g. "New York").
  */
-export function lettersAndSpacesOnly(value) {
+export function lettersAndSpacesOnly(value: string): boolean {
 	return /^[a-zA-Z\s]*$/.test(value);
 }
 
 /**
  * Checks if value contains only digits.
  */
-export function numbersOnly(value) {
+export function numbersOnly(value: string): boolean {
 	return /^\d*$/.test(value);
 }
 
 /**
  * Basic email format validation.
  */
-export function emailsOnly(value) {
+export function emailsOnly(value: string): boolean {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 /**
  * Checks for valid decimal numbers (money/GPA).
  */
-export function decimalsOnly(value) {
+export function decimalsOnly(value: string): boolean {
 	return /^\d*\.?\d*$/.test(value);
 }
 
 /**
  * Validates "City, State" format (e.g. "Boston, MA").
  */
-export function locationOnly(value) {
+export function locationOnly(value: string): boolean {
 	return /^[a-zA-Z]+(?:-[a-zA-Z]+)?,\s*[a-zA-Z]+(?:-[a-zA-Z]+)?$/.test(value);
 }
 
 /**
  * Generic check to ensure value is not null, undefined, or the string 'undefined'.
  */
-export function notUndefined(value) {
+export function notUndefined(value: unknown): boolean {
 	return value !== 'undefined' && value !== undefined && value !== null && value !== '';
 }
 
@@ -69,7 +87,7 @@ export function notUndefined(value) {
 // =============================================================================
 
 // --- Section 1: Personal Info ---
-export const blankProfile = {
+export const blankProfile: ProfileForm = {
 	applicantID: uuid(),
 	applicantFirstName: '',
 	applicantMiddleInitial: '',
@@ -83,14 +101,14 @@ export const blankProfile = {
 };
 
 // --- Section 2: Family ---
-export const blankFamily = {
+export const blankFamily: FamilyForm = {
 	familyID: uuid(),
 	familyMembers: [], // Array of objects
 	completedBy: '',
 };
 
 // --- Section 3: Education ---
-export const blankEducation = {
+export const blankEducation: EducationForm = {
 	educationRecordID: uuid(),
 	schoolName: '',
 	expectedGraduationDate: null,
@@ -100,8 +118,8 @@ export const blankEducation = {
 	completedBy: '',
 };
 
-// --- Section 4: Experience (formerly Scouting) ---
-export const blankExperience = {
+// --- Section 4: Experience ---
+export const blankExperience: ExperienceForm = {
 	experienceRecordID: uuid(),
 	positions: [],
 	activeMemberFlag: false,
@@ -110,7 +128,7 @@ export const blankExperience = {
 };
 
 // --- Section 5: Expenses ---
-export const blankExpenses = {
+export const blankExpenses: ExpensesForm = {
 	expensesID: uuid(),
 	tuitionCost: '',
 	roomAndBoardCost: '',
@@ -121,7 +139,7 @@ export const blankExpenses = {
 };
 
 // --- Section 6: Incomes ---
-export const blankIncomes = {
+export const blankIncomes: IncomesForm = {
 	incomesReportID: uuid(),
 	summerEarnings: '',
 	fallEarnings: '',
@@ -136,7 +154,7 @@ export const blankIncomes = {
 };
 
 // --- Section 7: Contributions ---
-export const blankContributions = {
+export const blankContributions: ContributionsForm = {
 	contributionsID: uuid(),
 	p1ExpectedAnnualIncome: '',
 	p2ExpectedAnnualIncome: '',
@@ -149,7 +167,7 @@ export const blankContributions = {
 };
 
 // --- Section 8: Projections ---
-export const blankProjections = {
+export const blankProjections: ProjectionsForm = {
 	projectionsID: uuid(),
 	applicantEarnings: '',
 	applicantSavings: '',
@@ -159,7 +177,7 @@ export const blankProjections = {
 };
 
 // --- Section 9: Attachments ---
-export const blankAttachment = {
+export const blankAttachment: AttachmentSlot = {
 	displayName: '',
 	home: '', // Download URL
 	refLoc: '', // Storage Path
@@ -167,12 +185,12 @@ export const blankAttachment = {
 	requestID: '', // If uploaded via external request
 };
 
-export const blankAttachments = {
+export const blankAttachments: AttachmentsForm = {
 	attachmentsID: uuid(),
 	applicantPersonalLetter: blankAttachment,
 	academicRecommendationLetter: blankAttachment,
-	religiousRecommendationLetter: blankAttachment,
-	serviceRecommendationLetter: blankAttachment,
+	communityRecommendationLetter: blankAttachment,
+	experienceRecommendationLetter: blankAttachment,
 	studentAidReport: blankAttachment,
 	academicTranscript: blankAttachment,
 	acceptanceLetter: blankAttachment,
@@ -180,7 +198,7 @@ export const blankAttachments = {
 };
 
 // Simplified attachment set for Returning/Scholarship applicants
-export const blankAttachments2 = {
+export const blankAttachments2: AttachmentsFormShort = {
 	attachmentsID: uuid(),
 	applicantPersonalLetter: blankAttachment,
 	academicTranscript: blankAttachment,
@@ -188,7 +206,7 @@ export const blankAttachments2 = {
 };
 
 // --- Awards ---
-export const blankAward = {
+export const blankAward: AwardForm = {
 	awardID: uuid(),
 	awardAmount: '',
 	applicantID: '',
@@ -208,7 +226,7 @@ export const blankAward = {
  * Full Template for a "New Applicant" (Standard Grant).
  * Pre-fills all sub-objects (Profile, Family, etc.) with UUIDs.
  */
-export const templateApp = {
+export const templateApp: ApplicationTemplate = {
 	id: uuid(),
 	profile: blankProfile,
 	family: blankFamily,
@@ -231,7 +249,7 @@ export const templateApp = {
  * Lightweight Template for "Scholarship Check-In".
  * Requires fewer sections (Profile, Education, Attachments only).
  */
-export const templateApp2 = {
+export const templateApp2: ApplicationTemplateShort = {
 	id: uuid(),
 	profile: blankProfile,
 	education: blankEducation,
@@ -248,7 +266,7 @@ export const templateApp2 = {
  * Skeleton Application (ID Structure Only).
  * Used when we just need the IDs to perform a cascading delete or fetch.
  */
-export const blankApp = {
+export const blankApp: ApplicationStub = {
 	id: uuid(),
 	profile: uuid(),
 	family: uuid(),
@@ -267,7 +285,7 @@ export const blankApp = {
 	window: '5/15/2024, 11:59:59 PM',
 };
 
-export const blankApp2 = {
+export const blankApp2: ApplicationStub = {
 	id: uuid(),
 	profile: uuid(),
 	education: uuid(),
@@ -284,7 +302,7 @@ export const blankApp2 = {
 //  4. EXTERNAL REQUESTS & USERS
 // =============================================================================
 
-export const blankRequest = {
+export const blankRequest: AttachmentRequest = {
 	id: uuid(),
 	applicationID: uuid(),
 	attachmentType: '',
@@ -299,7 +317,7 @@ export const blankRequest = {
 	relation: '',
 };
 
-export const blankApplicant = {
+export const blankApplicant: Applicant = {
 	id: uuid(),
 	firstName: '',
 	lastName: '',

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * FIREBASE SERVICE CONFIGURATION & DATA LAYER
  * ---------------------------------------------------------------------------
@@ -14,8 +13,34 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAnalytics } from 'firebase/analytics';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, updateDoc, getDocs, query, collection, where, getCountFromServer, or, and, orderBy, limit, onSnapshot, addDoc, arrayUnion, arrayRemove, deleteDoc, writeBatch, collectionGroup } from 'firebase/firestore';
+import { getAnalytics, isSupported as isAnalyticsSupported, type Analytics } from 'firebase/analytics';
+import {
+	initializeFirestore,
+	persistentLocalCache,
+	persistentMultipleTabManager,
+	doc,
+	getDoc,
+	setDoc,
+	updateDoc,
+	getDocs,
+	query,
+	collection,
+	where,
+	or,
+	and,
+	orderBy,
+	limit,
+	onSnapshot,
+	addDoc,
+	arrayUnion,
+	arrayRemove,
+	deleteDoc,
+	writeBatch,
+	collectionGroup,
+	serverTimestamp,
+	Timestamp,
+} from 'firebase/firestore';
+import type { DocumentData, DocumentReference, Firestore, QuerySnapshot, Unsubscribe, UpdateData, WriteBatch } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -25,6 +50,90 @@ import axios from 'axios';
 
 // Config Imports
 import { collections, ApplicationStatus, ApplicationType, InterviewStatus, applicationSpecificCollections, SearchableCollections } from './collections';
+import type { ApplicationStatusValue, ApplicationTypeValue, CollectionKey } from './collections';
+import type {
+	CollectionName,
+	InterviewRecord,
+	MeetingRecord,
+	PurgeUserRecordsParams,
+	RealtimeCallback,
+	SiteConfig,
+} from '../../types/firebase';
+
+type WipeCollectionsInput = { conn?: string } | Firestore | null | undefined;
+
+type InterviewICSInput = {
+	id: string;
+	data?: () => Record<string, unknown>;
+	startTime?: unknown;
+	endTime?: unknown;
+	title?: unknown;
+	description?: unknown;
+};
+
+type AttachmentRef = { refLoc?: string; [key: string]: unknown };
+
+type BatchDeleteResult = {
+	count: number;
+	applicationIds: string[];
+	filePromises: Promise<boolean>[];
+};
+
+type SearchCollectionInfo = {
+	collection: string;
+	fields: readonly string[];
+};
+
+export interface AwardTrendYear {
+	year: number;
+	New: number;
+	Returning: number;
+	Scholarship: number;
+}
+
+export interface DashboardBenchmarkData {
+	currentCounts: Record<ApplicationTypeValue, number>;
+	benchmarkTargets: Record<ApplicationTypeValue, number>;
+	awardTrends: AwardTrendYear[];
+}
+
+export type OutlookSectionId =
+	| 'brandNewAccounts'
+	| 'expectedNewApplications'
+	| 'lostInTheWeeds'
+	| 'expectedReturningGrants'
+	| 'expectedReturningScholarships';
+
+export type OutlookRowCycleStatus = 'none' | 'correct' | 'wrong';
+
+export interface DashboardApplicantOutlookRow {
+	applicantId: string;
+	name: string;
+	gradYear: string | null;
+	awardDisplay: string;
+	lastAwardType: string | null;
+	lastCycleYear: number | null;
+	cycleStatus: OutlookRowCycleStatus;
+}
+
+export interface DashboardApplicantOutlookSection {
+	id: OutlookSectionId;
+	title: string;
+	link: string;
+	expectedType: ApplicationTypeValue | null;
+	applicants: DashboardApplicantOutlookRow[];
+	isComplete: boolean;
+}
+
+export interface DashboardApplicantOutlook {
+	cycleYear: number;
+	sections: DashboardApplicantOutlookSection[];
+}
+
+const getErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const isFirestoreTimestampLike = (value: unknown): value is { toDate: () => Date } =>
+	typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function';
 
 // --- 1. Initialization & Configuration ---
 
@@ -41,7 +150,15 @@ let firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Service Exports
-export const analytics = getAnalytics(app);
+// Lazy Analytics: avoid init noise when GA isn't configured for this web app (common in local/demo).
+export let analytics: Analytics | null = null;
+if (typeof window !== 'undefined' && process.env.REACT_APP_ENABLE_ANALYTICS === 'true') {
+	isAnalyticsSupported()
+		.then((supported) => {
+			if (supported) analytics = getAnalytics(app);
+		})
+		.catch(() => {});
+}
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
@@ -62,6 +179,7 @@ const testDB = initializeFirestore(
 
 const environment = process.env.REACT_APP_environment;
 const useTestDB = environment !== 'production';
+const CONFIG_DOC_ID = process.env.REACT_APP_configKey ?? '';
 
 // Export the active database instance based on environment
 export const db = useTestDB ? testDB : prodDB;
@@ -71,13 +189,22 @@ export const db = useTestDB ? testDB : prodDB;
 
 // User Management
 export const changeUserEmail = httpsCallable(functions, 'changeUserEmail');
+export const submitPublicContact = httpsCallable(functions, 'submitPublicContact');
 export const getUserAuthRecord = httpsCallable(functions, 'getUserAuthRecord');
+export const getApplicantsByEmail = httpsCallable(functions, 'getApplicantsByEmail');
+export const getApplicantsForMerge = httpsCallable(functions, 'getApplicantsForMerge');
+export const mergeApplicantAccounts = httpsCallable(functions, 'mergeApplicantAccounts');
 
 // Maintenance & Backfill
 export const backfillLastUpdated = httpsCallable(functions, 'backfillLastUpdated');
 export const backfillSentEmailTags = httpsCallable(functions, 'backfillSentEmailTags');
 export const backfillSearchableTerms = httpsCallable(functions, 'backfillSearchableTerms');
 export const backfillEmailContent = httpsCallable(functions, 'backfillEmailContent');
+export const purgeDeletedApplications = httpsCallable(functions, 'purgeDeletedApplications');
+export const findUnownedRecords = httpsCallable(functions, 'findUnownedRecords');
+export const purgeUnownedRecords = httpsCallable(functions, 'purgeUnownedRecords');
+export const cleanupOrphanedStorage = httpsCallable(functions, 'cleanupOrphanedStorage');
+export const purgeLogs = httpsCallable(functions, 'purgeLogs');
 
 // Email & Communication
 export const sendZohoEmail = httpsCallable(functions, 'sendZohoEmail');
@@ -114,7 +241,7 @@ export const generateJoinToken = httpsCallable(functions, 'generateJoinToken');
  */
 export const sendToTestDB = async () => {
 	try {
-		for (const key in collections) {
+		for (const key of Object.keys(collections) as CollectionKey[]) {
 			const collectionName = collections[key];
 
 			const defaultCollectionRef = collection(prodDB, collectionName);
@@ -138,7 +265,7 @@ export const sendToTestDB = async () => {
 	}
 };
 
-const deleteAllDocsInCollection = async (collectionName, conn = testDB) => {
+const deleteAllDocsInCollection = async (collectionName: CollectionName, conn: Firestore = testDB) => {
 	const querySnapshot = await getDocs(collection(conn, collectionName));
 	const deletePromises = querySnapshot.docs.map((docSnapshot) => deleteDoc(doc(conn, collectionName, docSnapshot.id)));
 	await Promise.all(deletePromises);
@@ -146,7 +273,7 @@ const deleteAllDocsInCollection = async (collectionName, conn = testDB) => {
 	return true;
 };
 
-const clearApplicantsApplications = async (conn = testDB) => {
+const clearApplicantsApplications = async (conn: Firestore = testDB) => {
 	const querySnapshot = await getDocs(collection(conn, collections.applicants));
 	const updatePromises = querySnapshot.docs.map((docSnapshot) => updateDoc(doc(conn, collections.applicants, docSnapshot.id), { applications: [], awards: [] }));
 	await Promise.all(updatePromises);
@@ -157,20 +284,21 @@ const clearApplicantsApplications = async (conn = testDB) => {
  * Deletes all documents in specific collections.
  * Use with EXTREME caution.
  */
-export const wipeCollections = async (input) => {
-	let targetDB = testDB;
+export const wipeCollections = async (input: WipeCollectionsInput = null) => {
+	let targetDB: Firestore = testDB;
 
-	if (input && input.conn) {
+	if (input && typeof input === 'object' && 'conn' in input && input.conn) {
 		if (input.conn === '(default)') {
 			targetDB = prodDB;
 		} else if (input.conn === 'ams-test') {
 			targetDB = testDB;
 		}
-	} else if (input) {
-		targetDB = input;
+	} else if (input && typeof input === 'object' && !('conn' in input)) {
+		targetDB = input as Firestore;
 	}
 
-	console.log(`Wiping collection using database: ${input?.conn || 'direct-instance'}`);
+	const connLabel = input && typeof input === 'object' && 'conn' in input ? input.conn : 'direct-instance';
+	console.log(`Wiping collection using database: ${connLabel}`);
 
 	// Purposely omitted collections: collections.applicants, collections.members, collections.users, collections.siteConfig
 	const collectionNames = [collections.applications, collections.attachments, collections.contributions, collections.education, collections.emails, collections.expenses, collections.families, collections.incomes, collections.profiles, collections.projections, collections.requests, collections.experience, collections.sitelog, collections.sms, collections.awards, collections.dblog];
@@ -188,7 +316,137 @@ export const wipeCollections = async (input) => {
  * Logs user actions to the 'sitelog' collection for audit trails.
  * Captures IP, Browser, OS, and User ID.
  */
-export const logEvent = async (actionDescription = '', errorDetails = null) => {
+
+export const migrateEmailTemplates = async () => {
+	try {
+		const { emailTemplates } = await import('../content/emailTemplates');
+		for (const [key, templateData] of Object.entries(emailTemplates)) {
+			const newRef = doc(db, collections.emailTemplates, key);
+			await setDoc(newRef, { ...templateData, key, id: key, isSystem: true });
+		}
+		return { success: true };
+	} catch (error) {
+		logEvent('Error migrating email templates', error);
+		throw error;
+	}
+};
+
+export const migrateDeadlinesToCycleYear = async () => {
+	const results: {
+		applications: number;
+		awards: number;
+		interviews: number;
+		siteConfig: boolean;
+		errors: string[];
+	} = { applications: 0, awards: 0, interviews: 0, siteConfig: false, errors: [] };
+	const parseCycleYear = (val: unknown): number | null => {
+		if (typeof val === 'number') return val;
+		if (typeof val === 'string') {
+			const d = new Date(val);
+			return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+		}
+		if (isFirestoreTimestampLike(val)) return val.toDate().getFullYear();
+		return null;
+	};
+	const parseDeadlineDate = (val: unknown): Date | null => {
+		if (val instanceof Date) return val;
+		if (typeof val === 'string') {
+			const d = new Date(val);
+			return Number.isNaN(d.getTime()) ? null : d;
+		}
+		if (isFirestoreTimestampLike(val)) return val.toDate();
+		return null;
+	};
+	try {
+		const appsSnapshot = await getDocs(collection(db, collections.applications));
+		const batch = writeBatch(db);
+		let count = 0;
+		for (const docSnap of appsSnapshot.docs) {
+			const data = docSnap.data();
+			const update: UpdateData<DocumentData> = {};
+			if (data.cycleYear === undefined) {
+				const year = parseCycleYear(data.window);
+				if (year) update.cycleYear = year;
+			}
+			if (data.deadline === undefined || typeof data.deadline === 'string') {
+				const d = parseDeadlineDate(data.deadline ?? data.window);
+				if (d) update.deadline = d;
+			}
+			if (Object.keys(update).length > 0) {
+				batch.update(doc(db, collections.applications, docSnap.id), update);
+				results.applications++;
+				count++;
+			}
+		}
+		if (count > 0) await batch.commit();
+	} catch (e) {
+		results.errors.push(`Applications: ${getErrorMessage(e)}`);
+	}
+	try {
+		const config = await getConfigFromDb();
+		if (config?.CONFIG_ID && config.CYCLE_YEAR === undefined) {
+			const year = parseCycleYear(config.APPLICATION_DEADLINE);
+			if (year) {
+				await updateDoc(doc(db, collections.siteConfig, String(config.CONFIG_ID)), { CYCLE_YEAR: year });
+				results.siteConfig = true;
+			}
+		}
+	} catch (e) {
+		results.errors.push(`SiteConfig: ${getErrorMessage(e)}`);
+	}
+	return results;
+};
+
+export const backfillApplicantGradYears = async () => {
+	const results: { updated: number; skipped: number; errors: string[] } = { updated: 0, skipped: 0, errors: [] };
+	const normalize = (gradYear: unknown): number | null => {
+		if (typeof gradYear === 'number' && gradYear >= 1900 && gradYear <= 2100) return gradYear;
+		if (typeof gradYear === 'string' && /^\d{4}$/.test(gradYear.trim())) return Number(gradYear.trim());
+		if (typeof gradYear === 'string') {
+			const d = new Date(gradYear);
+			return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+		}
+		if (gradYear && typeof gradYear === 'object' && 'toDate' in gradYear && typeof (gradYear as { toDate?: unknown }).toDate === 'function') {
+			return (gradYear as { toDate: () => Date }).toDate().getFullYear();
+		}
+		return null;
+	};
+	try {
+		const snap = await getDocs(collection(db, collections.applicants));
+		const batch = writeBatch(db);
+		let count = 0;
+		for (const docSnap of snap.docs) {
+			const data = docSnap.data();
+			const next = normalize(data.gradYear);
+			if (next === null) {
+				results.skipped++;
+				continue;
+			}
+			if (data.gradYear === next) {
+				results.skipped++;
+				continue;
+			}
+			batch.update(doc(db, collections.applicants, docSnap.id), { gradYear: next });
+			results.updated++;
+			count++;
+		}
+		if (count > 0) await batch.commit();
+	} catch (e) {
+		results.errors.push(String(getErrorMessage(e)));
+	}
+	return results;
+};
+
+
+export const logEvent = async (actionDescription = '', errorDetails: unknown = null) => {
+	// sitelog rules require auth; skip quietly for anonymous visitors
+	if (!auth.currentUser) {
+		if (errorDetails !== null && process.env.REACT_APP_environment !== 'production') {
+			console.error(`Error!\nDescription: ${actionDescription}\nMessage: ${getErrorMessage(errorDetails)}\nError:`, errorDetails);
+		}
+		return;
+	}
+
 	try {
 		const ipResponse = await axios.get(`https://ipapi.co/json/`);
 		const locationData = ipResponse.data;
@@ -226,40 +484,43 @@ export const logEvent = async (actionDescription = '', errorDetails = null) => {
 		await addDoc(collection(db, collections.sitelog), cleanedLogData);
 
 		if (errorDetails !== null && process.env.REACT_APP_environment !== 'production') {
-			console.error(`Error!\nDescription: ${actionDescription}\nMessage: ${errorDetails.message}\nError:`, errorDetails);
+			console.error(`Error!\nDescription: ${actionDescription}\nMessage: ${getErrorMessage(errorDetails)}\nError:`, errorDetails);
 		}
 	} catch (error) {
-		console.error('Error logging user action:', error.message);
+		// Permission / network failures should not spam the console during normal browsing
+		if (process.env.REACT_APP_environment !== 'production') {
+			console.debug('Error logging user action:', getErrorMessage(error));
+		}
 	}
 };
 
 // --- 5. Configuration Fetchers ---
 
-export const getConfigFromDb = async () => {
+export const getConfigFromDb = async (): Promise<SiteConfig | null> => {
 	try {
-		const docRef = doc(db, collections.siteConfig, process.env.REACT_APP_configKey);
+		const docRef = doc(db, collections.siteConfig, CONFIG_DOC_ID);
 		const docSnap = await getDoc(docRef);
-		return docSnap.exists() ? docSnap.data() : null;
+		return docSnap.exists() ? (docSnap.data() as SiteConfig) : null;
 	} catch (error) {
 		logEvent('Error in getConfigFromDB', error);
 		return null;
 	}
 };
 
-export const getRealTimeConfigFromDb = (callback) => {
-	const docRef = doc(db, collections.siteConfig, process.env.REACT_APP_configKey);
+export const getRealTimeConfigFromDb = (callback: RealtimeCallback<SiteConfig | null>) => {
+	const docRef = doc(db, collections.siteConfig, CONFIG_DOC_ID);
 	const unsubscribe = onSnapshot(docRef, (snapshot) => {
-		snapshot.exists() ? callback(snapshot.data()) : callback(null);
+		snapshot.exists() ? callback(snapshot.data() as SiteConfig) : callback(null);
 	});
 	return unsubscribe;
 };
 
-export const updateUserPreferences = async (userId, collectionName, preferences) => {
+export const updateUserPreferences = async (userId: string, collectionName: CollectionName, preferences: Record<string, unknown>) => {
 	if (!userId || !collectionName) return;
 
 	try {
 		const userRef = doc(db, collectionName, userId);
-		const updateData = {};
+		const updateData: UpdateData<DocumentData> = {};
 		for (const [key, value] of Object.entries(preferences)) {
 			updateData[`preferences.${key}`] = value;
 		}
@@ -278,7 +539,7 @@ export const updateUserPreferences = async (userId, collectionName, preferences)
  * @param {string[]} ids - An array of document IDs to fetch.
  * @returns {Promise<object[]>} A promise that resolves to an array of document data.
  */
-export const getDocumentsByIDs = async (collectionName, ids) => {
+export const getDocumentsByIDs = async (collectionName: CollectionName, ids: string[]) => {
 	if (!Array.isArray(ids) || ids.length === 0) {
 		return [];
 	}
@@ -293,7 +554,7 @@ export const getDocumentsByIDs = async (collectionName, ids) => {
 	}
 };
 
-const searchSingleCollection = async (collectionInfo, termsArray, uniqueResults) => {
+const searchSingleCollection = async (collectionInfo: SearchCollectionInfo, termsArray: string[], uniqueResults: Map<string, DocumentData & { id: string; collection: string }>) => {
 	const { collection: collectionName, fields } = collectionInfo;
 	for (const term of termsArray) {
 		const lowerTerm = term.toLowerCase();
@@ -311,7 +572,7 @@ const searchSingleCollection = async (collectionInfo, termsArray, uniqueResults)
 	}
 };
 
-export const searchCollections = async (termsArray) => {
+export const searchCollections = async (termsArray: string[]) => {
 	if (!Array.isArray(termsArray) || termsArray.length === 0) {
 		throw new TypeError('Input must be a non-empty array of terms');
 	}
@@ -329,7 +590,7 @@ export const searchCollections = async (termsArray) => {
 
 // --- 7. User Profiles (Auth & DB) ---
 
-export const getApplicant = async (userID) => {
+export const getApplicant = async (userID: string) => {
 	try {
 		const docRef = doc(db, collections.applicants, userID);
 		const docSnap = await getDoc(docRef);
@@ -340,7 +601,7 @@ export const getApplicant = async (userID) => {
 	}
 };
 
-export const getMember = async (userID) => {
+export const getMember = async (userID: string) => {
 	try {
 		const docRef = doc(db, collections.members, userID);
 		const docSnap = await getDoc(docRef);
@@ -351,7 +612,7 @@ export const getMember = async (userID) => {
 	}
 };
 
-export const saveApplicantData = async (userID, data) => {
+export const saveApplicantData = async (userID: string, data: Record<string, unknown>) => {
 	try {
 		const newRef = doc(db, collections.applicants, userID);
 		await setDoc(newRef, data, { merge: true });
@@ -362,10 +623,10 @@ export const saveApplicantData = async (userID, data) => {
 	}
 };
 
-export const updateApplicantData = async (userID, data) => {
+export const updateApplicantData = async (userID: string, data: Record<string, unknown>) => {
 	try {
 		const newRef = doc(db, collections.applicants, userID);
-		await updateDoc(newRef, data);
+		await updateDoc(newRef, data as UpdateData<DocumentData>);
 		return true;
 	} catch (error) {
 		logEvent('Error in updateApplicantData', error);
@@ -373,7 +634,7 @@ export const updateApplicantData = async (userID, data) => {
 	}
 };
 
-export const addApplicationToApplicant = async (userID, applicationID) => {
+export const addApplicationToApplicant = async (userID: string, applicationID: string) => {
 	try {
 		const applicantRef = doc(db, collections.applicants, userID);
 		await updateDoc(applicantRef, { applications: arrayUnion(applicationID) });
@@ -384,7 +645,7 @@ export const addApplicationToApplicant = async (userID, applicationID) => {
 	}
 };
 
-export const removeApplicationFromApplicant = async (userId, applicationId) => {
+export const removeApplicationFromApplicant = async (userId: string, applicationId: string) => {
 	try {
 		const applicantRef = doc(db, collections.applicants, userId);
 		await updateDoc(applicantRef, { applications: arrayRemove(applicationId) });
@@ -395,7 +656,7 @@ export const removeApplicationFromApplicant = async (userId, applicationId) => {
 	}
 };
 
-export const getAuthUserByEmail = async (email) => {
+export const getAuthUserByEmail = async (email: string) => {
 	try {
 		const usersRef = collection(db, collections.users);
 		const q = query(usersRef, where('email', '==', email));
@@ -407,12 +668,36 @@ export const getAuthUserByEmail = async (email) => {
 	}
 };
 
+export const findApplicantAccountsByEmail = async (email: string, excludeId?: string) => {
+	const normalized = email.trim().toLowerCase();
+	if (!normalized) return [];
+
+	const queries =
+		normalized === email.trim()
+			? [query(collection(db, collections.applicants), where('email', '==', normalized))]
+			: [
+					query(collection(db, collections.applicants), where('email', '==', normalized)),
+					query(collection(db, collections.applicants), where('email', '==', email.trim())),
+				];
+
+	const matches = new Map<string, DocumentData & { id: string }>();
+	for (const q of queries) {
+		const snapshot = await getDocs(q);
+		for (const docSnap of snapshot.docs) {
+			if (excludeId && docSnap.id === excludeId) continue;
+			matches.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+		}
+	}
+
+	return [...matches.values()];
+};
+
 /**
  * Fetches both member and applicant profiles for a given user ID.
  * @param {string} uid - The user's ID.
  * @returns {object} An object containing member and applicant data if they exist.
  */
-export const getUserProfiles = async (uid) => {
+export const getUserProfiles = async (uid: string) => {
 	if (uid) {
 		try {
 			const memberRef = doc(db, collections.members, uid);
@@ -432,7 +717,7 @@ export const getUserProfiles = async (uid) => {
 	return null;
 };
 
-export const registerUser = async (email, password) => {
+export const registerUser = async (email: string, password: string) => {
 	try {
 		const user = await createUserWithEmailAndPassword(auth, email, password);
 		return user;
@@ -442,7 +727,7 @@ export const registerUser = async (email, password) => {
 	}
 };
 
-export const loginUser = async (email, password) => {
+export const loginUser = async (email: string, password: string) => {
 	try {
 		const user = await signInWithEmailAndPassword(auth, email, password);
 		return user;
@@ -467,7 +752,7 @@ export const getAllApplicantsSimple = async () => {
 	}));
 };
 
-export const getApplicationsForApplicant = async (applicantId) => {
+export const getApplicationsForApplicant = async (applicantId: string) => {
 	const appsRef = collection(db, collections.applications);
 	const q = query(appsRef, where('completedBy', '==', applicantId), where('status', 'in', ['Eligible', 'Completed']));
 	const snapshot = await getDocs(q);
@@ -476,7 +761,7 @@ export const getApplicationsForApplicant = async (applicantId) => {
 
 // --- 8. Applications (CRUD & Status) ---
 
-export const saveCollectionData = async (collectionName, dataID, data) => {
+export const saveCollectionData = async (collectionName: CollectionName, dataID: string, data: Record<string, unknown>) => {
 	try {
 		const newRef = doc(db, collectionName, dataID);
 		await setDoc(newRef, data, { merge: true });
@@ -487,10 +772,10 @@ export const saveCollectionData = async (collectionName, dataID, data) => {
 	}
 };
 
-export const updateCollectionData = async (collectionName, dataID, data) => {
+export const updateCollectionData = async (collectionName: CollectionName, dataID: string, data: Record<string, unknown>) => {
 	try {
 		const newRef = doc(db, collectionName, dataID);
-		await updateDoc(newRef, data, { merge: true });
+		await updateDoc(newRef, data as UpdateData<DocumentData>);
 		return true;
 	} catch (error) {
 		logEvent('updateCollectionData error', error);
@@ -498,7 +783,7 @@ export const updateCollectionData = async (collectionName, dataID, data) => {
 	}
 };
 
-export const updateApplicationStatus = async (userID, applicationID, newStatus) => {
+export const updateApplicationStatus = async (userID: string, applicationID: string, newStatus: string) => {
 	try {
 		await updateCollectionData(collections.applications, applicationID, { status: newStatus });
 		return true;
@@ -508,7 +793,7 @@ export const updateApplicationStatus = async (userID, applicationID, newStatus) 
 	}
 };
 
-export const getApplication = async (userID, applicationID) => {
+export const getApplication = async (userID: string, applicationID: string) => {
 	try {
 		if (applicationID) {
 			const docRef = doc(db, collections.applications, applicationID);
@@ -521,7 +806,7 @@ export const getApplication = async (userID, applicationID) => {
 	}
 };
 
-export const getCollection = async (collectionName) => {
+export const getCollection = async (collectionName: CollectionName) => {
 	try {
 		const collector = [];
 		const querySnapshot = await getDocs(collection(db, collectionName));
@@ -535,7 +820,7 @@ export const getCollection = async (collectionName) => {
 	}
 };
 
-export const getCollectionData = async (userID, collectionName, dataID) => {
+export const getCollectionData = async (userID: string, collectionName: CollectionName, dataID: string) => {
 	if (dataID) {
 		try {
 			const docRef = doc(db, collectionName, dataID);
@@ -548,7 +833,7 @@ export const getCollectionData = async (userID, collectionName, dataID) => {
 	}
 };
 
-export const deleteApplication = async (application) => {
+export const deleteApplication = async (application: { id: string }) => {
 	try {
 		const submissionRef = doc(db, collections.applications, application.id);
 		await updateDoc(submissionRef, {
@@ -562,7 +847,7 @@ export const deleteApplication = async (application) => {
 	}
 };
 
-export const updateSubmissionStatus = async (submissionID, status) => {
+export const updateSubmissionStatus = async (submissionID: string, status: string) => {
 	try {
 		const submissionRef = doc(db, collections.applications, submissionID);
 		await updateDoc(submissionRef, {
@@ -576,7 +861,7 @@ export const updateSubmissionStatus = async (submissionID, status) => {
 	}
 };
 
-const processSnapshotForBatchDelete = (snapshot, collectionName, batch, result) => {
+const processSnapshotForBatchDelete = (snapshot: QuerySnapshot<DocumentData>, collectionName: CollectionName, batch: WriteBatch, result: BatchDeleteResult) => {
 	if (snapshot.empty) {
 		return;
 	}
@@ -592,15 +877,16 @@ const processSnapshotForBatchDelete = (snapshot, collectionName, batch, result) 
 		if (collectionName === collections.attachments) {
 			const docData = docSnap.data();
 			for (const value of Object.values(docData)) {
-				if (value && typeof value === 'object' && value.refLoc) {
-					result.filePromises.push(deleteFile(value.refLoc));
+				const attachment = value as AttachmentRef;
+				if (attachment && typeof attachment === 'object' && attachment.refLoc) {
+					result.filePromises.push(deleteFile(attachment.refLoc));
 				}
 			}
 		}
 	}
 };
 
-const batchDeleteOwnedDocuments = async (userId, batch) => {
+const batchDeleteOwnedDocuments = async (userId: string, batch: WriteBatch) => {
 	const result = {
 		count: 0,
 		applicationIds: [],
@@ -616,7 +902,7 @@ const batchDeleteOwnedDocuments = async (userId, batch) => {
 	return result;
 };
 
-const batchDeleteRelatedRequests = async (applicationIds, batch) => {
+const batchDeleteRelatedRequests = async (applicationIds: string[], batch: WriteBatch) => {
 	if (!applicationIds || applicationIds.length === 0) {
 		return 0;
 	}
@@ -633,7 +919,7 @@ const batchDeleteRelatedRequests = async (applicationIds, batch) => {
 	return requestsSnapshot.size;
 };
 
-export const purgeUserRecords = async ({ userId, expel = false }) => {
+export const purgeUserRecords = async ({ userId, expel = false }: PurgeUserRecordsParams) => {
 	if (!userId) {
 		throw new Error('User ID is required to purge records.');
 	}
@@ -668,20 +954,21 @@ export const purgeUserRecords = async ({ userId, expel = false }) => {
 
 // --- 9. Real-Time Dashboard Listeners ---
 
-const getOrderBy = (orderByConfig) => {
+const getOrderBy = (orderByConfig: string | string[] | [string, string] | [string, string][] | null | undefined) => {
 	if (!orderByConfig || !Array.isArray(orderByConfig) || orderByConfig.length === 0) {
 		return [];
 	}
 	if (Array.isArray(orderByConfig[0])) {
-		return orderByConfig.map((config) => orderBy(config[0], config[1]));
+		return (orderByConfig as [string, string][]).map((config) => orderBy(config[0], config[1] as 'asc' | 'desc'));
 	}
-	return [orderBy(orderByConfig[0], orderByConfig[1])];
+	const single = orderByConfig as [string, string];
+	return [orderBy(single[0], single[1] as 'asc' | 'desc')];
 };
 
 /**
  * Fetches the legacy finances collection and maps the doc ID (year) to 'id'.
  */
-export const getRealTimeLegacyFinances = (handler, { collection: collectionName, orderBy: orderByConfig }) => {
+export const getRealTimeLegacyFinances = (handler: RealtimeCallback<DocumentData[]>, { collection: collectionName, orderBy: orderByConfig }: { collection: CollectionName; orderBy?: string | string[] | [string, string][] }) => {
 	if (typeof collectionName !== 'string' || collectionName.length === 0) {
 		console.error('getRealTimeLegacyFinances error: collectionName is not a valid string.', collectionName);
 		handler([]);
@@ -710,7 +997,7 @@ export const getRealTimeLegacyFinances = (handler, { collection: collectionName,
 	}
 };
 
-export const getRealTimeCollection = (collectionRef, callback) => {
+export const getRealTimeCollection = (collectionRef: CollectionName, callback: RealtimeCallback<DocumentData[]>) => {
 	const unsubscribe = onSnapshot(collection(db, collectionRef), (snapshot) => {
 		const fetchedData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 		callback(fetchedData);
@@ -719,13 +1006,73 @@ export const getRealTimeCollection = (collectionRef, callback) => {
 	return unsubscribe;
 };
 
-export const getPastApplicationsCountByWindow = async (window) => {
-	try {
-		const coll = collection(db, collections.applications);
-		const q = query(coll, and(where('window', '==', window), or(where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
 
-		const snapshot = await getCountFromServer(q);
-		return snapshot.data().count;
+/** Coerce a cycle year number, "2026", or deadline/window date string to a year. */
+export const coerceCycleYear = (windowOrYear: unknown): number | null => {
+	if (typeof windowOrYear === 'number' && Number.isFinite(windowOrYear)) return windowOrYear;
+	if (typeof windowOrYear === 'string' && /^\d{4}$/.test(windowOrYear.trim())) {
+		return Number(windowOrYear.trim());
+	}
+	if (windowOrYear != null && windowOrYear !== '') {
+		const year = new Date(String(windowOrYear)).getFullYear();
+		return Number.isNaN(year) ? null : year;
+	}
+	return null;
+};
+
+export const resolveApplicationCycleYear = (app: DocumentData): number | null => {
+	if (typeof app?.cycleYear === 'number' && !Number.isNaN(app.cycleYear)) return app.cycleYear;
+	if (typeof app?.cycleYear === 'string' && /^\d{4}$/.test(app.cycleYear.trim())) {
+		return Number(app.cycleYear.trim());
+	}
+	if (app?.window) {
+		const year = new Date(String(app.window)).getFullYear();
+		return Number.isNaN(year) ? null : year;
+	}
+	return null;
+};
+
+export const resolveInterviewCycleYear = (interview: DocumentData): number | null => {
+	if (typeof interview?.cycleYear === 'number' && !Number.isNaN(interview.cycleYear)) return interview.cycleYear;
+	if (typeof interview?.cycleYear === 'string' && /^\d{4}$/.test(interview.cycleYear.trim())) {
+		return Number(interview.cycleYear.trim());
+	}
+	const deadline = interview?.deadline ?? interview?.window;
+	if (deadline) {
+		const year = new Date(String(deadline)).getFullYear();
+		return Number.isNaN(year) ? null : year;
+	}
+	return null;
+};
+
+export const siteConfigCycleYear = (config: SiteConfig | null): number => {
+	if (typeof config?.CYCLE_YEAR === 'number' && Number.isFinite(config.CYCLE_YEAR)) return config.CYCLE_YEAR;
+	if (typeof config?.CYCLE_YEAR === 'string' && /^\d{4}$/.test(String(config.CYCLE_YEAR).trim())) {
+		return Number(String(config.CYCLE_YEAR).trim());
+	}
+	const deadline = config?.APPLICATION_DEADLINE;
+	return deadline ? new Date(String(deadline)).getFullYear() : new Date().getFullYear();
+};
+
+const COUNT_PIPELINE_STATUSES = new Set<string>([
+	ApplicationStatus.completed,
+	ApplicationStatus.eligible,
+	ApplicationStatus.invited,
+	ApplicationStatus.deferred,
+	ApplicationStatus.awarded,
+	ApplicationStatus.denied,
+]);
+
+export const getPastApplicationsCountByWindow = async (windowOrYear: unknown) => {
+	try {
+		const year = coerceCycleYear(windowOrYear);
+		if (year === null) return 0;
+		const snapshot = await getDocs(collection(db, collections.applications));
+		return snapshot.docs.reduce((acc, docSnap) => {
+			const data = docSnap.data();
+			if (resolveApplicationCycleYear(data) !== year) return acc;
+			return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+		}, 0);
 	} catch (error) {
 		logEvent('Error in getPastApplicationsCountByWindow', error);
 		return null;
@@ -735,27 +1082,23 @@ export const getPastApplicationsCountByWindow = async (window) => {
 export const getCurrentApplicationCount = async () => {
 	try {
 		const config = await getConfigFromDb();
-		const coll = collection(db, collections.applications);
-		const q = query(coll, where('window', '==', config.APPLICATION_DEADLINE));
-		const snapshot = await getCountFromServer(q);
-		return snapshot.data().count;
+		const year = siteConfigCycleYear(config);
+		const snapshot = await getDocs(collection(db, collections.applications));
+		return snapshot.docs.reduce((acc, docSnap) => (resolveApplicationCycleYear(docSnap.data()) === year ? acc + 1 : acc), 0);
 	} catch (error) {
 		logEvent('Error in getCurrentApplicationCount', error);
 		return null;
 	}
 };
 
-export const getRealTimeCurrentApplicationCount = async (callback) => {
+export const getRealTimeCurrentApplicationCount = async (callback: RealtimeCallback<number>) => {
 	try {
 		const config = await getConfigFromDb();
-		const coll = collection(db, collections.applications);
-		const q = query(coll, where('window', '==', config.APPLICATION_DEADLINE));
-		const unsubscribe = onSnapshot(q, (snapshot) => {
-			const count = snapshot.size;
+		const year = siteConfigCycleYear(config);
+		return onSnapshot(collection(db, collections.applications), (snapshot) => {
+			const count = snapshot.docs.reduce((acc, docSnap) => (resolveApplicationCycleYear(docSnap.data()) === year ? acc + 1 : acc), 0);
 			callback(count);
 		});
-
-		return unsubscribe;
 	} catch (error) {
 		logEvent('getRealTimeCurrentApplicationCount error', error);
 		return null;
@@ -765,11 +1108,13 @@ export const getRealTimeCurrentApplicationCount = async (callback) => {
 export const getCurrentlyEligibleApplicationsCount = async () => {
 	try {
 		const config = await getConfigFromDb();
-		const coll = collection(db, collections.applications);
-		const q = query(coll, and(where('window', '==', config.APPLICATION_DEADLINE), or(where('status', '==', ApplicationStatus.completed), where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
-
-		const snapshot = await getCountFromServer(q);
-		return snapshot.data().count;
+		const year = siteConfigCycleYear(config);
+		const snapshot = await getDocs(collection(db, collections.applications));
+		return snapshot.docs.reduce((acc, docSnap) => {
+			const data = docSnap.data();
+			if (resolveApplicationCycleYear(data) !== year) return acc;
+			return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+		}, 0);
 	} catch (error) {
 		logEvent('Error in getCurrentlyEligibleApplicationsCount', error);
 		return null;
@@ -789,7 +1134,7 @@ export const getMostRecentApplicationIDs = async (limitCount = 10) => {
 	}
 };
 
-export const getRealTimeMostRecentApplicationIDs = (callback, limitCount = 10) => {
+export const getRealTimeMostRecentApplicationIDs = (callback: RealtimeCallback<string[]>, limitCount = 10) => {
 	const coll = collection(db, collections.applications);
 	const q = query(coll, where('status', '!=', ApplicationStatus.deleted), orderBy('submittedOn', 'desc'), limit(limitCount));
 	const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -800,78 +1145,95 @@ export const getRealTimeMostRecentApplicationIDs = (callback, limitCount = 10) =
 };
 
 export const getApplicationsByYear = async () => {
-	const coll = collection(db, collections.applications);
-	const q = query(coll);
-	const snapshot = await getDocs(q);
+	const config = await getConfigFromDb();
+	const currentYear = siteConfigCycleYear(config);
+	const excludedStatuses = new Set<string>([ApplicationStatus.deleted, ApplicationStatus.ineligible, ApplicationStatus.deferred]);
+	const groupedData: Record<number, number> = {};
+	for (let year = currentYear - 3; year <= currentYear; year++) groupedData[year] = 0;
 
-	const groupedData = {};
-	for (const doc of snapshot.docs) {
-		const data = doc.data();
-		const year = new Date(data.window).getFullYear();
-		if (!groupedData[year]) {
-			groupedData[year] = 0;
+	try {
+		const snapshot = await getDocs(query(collection(db, collections.applications)));
+		for (const docSnap of snapshot.docs) {
+			const data = docSnap.data();
+			if (excludedStatuses.has(String(data.status))) continue;
+			const year = resolveApplicationCycleYear(data);
+			if (year === null || year < currentYear - 3 || year > currentYear) continue;
+			groupedData[year]++;
 		}
-		groupedData[year]++;
+	} catch (error) {
+		logEvent('Error in getApplicationsByYear', error);
 	}
 
-	return Object.keys(groupedData).map((year) => ({
-		year,
-		count: groupedData[year],
-	}));
+	return Object.keys(groupedData)
+		.sort((a, b) => Number(a) - Number(b))
+		.map((year) => ({ name: year, count: groupedData[Number(year)] }));
 };
 
-export const getCurrentlyEligibleApplicationsCountByType = async (type) => {
+export const getCurrentlyEligibleApplicationsCountByType = async (type: ApplicationTypeValue | ApplicationStatusValue) => {
 	try {
 		const config = await getConfigFromDb();
-		const coll = collection(db, collections.applications);
-		const q = query(coll, and(where('type', '==', type), where('window', '==', config.APPLICATION_DEADLINE), or(where('status', '==', ApplicationStatus.completed), where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
-		const snapshot = await getCountFromServer(q);
-		return snapshot.data().count;
+		const year = siteConfigCycleYear(config);
+		const q = query(collection(db, collections.applications), where('type', '==', type));
+		const snapshot = await getDocs(q);
+		return snapshot.docs.reduce((acc, docSnap) => {
+			const data = docSnap.data();
+			if (resolveApplicationCycleYear(data) !== year) return acc;
+			return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+		}, 0);
 	} catch (error) {
 		logEvent('getCurrentlyEligibleApplicationsCountByType error', error);
 		return null;
 	}
 };
 
-export const getRealTimeCurrentEligibleApplicationsCountByType = async (type, callback) => {
+export const getRealTimeCurrentEligibleApplicationsCountByType = async (type: ApplicationTypeValue | ApplicationStatusValue, callback: RealtimeCallback<number>) => {
 	try {
 		const config = await getConfigFromDb();
+		const year = siteConfigCycleYear(config);
 		const coll = collection(db, collections.applications);
 
 		let q;
-
-		if (Object.values(ApplicationType).includes(type)) {
-			q = query(coll, and(where('type', '==', type), where('window', '==', config.APPLICATION_DEADLINE), or(where('status', '==', ApplicationStatus.completed), where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
-		} else if (Object.values(ApplicationStatus).includes(type)) {
-			q = query(coll, and(where('window', '==', config.APPLICATION_DEADLINE), where('status', '==', type)));
+		if (Object.values(ApplicationType).includes(type as ApplicationTypeValue)) {
+			q = query(coll, where('type', '==', type));
+		} else if ((Object.values(ApplicationStatus) as string[]).includes(type)) {
+			q = query(coll, where('status', '==', type));
 		} else {
 			throw new Error(`Invalid type passed to getRealTimeCurrentEligibleApplicationsCountByType: ${type}`);
 		}
 
-		const unsubscribe = onSnapshot(q, (snapshot) => {
-			callback(snapshot.size);
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, docSnap) => {
+				const data = docSnap.data();
+				if (resolveApplicationCycleYear(data) !== year) return acc;
+				if ((Object.values(ApplicationStatus) as string[]).includes(type)) return acc + 1;
+				return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+			}, 0);
+			callback(count);
 		});
-
-		return unsubscribe;
 	} catch (error) {
 		logEvent('Error in getRealTimeCurrentEligibleApplicationsCountByType', error);
 		return null;
 	}
 };
 
-export const getEligibleApplicationsCountByTypeAndWindow = async (type, window) => {
+export const getEligibleApplicationsCountByTypeAndWindow = async (type: ApplicationTypeValue, windowOrYear: unknown) => {
 	try {
-		const coll = collection(db, collections.applications);
-		const q = query(coll, and(where('type', '==', type), where('window', '==', window), or(where('status', '==', ApplicationStatus.completed), where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
-		const snapshot = await getCountFromServer(q);
-		return snapshot.data().count;
+		const year = coerceCycleYear(windowOrYear);
+		if (year === null) return 0;
+		const q = query(collection(db, collections.applications), where('type', '==', type));
+		const snapshot = await getDocs(q);
+		return snapshot.docs.reduce((acc, docSnap) => {
+			const data = docSnap.data();
+			if (resolveApplicationCycleYear(data) !== year) return acc;
+			return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+		}, 0);
 	} catch (error) {
 		logEvent('Error in getEligibleApplicationsCountByTypeAndWindow', error);
 		return null;
 	}
 };
 
-export const getRealTimeApplicationCountByStatus = (status, callback) => {
+export const getRealTimeApplicationCountByStatus = (status: ApplicationStatusValue, callback: RealtimeCallback<number>) => {
 	try {
 		const coll = collection(db, collections.applications);
 		const q = query(coll, where('status', '==', status));
@@ -885,38 +1247,386 @@ export const getRealTimeApplicationCountByStatus = (status, callback) => {
 	}
 };
 
-export const getRealTimeEligibleApplicationsCountByTypeAndWindow = (type, window, callback) => {
+export const getRealTimeEligibleApplicationsCountByTypeAndWindow = (type: ApplicationTypeValue | ApplicationStatusValue, windowOrYear: unknown, callback: RealtimeCallback<number>) => {
 	try {
+		const year = coerceCycleYear(windowOrYear);
 		const coll = collection(db, collections.applications);
-		let q;
 
-		if (Object.values(ApplicationType).includes(type)) {
-			q = query(coll, and(where('type', '==', type), where('window', '==', window), or(where('status', '==', ApplicationStatus.completed), where('status', '==', ApplicationStatus.eligible), where('status', '==', ApplicationStatus.invited), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.awarded), where('status', '==', ApplicationStatus.denied))));
-		} else if (Object.values(ApplicationStatus).includes(type)) {
-			q = query(coll, and(where('window', '==', window), where('status', '==', type)));
+		let q;
+		if (Object.values(ApplicationType).includes(type as ApplicationTypeValue)) {
+			q = query(coll, where('type', '==', type));
+		} else if ((Object.values(ApplicationStatus) as string[]).includes(type)) {
+			q = query(coll, where('status', '==', type));
 		} else {
-			throw new Error(`Invalid type passed to getRealTimeCurrentEligibleApplicationsCountByType: ${type}`);
+			throw new Error(`Invalid type passed to getRealTimeEligibleApplicationsCountByTypeAndWindow: ${type}`);
 		}
 
-		const unsubscribe = onSnapshot(q, (snapshot) => {
-			callback(snapshot.size);
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, docSnap) => {
+				const data = docSnap.data();
+				if (year !== null && resolveApplicationCycleYear(data) !== year) return acc;
+				if ((Object.values(ApplicationStatus) as string[]).includes(type)) return acc + 1;
+				return COUNT_PIPELINE_STATUSES.has(String(data.status ?? '')) ? acc + 1 : acc;
+			}, 0);
+			callback(count);
 		});
-
-		return unsubscribe;
 	} catch (error) {
-		logEvent('Error in getRealTimeCurrentEligibleApplicationsCountByType', error);
+		logEvent('Error in getRealTimeEligibleApplicationsCountByTypeAndWindow', error);
 		return null;
 	}
 };
 
-export const getRealTimeApplications = (includeDeleted, callback) => {
+
+// --- Cycle year + last-touched sorting (PF parity) ---
+
+const firestoreValueToDate = (value: unknown): Date => {
+	if (!value) return new Date(NaN);
+	if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+		return (value as { toDate: () => Date }).toDate();
+	}
+	if (typeof value === 'object' && value !== null && 'seconds' in value && typeof (value as { seconds?: unknown }).seconds === 'number') {
+		return new Date((value as { seconds: number }).seconds * 1000);
+	}
+	return new Date(value as string | number | Date);
+};
+
+const applicationActivityTime = (app: DocumentData): number => {
+	for (const key of ['lastUpdated', 'submittedOn', 'dated']) {
+		const value = app?.[key];
+		if (value === null || value === undefined || value === '') continue;
+		const time = firestoreValueToDate(value).getTime();
+		if (!Number.isNaN(time)) return time;
+	}
+	return 0;
+};
+
+const sortApplicationsByLastTouched = <T extends DocumentData>(apps: T[]): T[] =>
+	[...apps].sort((a, b) => applicationActivityTime(b) - applicationActivityTime(a));
+
+
+const PRESENCE_ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+const PRESENCE_QUERY_REFRESH_MS = 30 * 1000;
+const PRESENCE_DOC_TTL_MS = 10 * 60 * 1000;
+
+export const touchUserPresence = async ({ uid, role, displayName }: { uid: string; role: string; displayName: string }) => {
+	if (!uid) return;
+	const expiresAt = new Date(Date.now() + PRESENCE_DOC_TTL_MS);
+	await setDoc(
+		doc(db, collections.presence, uid),
+		{
+			uid,
+			role,
+			displayName,
+			status: 'online',
+			lastSeen: serverTimestamp(),
+			expiresAt: Timestamp.fromDate(expiresAt),
+		},
+		{ merge: true }
+	);
+};
+
+export const clearUserPresence = async (uid: string) => {
+	if (!uid) return;
+	await setDoc(doc(db, collections.presence, uid), { status: 'offline' }, { merge: true });
+};
+
+export const subscribeUserLastSeen = (uid: string, callback: RealtimeCallback<Date | null>) => {
+	if (!uid) {
+		callback(null);
+		return () => {};
+	}
+	const ref = doc(db, collections.presence, uid);
+	return onSnapshot(
+		ref,
+		(snap) => {
+			if (!snap.exists()) {
+				callback(null);
+				return;
+			}
+			const lastSeen = snap.data().lastSeen;
+			callback(lastSeen ? firestoreValueToDate(lastSeen) : null);
+		},
+		() => callback(null)
+	);
+};
+
+export const getRealTimeActiveAuthenticatedUsersCount = (callback: RealtimeCallback<number>) => {
+	let unsubscribe: Unsubscribe | null = null;
+	let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+	const subscribe = () => {
+		try {
+			if (unsubscribe) {
+				unsubscribe();
+				unsubscribe = null;
+			}
+			const cutoff = Timestamp.fromDate(new Date(Date.now() - PRESENCE_ACTIVE_WINDOW_MS));
+			const q = query(collection(db, collections.presence), where('lastSeen', '>', cutoff));
+			unsubscribe = onSnapshot(
+				q,
+				(snapshot) => {
+					const count = snapshot.docs.filter((docSnap) => docSnap.data().status === 'online').length;
+					callback(count);
+				},
+				(error) => {
+					logEvent('Error in getRealTimeActiveAuthenticatedUsersCount snapshot', error);
+				}
+			);
+		} catch (error) {
+			logEvent('Error in getRealTimeActiveAuthenticatedUsersCount', error);
+		}
+	};
+
+	subscribe();
+	refreshTimer = setInterval(subscribe, PRESENCE_QUERY_REFRESH_MS);
+	return () => {
+		if (unsubscribe) unsubscribe();
+		if (refreshTimer) clearInterval(refreshTimer);
+	};
+};
+
+
+const requestStatusRank = (request: DocumentData): number => {
+	if (request?.completed) return 2;
+	if (request?.attempts >= 5) return 1;
+	return 0;
+};
+
+const sortReferenceRequests = (requests: DocumentData[]): DocumentData[] =>
+	[...requests].sort((a, b) => {
+		const statusDiff = requestStatusRank(a) - requestStatusRank(b);
+		if (statusDiff !== 0) return statusDiff;
+		return String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' });
+	});
+
+export const getRealTimeRequestsForCycleYear = (cycleYear: number, callback: RealtimeCallback<DocumentData[]>) => {
+	let requests: DocumentData[] = [];
+	let appsById = new Map<string, DocumentData>();
+
+	const publish = () => {
+		const filtered = requests.filter((request) => {
+			const applicationId = String(request.applicationID ?? '');
+			if (!applicationId) return false;
+			const application = appsById.get(applicationId);
+			if (!application) return false;
+			return resolveApplicationCycleYear(application) === cycleYear;
+		});
+		callback(sortReferenceRequests(filtered));
+	};
+
+	const unsubRequests = onSnapshot(
+		collection(db, collections.requests),
+		(snapshot) => {
+			requests = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+			publish();
+		},
+		(error) => {
+			logEvent('getRealTimeRequestsForCycleYear requests error', error);
+			callback([]);
+		}
+	);
+
+	const unsubApps = onSnapshot(
+		collection(db, collections.applications),
+		(snapshot) => {
+			appsById = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]));
+			publish();
+		},
+		(error) => {
+			logEvent('getRealTimeRequestsForCycleYear applications error', error);
+		}
+	);
+
+	return () => {
+		unsubRequests();
+		unsubApps();
+	};
+};
+
+const PIPELINE_STATUSES: ApplicationStatusValue[] = [
+	ApplicationStatus.completed,
+	ApplicationStatus.eligible,
+	ApplicationStatus.invited,
+	ApplicationStatus.deferred,
+	ApplicationStatus.awarded,
+	ApplicationStatus.denied,
+];
+
+const NEGATABLE_STATUSES = new Set<string>([
+	ApplicationStatus.deleted,
+	ApplicationStatus.ineligible,
+	ApplicationStatus.deferred,
+]);
+
+const MAX_UNDERGRAD_AWARD_CYCLES = 4;
+
+const SUBMITTED_OR_BEYOND_STATUSES = new Set<string>([
+	ApplicationStatus.submitted,
+	ApplicationStatus.completed,
+	ApplicationStatus.eligible,
+	ApplicationStatus.invited,
+	ApplicationStatus.deferred,
+	ApplicationStatus.awarded,
+	ApplicationStatus.denied,
+]);
+
+const OUTLOOK_PIPELINE_SECTIONS: {
+	id: OutlookSectionId;
+	title: string;
+	pathKey: 'applicants' | 'newAppsInYear' | 'returningAppsInYear' | 'scholarshipAppsInYear';
+	expectedType: ApplicationTypeValue | null;
+}[] = [
+	{ id: 'brandNewAccounts', title: 'Brand New Accounts', pathKey: 'applicants', expectedType: null },
+	{ id: 'expectedNewApplications', title: 'Expected New Applicant Applications', pathKey: 'newAppsInYear', expectedType: ApplicationType.newApplication },
+	{ id: 'expectedReturningGrants', title: 'Expected Returning Grants', pathKey: 'returningAppsInYear', expectedType: ApplicationType.returningGrant },
+	{ id: 'expectedReturningScholarships', title: 'Expected Returning Scholarships', pathKey: 'scholarshipAppsInYear', expectedType: ApplicationType.scholarship },
+	{ id: 'lostInTheWeeds', title: 'Lost in the Weeds', pathKey: 'applicants', expectedType: ApplicationType.newApplication },
+];
+
+const emptyTypeCounts = (): Record<ApplicationTypeValue, number> => ({
+	[ApplicationType.newApplication]: 0,
+	[ApplicationType.returningGrant]: 0,
+	[ApplicationType.scholarship]: 0,
+});
+
+const emptyAwardTrend = (year: number): AwardTrendYear => ({ year, New: 0, Returning: 0, Scholarship: 0 });
+
+const incrementAwardTrend = (trends: Record<number, AwardTrendYear>, year: number, type: unknown) => {
+	if (!trends[year]) trends[year] = emptyAwardTrend(year);
+	if (type === ApplicationType.newApplication) trends[year].New++;
+	else if (type === ApplicationType.returningGrant) trends[year].Returning++;
+	else if (type === ApplicationType.scholarship) trends[year].Scholarship++;
+};
+
+const normalizeGradYear = (gradYear: unknown): number | null => {
+	if (gradYear === null || gradYear === undefined) return null;
+	if (typeof gradYear === 'number' && !Number.isNaN(gradYear)) {
+		return gradYear >= 1900 && gradYear <= 2100 ? gradYear : null;
+	}
+	if (typeof gradYear === 'string') {
+		const trimmed = gradYear.trim();
+		if (/^\d{4}$/.test(trimmed)) return Number(trimmed);
+		const parsed = new Date(trimmed);
+		if (!Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+	}
+	if (typeof gradYear === 'object' && gradYear !== null) {
+		if ('toDate' in gradYear && typeof (gradYear as { toDate?: unknown }).toDate === 'function') {
+			return (gradYear as { toDate: () => Date }).toDate().getFullYear();
+		}
+		if ('seconds' in gradYear && typeof (gradYear as { seconds?: unknown }).seconds === 'number') {
+			return new Date((gradYear as { seconds: number }).seconds * 1000).getFullYear();
+		}
+	}
+	return null;
+};
+
+const parseGradYear = (gradYear: unknown): number | null => normalizeGradYear(gradYear);
+
+const applicantHasNotGraduated = (gradYear: unknown, cycleYear: number): boolean => {
+	const parsed = parseGradYear(gradYear);
+	if (parsed === null) return true;
+	return parsed >= cycleYear;
+};
+
+export const getRealTimeCurrentNonNegatedApplicationsCountByType = async (type: ApplicationTypeValue, callback: RealtimeCallback<number>) => {
+	try {
+		const config = await getConfigFromDb();
+		const year = siteConfigCycleYear(config);
+		const q = query(collection(db, collections.applications), where('type', '==', type));
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, d) => {
+				const data = d.data();
+				if (resolveApplicationCycleYear(data) !== year) return acc;
+				return NEGATABLE_STATUSES.has(String(data.status ?? '')) ? acc : acc + 1;
+			}, 0);
+			callback(count);
+		});
+	} catch (error) {
+		logEvent('Error in getRealTimeCurrentNonNegatedApplicationsCountByType', error);
+		return null;
+	}
+};
+
+export const getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear = (type: ApplicationTypeValue, cycleYear: number, callback: RealtimeCallback<number>) => {
+	try {
+		const q = query(collection(db, collections.applications), where('type', '==', type));
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, d) => {
+				const data = d.data();
+				if (resolveApplicationCycleYear(data) !== cycleYear) return acc;
+				return NEGATABLE_STATUSES.has(String(data.status ?? '')) ? acc : acc + 1;
+			}, 0);
+			callback(count);
+		});
+	} catch (error) {
+		logEvent('Error in getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear', error);
+		return null;
+	}
+};
+
+export const getRealTimeCurrentNonNegatedApplicationsCountByStatus = async (status: ApplicationStatusValue, callback: RealtimeCallback<number>) => {
+	try {
+		const config = await getConfigFromDb();
+		const year = siteConfigCycleYear(config);
+		const q = query(collection(db, collections.applications), where('status', '==', status));
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, d) => (resolveApplicationCycleYear(d.data()) === year ? acc + 1 : acc), 0);
+			callback(count);
+		});
+	} catch (error) {
+		logEvent('Error in getRealTimeCurrentNonNegatedApplicationsCountByStatus', error);
+		return null;
+	}
+};
+
+export const getRealTimeCurrentApplicationCountByStatus = async (status: ApplicationStatusValue, callback: RealtimeCallback<number>) => {
+	try {
+		const config = await getConfigFromDb();
+		const year = siteConfigCycleYear(config);
+		const q = query(collection(db, collections.applications), where('status', '==', status));
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, d) => (resolveApplicationCycleYear(d.data()) === year ? acc + 1 : acc), 0);
+			callback(count);
+		});
+	} catch (error) {
+		logEvent('Error in getRealTimeCurrentApplicationCountByStatus', error);
+		return null;
+	}
+};
+
+export const getRealTimeCurrentRejectedApplicationsCount = async (callback: RealtimeCallback<number>) => {
+	try {
+		const config = await getConfigFromDb();
+		const year = siteConfigCycleYear(config);
+		const q = query(
+			collection(db, collections.applications),
+			or(where('status', '==', ApplicationStatus.denied), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.ineligible))
+		);
+		return onSnapshot(q, (snapshot) => {
+			const count = snapshot.docs.reduce((acc, d) => (resolveApplicationCycleYear(d.data()) === year ? acc + 1 : acc), 0);
+			callback(count);
+		});
+	} catch (error) {
+		logEvent('Error in getRealTimeCurrentRejectedApplicationsCount', error);
+		return null;
+	}
+};
+
+
+const filterApplicationsForCycleYear = (apps: DocumentData[], cycleYear: number, includeDeleted: boolean): DocumentData[] =>
+	apps.filter((app) => {
+		if (!includeDeleted && app.status === ApplicationStatus.deleted) return false;
+		return resolveApplicationCycleYear(app) === cycleYear;
+	});
+
+export const getRealTimeApplications = (includeDeleted: boolean, callback: RealtimeCallback<DocumentData[]>) => {
 	try {
 		const coll = collection(db, collections.applications);
 		const q = includeDeleted ? coll : query(coll, where('status', '!=', ApplicationStatus.deleted));
 
 		const unsubscribe = onSnapshot(q, (snapshot) => {
-			const fetchedData = snapshot.docs.map((doc) => doc.data());
-			callback(fetchedData);
+			const fetchedData = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+			callback(sortApplicationsByLastTouched(fetchedData));
 		});
 
 		return unsubscribe;
@@ -926,14 +1636,18 @@ export const getRealTimeApplications = (includeDeleted, callback) => {
 	}
 };
 
-export const getRealTimeRejectedApplications = (callback) => {
+export const getRealTimeRejectedApplications = (callback: RealtimeCallback<DocumentData[]>, cycleYear: number | null = null) => {
 	try {
 		const coll = collection(db, collections.applications);
 
 		const q = query(coll, or(where('status', '==', ApplicationStatus.denied), where('status', '==', ApplicationStatus.deferred), where('status', '==', ApplicationStatus.ineligible)));
 
 		const unsubscribe = onSnapshot(q, (snapshot) => {
-			callback(snapshot.size);
+			let fetchedData = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+			if (cycleYear !== null && cycleYear !== undefined) {
+				fetchedData = fetchedData.filter((app) => resolveApplicationCycleYear(app) === cycleYear);
+			}
+			callback(sortApplicationsByLastTouched(fetchedData));
 		});
 
 		return unsubscribe;
@@ -943,59 +1657,78 @@ export const getRealTimeRejectedApplications = (callback) => {
 	}
 };
 
-export const getApplicationsByWindow = async (window) => {
+export const getApplicationsByWindow = async (windowOrYear: unknown) => {
 	try {
-		const collector = [];
-		const q = query(collection(db, collections.applications), where('window', '==', window));
-		const querySnapshot = await getDocs(q);
-		for (const doc of querySnapshot.docs) {
-			collector.push(doc.data());
-		}
-		return collector;
+		const year = coerceCycleYear(windowOrYear);
+		const snapshot = await getDocs(collection(db, collections.applications));
+		return snapshot.docs
+			.map((docSnap) => docSnap.data())
+			.filter((app) => year === null || resolveApplicationCycleYear(app) === year);
 	} catch (error) {
 		logEvent('getApplicationsByWindow error', error);
 		return null;
 	}
 };
 
-export const getRealTimeApplicationsByWindow = (window, includeDeleted, callback) => {
-	const typeQuery = query(collection(db, collections.applications), includeDeleted ? where('window', '==', window) : and(where('window', '==', window), where('status', '!=', ApplicationStatus.deleted)));
-	const unsubscribe = onSnapshot(typeQuery, (snapshot) => {
-		const fetchedData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-		callback(fetchedData);
-	});
+export const getRealTimeApplicationsByWindow = (cycleYear: number, includeDeleted: boolean, callback: RealtimeCallback<DocumentData[]>) => {
+	const appsRef = collection(db, collections.applications);
+	const unsubscribe = onSnapshot(
+		appsRef,
+		(snapshot) => {
+			const fetchedData = filterApplicationsForCycleYear(
+				snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })),
+				cycleYear,
+				includeDeleted
+			);
+			callback(sortApplicationsByLastTouched(fetchedData));
+		},
+		(error) => {
+			logEvent('getRealTimeApplicationsByWindow error', error);
+			callback([]);
+		}
+	);
 
 	return unsubscribe;
 };
 
-export const getApplicationsByType = async (type, window) => {
+export const getApplicationsByType = async (type: ApplicationTypeValue, windowOrYear: unknown) => {
 	try {
-		const collector = [];
-		const q = query(collection(db, collections.applications), where('type', '==', type), where('window', '==', window));
+		const year = coerceCycleYear(windowOrYear);
+		const q = query(collection(db, collections.applications), where('type', '==', type));
 		const querySnapshot = await getDocs(q);
-		for (const doc of querySnapshot.docs) {
-			collector.push(doc.data());
-		}
-		return collector;
+		return querySnapshot.docs
+			.map((docSnap) => docSnap.data())
+			.filter((app) => year === null || resolveApplicationCycleYear(app) === year);
 	} catch (error) {
 		logEvent('getApplicationsByType error', error);
 		return null;
 	}
 };
 
-export const getRealTimeApplicationsByType = (type, window, includeDeleted, callback) => {
-	const typeQuery = query(collection(db, collections.applications), includeDeleted ? and(where('type', '==', type), where('window', '<=', window)) : and(where('type', '==', type), where('window', '<=', window), where('status', '!=', ApplicationStatus.deleted)));
-	const unsubscribe = onSnapshot(typeQuery, (snapshot) => {
-		const fetchedData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-		callback(fetchedData);
-	});
+export const getRealTimeApplicationsByType = (type: ApplicationTypeValue, cycleYear: number, includeDeleted: boolean, callback: RealtimeCallback<DocumentData[]>) => {
+	const typeQuery = query(collection(db, collections.applications), where('type', '==', type));
+	const unsubscribe = onSnapshot(
+		typeQuery,
+		(snapshot) => {
+			const fetchedData = filterApplicationsForCycleYear(
+				snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })),
+				cycleYear,
+				includeDeleted
+			);
+			callback(sortApplicationsByLastTouched(fetchedData));
+		},
+		(error) => {
+			logEvent('getRealTimeApplicationsByType error', error);
+			callback([]);
+		}
+	);
 
 	return unsubscribe;
 };
 
-export const getRealTimeApplicantsByApplicationID = (applicantIDs, callback) => {
+export const getRealTimeApplicantsByApplicationID = (applicantIDs: string[], callback: RealtimeCallback<DocumentData[]>) => {
 	if (Array.isArray(applicantIDs) && applicantIDs.length > 0) {
-		const matches = {};
+		const matches: Record<string, DocumentData> = {};
 		const unsubscribeFunctions = applicantIDs.map((id) => {
 			const docRef = doc(db, collections.applicants, id);
 			return onSnapshot(
@@ -1023,53 +1756,58 @@ export const getRealTimeApplicantsByApplicationID = (applicantIDs, callback) => 
 	return null;
 };
 
-export const getApplicationsByStatus = async (status, window) => {
+export const getApplicationsByStatus = async (status: ApplicationStatusValue, windowOrYear: unknown) => {
 	try {
-		const collector = [];
-		const q = query(collection(db, collections.applications), where('status', '==', status), where('window', '==', window));
+		const year = coerceCycleYear(windowOrYear);
+		const q = query(collection(db, collections.applications), where('status', '==', status));
 		const querySnapshot = await getDocs(q);
-		for (const doc of querySnapshot.docs) {
-			collector.push(doc.data());
-		}
-		return collector;
+		return querySnapshot.docs
+			.map((docSnap) => docSnap.data())
+			.filter((app) => year === null || resolveApplicationCycleYear(app) === year);
 	} catch (error) {
 		logEvent('getApplicationsByStatus error', error);
 		return null;
 	}
 };
 
-export const getRealTimeApplicationsByStatus = (type, callback, window = null) => {
-	let statusQuery;
-	if (window === null) {
-		statusQuery = query(collection(db, collections.applications), where('status', '==', type));
-	} else {
-		statusQuery = query(collection(db, collections.applications), and(where('status', '==', type), where('window', '==', window)));
-	}
+export const getRealTimeApplicationsByStatus = (type: ApplicationStatusValue, callback: RealtimeCallback<DocumentData[]>, cycleYear: number | null = null) => {
+	const statusQuery = query(collection(db, collections.applications), where('status', '==', type));
 	const unsubscribe = onSnapshot(statusQuery, (snapshot) => {
-		const fetchedData = snapshot.docs.map((doc) => doc.data());
-		callback(fetchedData || []);
+		let fetchedData = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+		if (cycleYear !== null && cycleYear !== undefined) {
+			fetchedData = fetchedData.filter((app) => resolveApplicationCycleYear(app) === cycleYear);
+		}
+		callback(sortApplicationsByLastTouched(fetchedData));
 	});
 	return unsubscribe;
 };
 
-export const getRealTimeDocument = (type, id, callback) => {
+export const getRealTimeDocument = (type: CollectionName, id: string, callback: RealtimeCallback<DocumentData | null>) => {
 	if (type && id && callback) {
 		const docRef = doc(db, type, id);
-		const unsubscribe = onSnapshot(docRef, (snapshot) => {
-			snapshot.exists() ? callback(snapshot.data()) : callback(null);
-		});
+		const unsubscribe = onSnapshot(
+			docRef,
+			(snapshot) => {
+				snapshot.exists() ? callback(snapshot.data()) : callback(null);
+			},
+			(error) => {
+				// Permission / network failures must not leave Auth/RouteGuard waiting forever
+				console.error(`getRealTimeDocument(${type}/${id}):`, error?.message || error);
+				callback(null);
+			}
+		);
 
 		return unsubscribe;
 	}
 };
 
-export const getRealTimeApplicationsByIDs = (applicationIDs, callback) => {
+export const getRealTimeApplicationsByIDs = (applicationIDs: string[], callback: RealtimeCallback<DocumentData[]>) => {
 	if (!Array.isArray(applicationIDs) || applicationIDs.length === 0) {
 		callback([]);
 		return () => {};
 	}
 
-	const matches = {};
+	const matches: Record<string, DocumentData> = {};
 	const unsubscribeFunctions = applicationIDs.map((id) => {
 		const docRef = doc(db, collections.applications, id);
 
@@ -1078,7 +1816,7 @@ export const getRealTimeApplicationsByIDs = (applicationIDs, callback) => {
 			(snapshot) => {
 				const data = snapshot.data();
 
-				if (snapshot.exists() && data.status !== ApplicationStatus.deleted) {
+				if (snapshot.exists() && data && data.status !== ApplicationStatus.deleted) {
 					matches[snapshot.id] = data;
 				} else {
 					delete matches[snapshot.id];
@@ -1099,12 +1837,12 @@ export const getRealTimeApplicationsByIDs = (applicationIDs, callback) => {
 	};
 };
 
-export const getRealTimeAwardsByIDs = (awardIDs, callback) => {
+export const getRealTimeAwardsByIDs = (awardIDs: string[], callback: RealtimeCallback<DocumentData[]>) => {
 	if (!Array.isArray(awardIDs) || awardIDs.length === 0) {
 		throw new TypeError('awardIDs must be a non-empty array');
 	}
 
-	const matches = {};
+	const matches: Record<string, DocumentData> = {};
 	const unsubscribeFunctions = awardIDs.map((id) => {
 		const docRef = doc(db, collections.awards, id);
 		return onSnapshot(
@@ -1130,7 +1868,7 @@ export const getRealTimeAwardsByIDs = (awardIDs, callback) => {
 	};
 };
 
-export const getAwardsData = async (userID, awardIDs) => {
+export const getAwardsData = async (userID: string, awardIDs: string[]) => {
 	if (!Array.isArray(awardIDs)) {
 		throw new TypeError('awardIDs must be an array');
 	}
@@ -1146,7 +1884,7 @@ export const getAwardsData = async (userID, awardIDs) => {
 	}
 };
 
-export const getApplicationsByIDs = async (applicationIDs) => {
+export const getApplicationsByIDs = async (applicationIDs: string[]) => {
 	if (!Array.isArray(applicationIDs)) {
 		throw new TypeError('applicationIDs must be an array');
 	}
@@ -1164,79 +1902,312 @@ export const getApplicationsByIDs = async (applicationIDs) => {
 
 // --- 10. Analytics & Reporting ---
 
-const calculateBenchmarkStats = (awards, applicantMap) => {
-	const results = {
-		[ApplicationType.newApplication]: 0,
-		[ApplicationType.returningGrant]: 0,
-		[ApplicationType.scholarship]: 0,
-	};
-
-	const usedApplicants = new Set();
-
-	for (const award of awards) {
-		const { applicantID, type } = award;
-
-		if (results[type] === undefined) continue;
-		if (usedApplicants.has(`${type}:${applicantID}`)) continue;
-
-		const applicant = applicantMap.get(applicantID);
-
-		if (!applicant || !Array.isArray(applicant.awards)) continue;
-
-		const distinctYears = new Set(applicant.awards.map((aw) => new Date(aw.deadline).getFullYear()));
-
-		if (distinctYears.size >= 4) continue;
-
-		results[type]++;
-		usedApplicants.add(`${type}:${applicantID}`);
-	}
-
-	return results;
+const applicantDisplayName = (applicant: DocumentData | undefined, applicantId: string): string => {
+	if (!applicant) return applicantId;
+	const first = String(applicant.firstName ?? '').trim();
+	const last = String(applicant.lastName ?? '').trim();
+	const name = `${first} ${last}`.trim();
+	return name || String(applicant.email ?? applicantId);
 };
 
-export const getBenchmarkedAwardCounts = async (priorYearWindow) => {
-	const awardsRef = collection(db, collections.awards);
+const applicantAccountCycleYear = (applicant: DocumentData | undefined): number | null => {
+	const created = applicant?.accountCreated;
+	if (created && typeof created === 'object' && typeof created.seconds === 'number') {
+		return new Date(created.seconds * 1000).getFullYear();
+	}
+	if (created && typeof created?.toDate === 'function') return created.toDate().getFullYear();
+	if (created instanceof Date) return created.getFullYear();
+	return null;
+};
+
+const appsForApplicant = (applicantId: string, apps: DocumentData[]) => apps.filter((app) => String(app.completedBy ?? '') === applicantId);
+
+const hasApplicationBeforeCycle = (applicantId: string, cycleYear: number, apps: DocumentData[]): boolean =>
+	appsForApplicant(applicantId, apps).some((app) => {
+		const year = resolveApplicationCycleYear(app);
+		return year !== null && year < cycleYear;
+	});
+
+const currentCycleApplicationTypes = (applicantId: string, cycleYear: number, apps: DocumentData[]): ApplicationTypeValue[] => {
+	const types = new Set<ApplicationTypeValue>();
+	for (const app of appsForApplicant(applicantId, apps)) {
+		if (resolveApplicationCycleYear(app) !== cycleYear) continue;
+		if (Object.values(ApplicationType).includes(app.type as ApplicationTypeValue)) types.add(app.type as ApplicationTypeValue);
+	}
+	return [...types];
+};
+
+const countUndergraduateAwardCycles = (applicantId: string, apps: DocumentData[]): number => {
+	const years = new Set();
+	for (const app of appsForApplicant(applicantId, apps)) {
+		if (app.status !== ApplicationStatus.awarded) continue;
+		const year = resolveApplicationCycleYear(app);
+		if (year !== null) years.add(year);
+	}
+	return years.size;
+};
+
+const applicantIsUndergradEligible = (gradYear: unknown, cycleYear: number): boolean => {
+	const parsed = parseGradYear(gradYear);
+	if (parsed === null) return true;
+	return parsed >= cycleYear;
+};
+
+const activeAppsForApplicant = (applicantId: string, apps: DocumentData[]): DocumentData[] =>
+	appsForApplicant(applicantId, apps).filter((app) => app.status !== ApplicationStatus.deleted);
+
+const hasCompletedApplicationEver = (applicantId: string, apps: DocumentData[]): boolean =>
+	activeAppsForApplicant(applicantId, apps).some((app) => SUBMITTED_OR_BEYOND_STATUSES.has(String(app.status)));
+
+const hasAnyAward = (applicantId: string, apps: DocumentData[]): boolean =>
+	activeAppsForApplicant(applicantId, apps).some((app) => app.status === ApplicationStatus.awarded);
+
+const hasScholarshipAwardEver = (applicantId: string, apps: DocumentData[]): boolean =>
+	activeAppsForApplicant(applicantId, apps).some(
+		(app) => app.status === ApplicationStatus.awarded && app.type === ApplicationType.scholarship
+	);
+
+const isOutlookEligible = (applicantId: string, applicant: DocumentData | undefined, cycleYear: number, apps: DocumentData[]): boolean => {
+	if (!applicantIsUndergradEligible(applicant?.gradYear, cycleYear)) return false;
+	if (countUndergraduateAwardCycles(applicantId, apps) >= MAX_UNDERGRAD_AWARD_CYCLES) return false;
+	return true;
+};
+
+const isCurrentCycleAccount = (applicant: DocumentData | undefined, cycleYear: number): boolean => {
+	const accountYear = applicantAccountCycleYear(applicant);
+	return accountYear === null || accountYear >= cycleYear;
+};
+
+const isLostInTheWeeds = (applicantId: string, applicant: DocumentData | undefined, cycleYear: number, apps: DocumentData[]): boolean => {
+	if (hasCompletedApplicationEver(applicantId, apps)) return false;
+	if (isCurrentCycleAccount(applicant, cycleYear) && !hasApplicationBeforeCycle(applicantId, cycleYear, apps)) return false;
+	return true;
+};
+
+const lastAwardedApplicationMatching = (applicantId: string, apps: DocumentData[], types: Set<string>) => {
+	let latest = null;
+	for (const app of activeAppsForApplicant(applicantId, apps)) {
+		if (app.status !== ApplicationStatus.awarded || !types.has(String(app.type))) continue;
+		const year = resolveApplicationCycleYear(app);
+		if (year === null) continue;
+		if (!latest || year > latest.cycleYear) latest = { type: String(app.type), cycleYear: year };
+	}
+	return latest;
+};
+
+const resolveOutlookSectionId = (applicantId: string, applicant: DocumentData | undefined, cycleYear: number, apps: DocumentData[]): OutlookSectionId | null => {
+	if (!isOutlookEligible(applicantId, applicant, cycleYear, apps)) return null;
+	if (hasScholarshipAwardEver(applicantId, apps)) return 'expectedReturningScholarships';
+	if (hasAnyAward(applicantId, apps)) return 'expectedReturningGrants';
+	const currentTypes = currentCycleApplicationTypes(applicantId, cycleYear, apps);
+	const hasAnyCurrentCycleApp = currentTypes.length > 0;
+	const isNewThisCycle = isCurrentCycleAccount(applicant, cycleYear) && !hasApplicationBeforeCycle(applicantId, cycleYear, apps);
+	if (isNewThisCycle && !hasAnyCurrentCycleApp) return 'brandNewAccounts';
+	if (isLostInTheWeeds(applicantId, applicant, cycleYear, apps)) return 'lostInTheWeeds';
+	return 'expectedNewApplications';
+};
+
+const resolveCycleStatus = (expectedType: ApplicationTypeValue | null, currentTypes: ApplicationTypeValue[]): OutlookRowCycleStatus => {
+	if (!expectedType) return 'none';
+	if (currentTypes.length === 0) return 'none';
+	return currentTypes.includes(expectedType) ? 'correct' : 'wrong';
+};
+
+const resolveAwardDisplay = (applicantId: string, apps: DocumentData[], sectionId: OutlookSectionId) => {
+	if (sectionId === 'expectedReturningScholarships') {
+		const last = lastAwardedApplicationMatching(applicantId, apps, new Set([ApplicationType.scholarship]));
+		if (last) return { display: `${last.type} (${last.cycleYear})`, lastAwardType: last.type, lastCycleYear: last.cycleYear };
+	}
+	if (sectionId === 'expectedReturningGrants') {
+		const last = lastAwardedApplicationMatching(applicantId, apps, new Set([ApplicationType.returningGrant, ApplicationType.newApplication]));
+		if (last) return { display: `${last.type} (${last.cycleYear})`, lastAwardType: last.type, lastCycleYear: last.cycleYear };
+	}
+	if (activeAppsForApplicant(applicantId, apps).length === 0) {
+		return { display: 'Account Created', lastAwardType: null, lastCycleYear: null };
+	}
+	return { display: 'First Time Applicant', lastAwardType: null, lastCycleYear: null };
+};
+
+const outlookSectionLink = (pathKey: string, cycleYear: number): string => {
+	if (pathKey === 'applicants') return '/applicants/all';
+	if (pathKey === 'newAppsInYear') return `/applications/${cycleYear}/newApplicants`;
+	if (pathKey === 'returningAppsInYear') return `/applications/${cycleYear}/returningGrants`;
+	return `/applications/${cycleYear}/scholarshipRecipients`;
+};
+
+const toOutlookRow = (applicantId: string, applicant: DocumentData | undefined, cycleYear: number, apps: DocumentData[], sectionId: OutlookSectionId, expectedType: ApplicationTypeValue | null): DashboardApplicantOutlookRow => {
+	const gradYearParsed = normalizeGradYear(applicant?.gradYear);
+	const award = resolveAwardDisplay(applicantId, apps, sectionId);
+	return {
+		applicantId,
+		name: applicantDisplayName(applicant, applicantId),
+		gradYear: gradYearParsed === null ? null : String(gradYearParsed),
+		awardDisplay: award.display,
+		lastAwardType: award.lastAwardType,
+		lastCycleYear: award.lastCycleYear,
+		cycleStatus: resolveCycleStatus(expectedType, currentCycleApplicationTypes(applicantId, cycleYear, apps)),
+	};
+};
+
+const sortOutlookRows = (rows: DashboardApplicantOutlookRow[]): DashboardApplicantOutlookRow[] =>
+	[...rows].sort((a, b) => {
+		const yearDiff = (b.lastCycleYear ?? 0) - (a.lastCycleYear ?? 0);
+		if (yearDiff !== 0) return yearDiff;
+		return a.name.localeCompare(b.name);
+	});
+
+const isOutlookSectionComplete = (applicants: DashboardApplicantOutlookRow[]): boolean => applicants.length > 0 && applicants.every((row) => row.cycleStatus === 'correct');
+
+export const buildDashboardApplicantOutlook = (apps: DocumentData[], applicantsById: Map<string, DocumentData>, cycleYear: number): DashboardApplicantOutlook => {
+	const sectionRows = new Map<OutlookSectionId, DashboardApplicantOutlookRow[]>(OUTLOOK_PIPELINE_SECTIONS.map(({ id }) => [id, []]));
+	for (const [applicantId, applicant] of applicantsById.entries()) {
+		const sectionId = resolveOutlookSectionId(applicantId, applicant, cycleYear, apps);
+		if (!sectionId) continue;
+		const meta = OUTLOOK_PIPELINE_SECTIONS.find((section) => section.id === sectionId);
+		if (!meta) continue;
+		sectionRows.get(sectionId)?.push(toOutlookRow(applicantId, applicant, cycleYear, apps, sectionId, meta.expectedType));
+	}
+	const sections = OUTLOOK_PIPELINE_SECTIONS.map(({ id, title, pathKey, expectedType }) => {
+		const applicants = sortOutlookRows(sectionRows.get(id) ?? []);
+		if (id === 'brandNewAccounts' || id === 'lostInTheWeeds') {
+			applicants.sort((a, b) => a.name.localeCompare(b.name));
+		}
+		return {
+			id,
+			title,
+			link: outlookSectionLink(pathKey, cycleYear),
+			expectedType,
+			applicants,
+			isComplete: isOutlookSectionComplete(applicants),
+		};
+	});
+	return { cycleYear, sections };
+};
+
+export const getRealTimeDashboardApplicantOutlook = (callback: RealtimeCallback<DashboardApplicantOutlook>) => {
+	let cycleYear = new Date().getFullYear();
+	let apps: DocumentData[] = [];
+	let applicantsById = new Map<string, DocumentData>();
+	let configLoaded = false;
+
+	const publish = () => {
+		if (!configLoaded) return;
+		try {
+			callback(buildDashboardApplicantOutlook(apps, applicantsById, cycleYear));
+		} catch (error) {
+			logEvent('buildDashboardApplicantOutlook publish error', error);
+		}
+	};
+
+	void getConfigFromDb()
+		.then((config) => {
+			cycleYear = siteConfigCycleYear(config);
+			configLoaded = true;
+			publish();
+		})
+		.catch((error) => {
+			logEvent('Error loading config for getRealTimeDashboardApplicantOutlook', error);
+			configLoaded = true;
+			publish();
+		});
 
 	try {
-		const snapshot = await getDocs(query(awardsRef, where('deadline', '==', priorYearWindow)));
-
-		const uniqueApplicantIDs = new Set();
-		const awardsToProcess = [];
-
-		for (const docSnap of snapshot.docs) {
-			const award = docSnap.data();
-			awardsToProcess.push(award);
-			if (award.applicantID) {
-				uniqueApplicantIDs.add(award.applicantID);
-			}
-		}
-
-		const applicantIdsArray = Array.from(uniqueApplicantIDs);
-		const applicantPromises = applicantIdsArray.map((id) => getDoc(doc(db, collections.applicants, id)));
-		const applicantSnaps = await Promise.all(applicantPromises);
-
-		const applicantMap = new Map();
-		for (const snap of applicantSnaps) {
-			if (snap.exists()) {
-				applicantMap.set(snap.id, snap.data());
-			}
-		}
-
-		return calculateBenchmarkStats(awardsToProcess, applicantMap);
+		const unsubApps = onSnapshot(collection(db, collections.applications), (snapshot) => {
+			apps = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+			publish();
+		});
+		const unsubApplicants = onSnapshot(collection(db, collections.applicants), (snapshot) => {
+			applicantsById = new Map(snapshot.docs.map((docSnap) => [docSnap.id, { id: docSnap.id, ...docSnap.data() }]));
+			publish();
+		});
+		return () => {
+			unsubApps();
+			unsubApplicants();
+		};
 	} catch (error) {
-		logEvent('Error in getBenchmarkedAwardCounts', error);
+		logEvent('Error in getRealTimeDashboardApplicantOutlook', error);
 		return null;
 	}
 };
 
+export const getDashboardBenchmarkData = async (cycleYear: number): Promise<DashboardBenchmarkData> => {
+	const priorYear = cycleYear - 1;
+	const trendYears = [cycleYear - 3, cycleYear - 2, cycleYear - 1];
+	const pipelineStatusSet = new Set(PIPELINE_STATUSES);
+	const currentCounts = emptyTypeCounts();
+	const benchmarkTargets = emptyTypeCounts();
+	const returningPool = new Set();
+	const scholarshipPool = new Set();
+	const awardTrendMap: Record<number, AwardTrendYear> = {};
+	for (const year of trendYears) awardTrendMap[year] = emptyAwardTrend(year);
+
+	try {
+		const [appsSnapshot, applicantsSnapshot] = await Promise.all([
+			getDocs(collection(db, collections.applications)),
+			getDocs(collection(db, collections.applicants)),
+		]);
+		const applicantsById = new Map(applicantsSnapshot.docs.map((docSnap) => [docSnap.id, docSnap.data()]));
+
+		for (const docSnap of appsSnapshot.docs) {
+			const app = docSnap.data();
+			const appYear = resolveApplicationCycleYear(app);
+			if (appYear === null) continue;
+			const type = app.type;
+			const status = app.status;
+			const applicantId = app.completedBy ? String(app.completedBy) : '';
+
+			if (appYear === cycleYear && pipelineStatusSet.has(status)) {
+				if (type === ApplicationType.newApplication) currentCounts[ApplicationType.newApplication]++;
+				else if (type === ApplicationType.returningGrant) currentCounts[ApplicationType.returningGrant]++;
+				else if (type === ApplicationType.scholarship) currentCounts[ApplicationType.scholarship]++;
+			}
+
+			if (appYear === priorYear && pipelineStatusSet.has(status) && type === ApplicationType.newApplication) {
+				benchmarkTargets[ApplicationType.newApplication]++;
+			}
+
+			if (status === ApplicationStatus.awarded && trendYears.includes(appYear) && applicantId) {
+				incrementAwardTrend(awardTrendMap, appYear, type);
+				const applicant = applicantsById.get(applicantId);
+				if (applicantHasNotGraduated(applicant?.gradYear, cycleYear)) {
+					if (type === ApplicationType.returningGrant) returningPool.add(applicantId);
+					else if (type === ApplicationType.scholarship) scholarshipPool.add(applicantId);
+				}
+			}
+		}
+
+		benchmarkTargets[ApplicationType.returningGrant] = returningPool.size;
+		benchmarkTargets[ApplicationType.scholarship] = scholarshipPool.size;
+
+		return {
+			currentCounts,
+			benchmarkTargets,
+			awardTrends: trendYears.map((year) => awardTrendMap[year] ?? emptyAwardTrend(year)),
+		};
+	} catch (error) {
+		logEvent('Error in getDashboardBenchmarkData', error);
+		return {
+			currentCounts: emptyTypeCounts(),
+			benchmarkTargets: emptyTypeCounts(),
+			awardTrends: trendYears.map((year) => emptyAwardTrend(year)),
+		};
+	}
+};
+
+export const getBenchmarkedAwardCounts = async (cycleYear?: number) => {
+	const year = typeof cycleYear === 'number' ? cycleYear : siteConfigCycleYear(await getConfigFromDb());
+	const data = await getDashboardBenchmarkData(year + 1);
+	return data.benchmarkTargets;
+};
+
 // --- 11. Notes System ---
 
-const getParentNameForNote = async (parentRef) => {
+const getParentNameForNote = async (parentRef: DocumentReference<DocumentData>) => {
 	try {
 		const parentDocSnap = await getDoc(parentRef);
 		if (!parentDocSnap.exists()) return parentRef.id;
 
-		const parentData = parentDocSnap.data();
+		const parentData = parentDocSnap.data() as DocumentData;
 		const parentCollection = parentRef.path.split('/')[0];
 
 		if (parentCollection === collections.applicants) {
@@ -1263,7 +2234,7 @@ const getParentNameForNote = async (parentRef) => {
 	}
 };
 
-export const getNotesByAuthor = async (authorId) => {
+export const getNotesByAuthor = async (authorId: string) => {
 	if (!authorId) return [];
 
 	const notesQuery = query(collectionGroup(db, 'notes'), where('authorId', '==', authorId), orderBy('createdAt', 'desc'));
@@ -1272,6 +2243,13 @@ export const getNotesByAuthor = async (authorId) => {
 	const userNotesPromises = snapshot.docs.map(async (noteDoc) => {
 		const data = noteDoc.data();
 		const parentRef = noteDoc.ref.parent.parent;
+		if (!parentRef) {
+			return {
+				id: noteDoc.id,
+				...data,
+				parent: { id: '', collection: '', name: 'Unknown' },
+			};
+		}
 		const parentName = await getParentNameForNote(parentRef);
 
 		return {
@@ -1288,7 +2266,7 @@ export const getNotesByAuthor = async (authorId) => {
 	return Promise.all(userNotesPromises);
 };
 
-export const getRealTimeNotes = (targetCollection, targetId, callback) => {
+export const getRealTimeNotes = (targetCollection: CollectionName, targetId: string, callback: RealtimeCallback<DocumentData[]>) => {
 	const auth = getAuth();
 	const currentUser = auth.currentUser;
 
@@ -1306,7 +2284,7 @@ export const getRealTimeNotes = (targetCollection, targetId, callback) => {
 	return unsubscribe;
 };
 
-export const addNote = async (targetCollection, targetId, noteData) => {
+export const addNote = async (targetCollection: CollectionName, targetId: string, noteData: Record<string, unknown>) => {
 	const notesRef = collection(db, targetCollection, targetId, 'notes');
 	await addDoc(notesRef, {
 		...noteData,
@@ -1315,7 +2293,7 @@ export const addNote = async (targetCollection, targetId, noteData) => {
 	});
 };
 
-export const updateNote = async (targetCollection, targetId, noteId, newText) => {
+export const updateNote = async (targetCollection: CollectionName, targetId: string, noteId: string, newText: string) => {
 	const noteRef = doc(db, targetCollection, targetId, 'notes', noteId);
 	await updateDoc(noteRef, {
 		text: newText,
@@ -1323,7 +2301,7 @@ export const updateNote = async (targetCollection, targetId, noteId, newText) =>
 	});
 };
 
-export const redactNote = async (targetCollection, targetId, noteId) => {
+export const redactNote = async (targetCollection: CollectionName, targetId: string, noteId: string) => {
 	const noteRef = doc(db, targetCollection, targetId, 'notes', noteId);
 	await updateDoc(noteRef, {
 		redacted: true,
@@ -1333,7 +2311,7 @@ export const redactNote = async (targetCollection, targetId, noteId) => {
 
 // --- 12. Requests (References) ---
 
-export const getRequestData = async (dataID) => {
+export const getRequestData = async (dataID: string) => {
 	if (dataID) {
 		try {
 			const docRef = doc(db, collections.requests, dataID);
@@ -1346,7 +2324,7 @@ export const getRequestData = async (dataID) => {
 	}
 };
 
-export const invalidateRequest = async (dataID) => {
+export const invalidateRequest = async (dataID: string) => {
 	try {
 		const newRef = doc(db, collections.requests, dataID);
 		await updateDoc(newRef, { expiryDate: new Date(Date.now() - 1000).toLocaleString() });
@@ -1359,7 +2337,7 @@ export const invalidateRequest = async (dataID) => {
 
 // --- 13. File Storage ---
 
-export const saveFile = async (type, assetID, name, file) => {
+export const saveFile = async (type: string, assetID: string, name: string, file: Blob) => {
 	if (file == null || assetID == null) {
 		throw new Error('No file or asset included in request.');
 	}
@@ -1374,7 +2352,7 @@ export const saveFile = async (type, assetID, name, file) => {
 	}
 };
 
-export const deleteFile = async (location) => {
+export const deleteFile = async (location: string) => {
 	if (!location) {
 		return false;
 	}
@@ -1390,14 +2368,14 @@ export const deleteFile = async (location) => {
 	}
 };
 
-export const getFile = async (refLoc) => {
+export const getFile = async (refLoc: string) => {
 	if (!refLoc) throw new Error('Missing refLoc path');
 	const storageRef = ref(storage, refLoc);
 	const url = await getDownloadURL(storageRef);
 	return url;
 };
 
-export const getDownloadLinkForFile = async (file) => {
+export const getDownloadLinkForFile = async (file: string) => {
 	if (file == null) {
 		return null;
 	}
@@ -1415,7 +2393,7 @@ export const getDownloadLinkForFile = async (file) => {
 
 // --- 14. Interviews & Scheduling ---
 
-export const getMeetings = async (userId, isCommittee) => {
+export const getMeetings = async (userId: string, isCommittee: boolean): Promise<MeetingRecord[]> => {
 	const interviewsRef = collection(db, 'interviews');
 	let q;
 
@@ -1430,7 +2408,7 @@ export const getMeetings = async (userId, isCommittee) => {
 	const querySnapshot = await getDocs(q);
 	const meetings = await Promise.all(
 		querySnapshot.docs.map(async (document) => {
-			const meeting = { id: document.id, ...document.data() };
+			const meeting: MeetingRecord = { id: document.id, ...document.data() };
 
 			if (meeting.applicantId) {
 				try {
@@ -1456,13 +2434,13 @@ export const getMeetings = async (userId, isCommittee) => {
 			id: 'deliberation',
 			deliberation: true,
 			displayName: 'Committee Deliberation',
-		});
+		} as MeetingRecord);
 	}
 
 	return meetings;
 };
 
-export const getRealTimeMeetings = (userId, isCommittee, callback, isDash = false) => {
+export const getRealTimeMeetings = (userId: string, isCommittee: boolean, callback: RealtimeCallback<MeetingRecord[]>, isDash = false) => {
 	const interviewsRef = collection(db, 'interviews');
 	let q;
 	const relevantStatuses = isDash ? [InterviewStatus.scheduled, InterviewStatus.invited, InterviewStatus.confirmed, InterviewStatus.inProgress] : [InterviewStatus.scheduled, InterviewStatus.invited, InterviewStatus.confirmed, InterviewStatus.inProgress, InterviewStatus.completed, InterviewStatus.missed];
@@ -1476,7 +2454,7 @@ export const getRealTimeMeetings = (userId, isCommittee, callback, isDash = fals
 	const unsubscribe = onSnapshot(q, async (querySnapshot) => {
 		const meetings = await Promise.all(
 			querySnapshot.docs.map(async (document) => {
-				const meeting = { id: document.id, ...document.data() };
+				const meeting: MeetingRecord = { id: document.id, ...document.data() };
 				if (meeting.applicantId) {
 					try {
 						const applicantRef = doc(db, collections.applicants, meeting.applicantId);
@@ -1508,7 +2486,7 @@ export const getSchedulableInterviews = async () => {
 	return interviews;
 };
 
-export const getInterviewsByWindow = async (window) => {
+export const getInterviewsByWindow = async (window: string) => {
 	const interviewsRef = collection(db, 'interviews');
 	const q = query(interviewsRef, where('deadline', '==', window), orderBy('startTime', 'asc'));
 
@@ -1519,9 +2497,14 @@ export const getInterviewsByWindow = async (window) => {
 
 	const interviewsWithNames = await Promise.all(
 		snapshot.docs.map(async (details) => {
-			const interview = { id: details.id, ...details.data() };
+			const interview: InterviewRecord = { id: details.id, ...details.data() };
 			try {
-				const applicantDoc = await getDoc(doc(db, collections.applicants, interview.applicantId));
+				const applicantId = String(interview.applicantId ?? '');
+				if (!applicantId) {
+					interview.applicantName = 'Unknown Applicant';
+					return interview;
+				}
+				const applicantDoc = await getDoc(doc(db, collections.applicants, applicantId));
 
 				if (applicantDoc.exists()) {
 					const applicant = applicantDoc.data();
@@ -1539,65 +2522,67 @@ export const getInterviewsByWindow = async (window) => {
 	return interviewsWithNames;
 };
 
-export const getRealTimeInterviewsByWindow = (window, callback) => {
-	const interviewsRef = collection(db, 'interviews');
-	const q = query(interviewsRef, where('deadline', '==', window), orderBy('startTime', 'asc'));
-
-	const unsubscribe = onSnapshot(q, async (snapshot) => {
-		if (snapshot.empty) {
+export const getRealTimeInterviewsByWindow = (cycleYear: number, callback: RealtimeCallback<InterviewRecord[]>) => {
+	const interviewsRef = collection(db, collections.interviews);
+	const unsubscribe = onSnapshot(
+		interviewsRef,
+		(snapshot) => {
+			const fetchedData = snapshot.docs
+				.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+				.filter((interview) => resolveInterviewCycleYear(interview) === cycleYear);
+			callback(fetchedData);
+		},
+		(error) => {
+			logEvent('getRealTimeInterviewsByWindow error', error);
 			callback([]);
-			return;
 		}
-
-		const interviewsWithNames = await Promise.all(
-			snapshot.docs.map(async (details) => {
-				const interview = { id: details.id, ...details.data() };
-				try {
-					const applicantDoc = await getDoc(doc(db, collections.applicants, interview.applicantId));
-					if (applicantDoc.exists()) {
-						const applicant = applicantDoc.data();
-						interview.applicantName = `${applicant.firstName} ${applicant.lastName}`;
-					} else {
-						interview.applicantName = 'Unknown Applicant';
-					}
-				} catch {
-					interview.applicantName = 'Error fetching name';
-				}
-				return interview;
-			})
-		);
-
-		callback(interviewsWithNames);
-	});
-
+	);
 	return unsubscribe;
 };
 
-export const generateICSDownloadURL = async (interview) => {
+const getInterviewICSFields = (interview: InterviewICSInput): Record<string, unknown> => {
+	if (typeof interview.data === 'function') {
+		return interview.data();
+	}
+	return {
+		startTime: interview.startTime,
+		endTime: interview.endTime,
+		title: interview.title,
+		description: interview.description,
+	};
+};
+
+const toInterviewDate = (value: unknown): Date => {
+	if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+		return (value as { toDate: () => Date }).toDate();
+	}
+	return new Date(value as string | number | Date);
+};
+
+export const generateICSDownloadURL = async (interview: InterviewICSInput): Promise<string> => {
 	const path = `interview-invites/${interview.id}.ics`;
 	const fileRef = ref(storage, path);
 
 	try {
 		return await getDownloadURL(fileRef);
 	} catch (err) {
-		if (err.code === 'storage/object-not-found') {
+		const storageError = err as { code?: string };
+		if (storageError.code === 'storage/object-not-found') {
 			const ensureICS = httpsCallable(functions, 'ensureICSFile');
-
-			const { startTime, endTime, title, description } = interview.data();
+			const { startTime, endTime, title, description } = getInterviewICSFields(interview);
 			const result = await ensureICS({
 				interviewId: interview.id,
-				startTime: startTime.toDate?.() ?? new Date(startTime),
-				endTime: endTime.toDate?.() ?? new Date(endTime),
-				title: title ?? 'AMS Interview',
-				description: description ?? 'Scheduled interview session',
+				startTime: toInterviewDate(startTime),
+				endTime: toInterviewDate(endTime),
+				title: (title as string | undefined) ?? 'AMS Interview',
+				description: (description as string | undefined) ?? 'Scheduled interview session',
 				url: `${globalThis.location.origin}/interviews/waiting-room/${interview.id}`,
 			});
 
-			return result.data.downloadUrl;
-		} else {
-			logEvent('Error in generateICSDownloadURL', err);
-			throw err;
+			return (result.data as { downloadUrl: string }).downloadUrl;
 		}
+		logEvent('Error in generateICSDownloadURL', err);
+		throw err;
 	}
 };
 
@@ -1621,7 +2606,7 @@ export const getEmailLogs = async (limitCount = 20) => {
 	}
 };
 
-export const getRealTimeNewApplicantsThisYear = (callback, limitCount = 10) => {
+export const getRealTimeNewApplicantsThisYear = (callback: RealtimeCallback<DocumentData[]>, limitCount = 10) => {
 	try {
 		const currentYearStr = new Date().getFullYear().toString();
 		const startOfYearDate = new Date(`${currentYearStr}-01-01T00:00:00Z`);
@@ -1641,7 +2626,7 @@ export const getRealTimeNewApplicantsThisYear = (callback, limitCount = 10) => {
 	}
 };
 
-export const getAverageApplicationsPerYearByType = async (type, currentYear, yearsBack = 3) => {
+export const getAverageApplicationsPerYearByType = async (type: ApplicationTypeValue, currentYear: number, yearsBack = 3) => {
 	try {
 		const coll = collection(db, collections.applications);
 		const q = query(

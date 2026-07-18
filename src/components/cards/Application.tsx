@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Application Detail Card
  * The primary view for reviewing a submitted application.
@@ -19,6 +18,8 @@ import { useDialog } from '../../context/DialogContext';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
+import { assetSubsectionTitleSx, assetViewCardContentSx, singleAssetGridRowSx, singleAssetStackSx } from '../../config/ui/adminPageStyles';
+import { formatDateTimeLocal, formatPlaceAddress } from '../../config/ui/displayFormat';
 
 // Config & Utils
 import { generatePath } from '../../config/navigation/routeUtils';
@@ -33,26 +34,38 @@ import SingleAssetPage, { AssetCard } from '../layout/SingleAssetPage';
 import Loader from '../loader/Loader';
 import NotFound from '../layout/NotFound';
 import NotesSection from '../notes/NotesSection';
-import Header from '../assets/Header';
+import AssetProfileSection from '../assets/AssetProfileSection';
 import InfoTable from '../assets/InfoTable';
 import Section from '../assets/Section';
-import DynamicActionGroup from '../dynamicButtons/DynamicButtons';
+import {
+	AssignmentOutlined as TypeIcon,
+	PersonOutlined as PersonIcon,
+	SchoolOutlined as SchoolIcon,
+	MenuBookOutlined as MajorIcon,
+	BusinessOutlined as OrgIcon,
+	EmailOutlined as EmailIcon,
+	PhoneIphoneOutlined as CellIcon,
+	ScheduleOutlined as UpdatedIcon,
+} from '@mui/icons-material';
+
+import type { DocumentData } from 'firebase/firestore';
+import type { ApplicantRecord, ApplicationCardProps, DynamicAction, ExperiencePosition, FamilyMember } from './types';
 
 // --- Sub-components (Helpers) ---
 
-const sumArray = (arr) => {
+const sumArray = (arr: Array<{ amount?: string | number }> | null | undefined) => {
 	if (!arr || !Array.isArray(arr)) return 0;
 	return arr.reduce((acc, item) => acc + (Number(item.amount) || 0), 0);
 };
 
-const FamilyInfo = ({ data }) => (
+const FamilyInfo = ({ data }: { data: { familyMembers?: FamilyMember[] } }) => (
 	<Box>
 		{data.familyMembers?.map((member) => (
-			<Box key={`${member.relation}-${member.fullName}`} mb={2}>
-				<Typography variant='body1' fontWeight='bold'>
+			<Box key={`${member.relation}-${member.fullName}`} sx={{ mb: 1.5 }}>
+				<Typography variant='body1' sx={{ fontWeight: 'bold', color: 'text.primary' }}>
 					{member.relation}: {member.fullName}, Age {member.age}
 				</Typography>
-				<Typography variant='body2' color='text.secondary'>
+				<Typography variant='body2' sx={{ color: 'text.secondary' }}>
 					Occupation: {member.occupation}
 				</Typography>
 			</Box>
@@ -66,7 +79,7 @@ FamilyInfo.propTypes = {
 	}).isRequired,
 };
 
-const EducationInfo = ({ data }) => (
+const EducationInfo = ({ data }: { data: DocumentData }) => (
 	<InfoTable
 		data={[
 			{ label: 'School', value: data.schoolName },
@@ -88,15 +101,15 @@ EducationInfo.propTypes = {
 	}).isRequired,
 };
 
-const ExperienceInfo = ({ data }) => {
+const ExperienceInfo = ({ data }: { data: { positions?: ExperiencePosition[]; currentOrganization?: string | number } }) => {
 	const { darkMode } = useTheme();
 
 	return (
 		<Box>
-			<Typography variant='h5' gutterBottom color={darkMode ? 'secondary.main' : 'text.highlight'}>
+			<Typography variant='h5' gutterBottom sx={{ color: darkMode ? 'secondary.main' : 'text.highlight' }}>
 				Record
 			</Typography>
-			{data.positions?.map((pos, index) => {
+			{data.positions?.map((pos: ExperiencePosition, index: number) => {
 				const isCurrent = Number(index === Number(data.currentOrganization));
 				let backgroundColor = 'transparent';
 				if (isCurrent) {
@@ -110,15 +123,18 @@ const ExperienceInfo = ({ data }) => {
 					textColor = 'custom.brightWhite';
 				}
 
+				const secondaryColor = textColor === 'custom.black' ? 'text.secondary' : 'custom.white';
+
 				return (
-					<Box key={`${pos.type}-${pos.organization}`} mb={2} bgcolor={backgroundColor} padding='10px' borderRadius='8px'>
-						<Typography variant='body1' color={textColor} fontWeight='bold'>
-							{pos.organization} ({pos.location})
+					<Box key={`${pos.type}-${pos.organization}`} sx={{ mb: 2, bgcolor: backgroundColor, p: '10px', borderRadius: '8px' }}>
+						<Typography variant='body1' sx={{ color: textColor, fontWeight: 'bold' }}>
+							{pos.organization}
+							{pos.location ? ` (${formatPlaceAddress(pos.location)})` : ''}
 						</Typography>
-						<Typography variant='body2' color={textColor === 'custom.black' ? 'text.secondary' : 'custom.white'}>
+						<Typography variant='body2' sx={{ color: secondaryColor }}>
 							Role: {pos.role}
 						</Typography>
-						<Typography variant='body2' color={textColor === 'custom.black' ? 'text.secondary' : 'custom.white'}>
+						<Typography variant='body2' sx={{ color: secondaryColor }}>
 							{pos.type}
 						</Typography>
 					</Box>
@@ -132,8 +148,7 @@ ExperienceInfo.propTypes = {
 	data: PropTypes.object.isRequired,
 };
 
-const FinancialTable = ({ title, data, total }) => {
-	const { darkMode } = useTheme();
+const FinancialTable = ({ title, data, total }: { title: string; data?: DocumentData | null; total?: number }) => {
 	if (!data) return null;
 
 	const formattedData = Object.entries(data)
@@ -146,7 +161,7 @@ const FinancialTable = ({ title, data, total }) => {
 				}));
 			}
 			const numericValue = Number(value) || 0;
-			let formattedLabel = key.replaceAll(/([A-Z])/g, ' $1').trim();
+			let formattedLabel = key.replace(/([A-Z])/g, ' $1').trim();
 			return [
 				{
 					label: capitalize(formattedLabel),
@@ -163,8 +178,8 @@ const FinancialTable = ({ title, data, total }) => {
 	}
 
 	return (
-		<Box flex={1} minWidth='250px'>
-			<Typography variant='h5' gutterBottom color={darkMode ? 'secondary.main' : 'text.highlight'}>
+		<Box sx={{ flex: 1, minWidth: '250px' }}>
+			<Typography variant='h5' gutterBottom sx={assetSubsectionTitleSx}>
 				{title}
 			</Typography>
 			<InfoTable data={formattedData} />
@@ -180,45 +195,56 @@ FinancialTable.propTypes = {
 
 // --- Main Component ---
 
-export const Application = ({ application: initialApplication }) => {
+export const Application = ({ application: initialApplication }: ApplicationCardProps) => {
 	const navigate = useNavigate();
 	const { showDialog } = useDialog();
 	const { showAlert, handleError } = useAlert();
 	const { member } = useAuth();
 	const config = useConfig();
-	const { darkMode } = useTheme();
 
 	const [application, setApplication] = useState(initialApplication);
-	const [applicant, setApplicant] = useState(null);
-	const [family, setFamily] = useState(null);
-	const [education, setEducation] = useState(null);
-	const [experience, setExperience] = useState(null);
-	const [incomes, setIncomes] = useState(null);
-	const [expenses, setExpenses] = useState(null);
-	const [projections, setProjections] = useState(null);
-	const [contributions, setContributions] = useState(null);
-	const [attachments, setAttachments] = useState(null);
-	const [awards, setAwards] = useState([]);
+	const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
+	const [family, setFamily] = useState<DocumentData | null>(null);
+	const [education, setEducation] = useState<DocumentData | null>(null);
+	const [experience, setExperience] = useState<DocumentData | null>(null);
+	const [incomes, setIncomes] = useState<DocumentData | null>(null);
+	const [expenses, setExpenses] = useState<DocumentData | null>(null);
+	const [projections, setProjections] = useState<DocumentData | null>(null);
+	const [contributions, setContributions] = useState<DocumentData | null>(null);
+	const [attachments, setAttachments] = useState<DocumentData | null>(null);
+	const [awards, setAwards] = useState<DocumentData[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showNotes, setShowNotes] = useState(false);
 
 	useEffect(() => {
 		const fetchData = async () => {
 			if (!application) return;
+			if (!application.completedBy) return;
 			setLoading(true);
 			try {
-				const dataPromises = [getCollectionData(application.completedBy, collections.families, application.family), getCollectionData(application.completedBy, collections.education, application.education), getCollectionData(application.completedBy, collections.experience, application.experience), getCollectionData(application.completedBy, collections.incomes, application.incomes), getCollectionData(application.completedBy, collections.expenses, application.expenses), getCollectionData(application.completedBy, collections.projections, application.projections), getCollectionData(application.completedBy, collections.contributions, application.contributions), getCollectionData(application.completedBy, collections.attachments, application.attachments), getCollectionData(application.completedBy, collections.applicants, application.completedBy)];
+				const completedBy = application.completedBy;
+				const dataPromises = [
+					getCollectionData(completedBy, collections.families, application.family ?? ''),
+					getCollectionData(completedBy, collections.education, application.education ?? ''),
+					getCollectionData(completedBy, collections.experience, application.experience ?? ''),
+					getCollectionData(completedBy, collections.incomes, application.incomes ?? ''),
+					getCollectionData(completedBy, collections.expenses, application.expenses ?? ''),
+					getCollectionData(completedBy, collections.projections, application.projections ?? ''),
+					getCollectionData(completedBy, collections.contributions, application.contributions ?? ''),
+					getCollectionData(completedBy, collections.attachments, application.attachments ?? ''),
+					getCollectionData(completedBy, collections.applicants, completedBy),
+				];
 				const [familyData, educationData, experienceData, incomesData, expensesData, projectionsData, contributionsData, attachmentsData, applicantData] = await Promise.all(dataPromises);
 
-				setFamily(familyData);
-				setEducation(educationData);
-				setExperience(experienceData);
-				setIncomes(incomesData);
-				setExpenses(expensesData);
-				setProjections(projectionsData);
-				setContributions(contributionsData);
-				setAttachments(attachmentsData);
-				setApplicant(applicantData);
+				setFamily(familyData ?? null);
+				setEducation(educationData ?? null);
+				setExperience(experienceData ?? null);
+				setIncomes(incomesData ?? null);
+				setExpenses(expensesData ?? null);
+				setProjections(projectionsData ?? null);
+				setContributions(contributionsData ?? null);
+				setAttachments(attachmentsData ?? null);
+				setApplicant(applicantData ?? null);
 			} catch (error) {
 				console.error('Error fetching application details:', error);
 			}
@@ -228,13 +254,13 @@ export const Application = ({ application: initialApplication }) => {
 	}, [application]);
 
 	useEffect(() => {
-		if (application?.awards?.length > 0) {
+		if (application?.awards && application.awards.length > 0) {
 			const unsubscribe = getRealTimeAwardsByIDs(application.awards, setAwards);
 			return () => unsubscribe();
 		}
 	}, [application?.awards]);
 
-	const handleAction = (action, asset) => {
+	const handleAction = (action: DynamicAction & { dialogId?: string }, asset: ApplicationCardProps['application']) => {
 		const dialogId = action.dialogId;
 
 		if (action.navTo) {
@@ -244,7 +270,7 @@ export const Application = ({ application: initialApplication }) => {
 		}
 
 		if (action.onClick) {
-			action.onClick();
+			action.onClick(asset);
 			return;
 		}
 
@@ -253,7 +279,8 @@ export const Application = ({ application: initialApplication }) => {
 				showDialog({
 					id: 'changeAppStatus',
 					data: { currentStatus: asset.status },
-					callback: async (result) => {
+					callback: async (value: unknown) => {
+						const result = value as { status?: string } | null;
 						if (result?.status) {
 							try {
 								await saveCollectionData(collections.applications, asset.id, { status: result.status });
@@ -270,7 +297,8 @@ export const Application = ({ application: initialApplication }) => {
 			case 'markEligibility':
 				showDialog({
 					id: 'markEligibility',
-					callback: async (result) => {
+					callback: async (value: unknown) => {
+						const result = value as string | null;
 						if (result) {
 							try {
 								await saveCollectionData(collections.applications, asset.id, { status: result });
@@ -287,13 +315,14 @@ export const Application = ({ application: initialApplication }) => {
 			case 'addAward':
 				showDialog({
 					id: 'addAward',
-					callback: async (result) => {
+					callback: async (value: unknown) => {
+						const result = value as { awardAmount?: string; awardName?: string; awardFollowUp?: string } | null;
 						if (result?.awardAmount && result?.awardName) {
 							try {
 								const awardId = uuid();
 								const awardData = {
 									id: awardId,
-									memberId: member.id,
+									memberId: member?.id,
 									applicationId: asset.id,
 									applicantId: asset.completedBy,
 									date: serverTimestamp(),
@@ -303,7 +332,7 @@ export const Application = ({ application: initialApplication }) => {
 								};
 								await saveCollectionData(collections.awards, awardId, awardData);
 								await saveCollectionData(collections.applications, asset.id, { status: 'Awarded' });
-								await pushNotice(ContactTemplate.appApproved, applicant, { award: awardData });
+								await pushNotice(ContactTemplate.appApproved, applicant ?? {}, { award: awardData });
 
 								setApplication((prev) => ({ ...prev, status: 'Awarded' }));
 								showAlert({ message: 'Award added successfully!', type: 'success' });
@@ -320,12 +349,36 @@ export const Application = ({ application: initialApplication }) => {
 		}
 	};
 
-	const actions = useMemo(() => getApplicationActions(showNotes, setShowNotes, member), [showNotes, member]);
+	const buildApplicationActions = getApplicationActions as (showNotes: boolean, setShowNotes: React.Dispatch<React.SetStateAction<boolean>>, member?: unknown) => DynamicAction[];
+	const actions = useMemo(() => buildApplicationActions(showNotes, setShowNotes, member), [buildApplicationActions, showNotes, member]);
 
 	const requiredAttachments = useMemo(() => {
 		if (!application.type) return [];
-		return attachmentFields.filter((field) => field.requiredBy.includes(application.type));
+		return attachmentFields.filter((field) => field.requiredBy.includes(application.type as 'New Applicant' | 'Returning Grant' | 'Scholarship Check In'));
 	}, [application.type]);
+
+	const applicationDetails = useMemo(
+		() => [
+			{ label: 'Name', value: `${applicant?.firstName ?? ''} ${applicant?.lastName ?? ''}`.trim(), icon: PersonIcon },
+			{ label: 'Type', value: application.type, icon: TypeIcon },
+			{ label: 'School', value: applicant?.school ? `${applicant.school} (${applicant?.gradYear ?? '—'})` : undefined, icon: SchoolIcon },
+			{ label: 'Major', value: applicant?.major, icon: MajorIcon },
+			{ label: 'Organization', value: applicant?.organization, icon: OrgIcon },
+			{
+				label: 'Email',
+				value: applicant?.email ? (
+					<Box component='a' href={`mailto:${applicant.email}`} sx={{ color: 'inherit', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+						{applicant.email}
+					</Box>
+				) : undefined,
+				icon: EmailIcon,
+			},
+			{ label: 'Phone', value: applicant?.cell, icon: CellIcon },
+		],
+		[application, applicant],
+	);
+
+	const updatedAt = (application.lastUpdated || application.submittedOn) as string | number | Date | null | undefined;
 
 	const calculatedTotals = useMemo(() => {
 		if (!expenses || !incomes) return { expenses: 0, income: 0 };
@@ -341,59 +394,62 @@ export const Application = ({ application: initialApplication }) => {
 
 	return (
 		<SingleAssetPage>
-			<Box display='flex' padding='20px' gap='20px'>
-				<AssetCard flex='1'>
-					<Header image={applicant?.picture?.home} title={applicant?.callMe} status={application.status} config={config}>
-						<InfoTable
-							data={[
-								{ label: 'Application Type', value: application.type },
-								{ label: 'Full Name', value: `${applicant?.firstName} ${applicant?.lastName}` },
-								{ label: 'School', value: `${applicant?.school} (${applicant?.gradYear})` },
-								{ label: 'Major', value: applicant?.major },
-								{ label: 'Organization', value: applicant?.organization },
-								{ label: 'Email', value: applicant?.email },
-								{ label: 'Phone', value: applicant?.cell },
-								{ label: 'Last Updated', value: application.lastUpdated || application.submittedOn || 'N/A' },
-							]}
-						/>
-					</Header>
-				</AssetCard>
-
-				<AssetCard flex='1.25' sx={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-					<Typography component='span' fontSize='16px' color={darkMode ? 'secondary.main' : 'text.highlight'}>
-						Functions
-					</Typography>
-					<DynamicActionGroup actions={actions} asset={application} onAction={handleAction} />
+			<Box sx={singleAssetStackSx}>
+				<AssetCard contentSx={assetViewCardContentSx}>
+					<AssetProfileSection
+						image={applicant?.picture?.home}
+						displayName={applicant?.callMe}
+						status={application.status}
+						config={config}
+						details={applicationDetails}
+						actions={actions as DynamicAction[]}
+						asset={application}
+						onAction={handleAction as (action: DynamicAction, asset?: Record<string, unknown>) => void}
+						footerMeta={
+							updatedAt ? (
+								<Box
+									sx={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: { xs: 'center', sm: 'flex-end' },
+										gap: 0.75,
+									}}>
+									<UpdatedIcon sx={{ fontSize: 16, color: 'text.secondary' }} aria-hidden />
+									<Typography component='span' sx={{ fontSize: '0.8125rem', color: 'text.secondary', fontWeight: 500, whiteSpace: 'nowrap' }}>
+										Last updated {formatDateTimeLocal(updatedAt)}
+									</Typography>
+								</Box>
+							) : undefined
+						}
+					/>
 				</AssetCard>
 			</Box>
 
 			{showNotes && (
-				<Box px='20px' mb='20px'>
-					<AssetCard>
-						<Section>
-							<NotesSection targetId={application?.id} targetCollection={collections.applications} />
-						</Section>
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
+						<NotesSection targetId={application?.id} targetCollection={collections.applications} />
 					</AssetCard>
 				</Box>
 			)}
 
-			<Box display='flex' padding='0 20px 20px' gap='20px'>
+			<Box sx={singleAssetGridRowSx}>
 				{family && (
-					<AssetCard flex={1}>
+					<AssetCard flex={1} contentSx={assetViewCardContentSx}>
 						<Section title='Family'>
 							<FamilyInfo data={family} />
 						</Section>
 					</AssetCard>
 				)}
 				{education && (
-					<AssetCard flex={1}>
+					<AssetCard flex={1} contentSx={assetViewCardContentSx}>
 						<Section title='Education'>
 							<EducationInfo data={education} />
 						</Section>
 					</AssetCard>
 				)}
 				{experience && (
-					<AssetCard flex={1}>
+					<AssetCard flex={1} contentSx={assetViewCardContentSx}>
 						<Section title='Experience'>
 							<ExperienceInfo data={experience} />
 						</Section>
@@ -402,20 +458,20 @@ export const Application = ({ application: initialApplication }) => {
 			</Box>
 
 			{(incomes || expenses || projections) && (
-				<Box px='20px' mb='20px'>
-					<AssetCard>
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
 						<Section title='Financials'>
-							<Box display='flex' flexDirection={{ xs: 'column', md: 'row' }} gap={4} mt={2}>
+							<Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 4, mt: 2 }}>
 								<FinancialTable title='Income' data={incomes} total={calculatedTotals.income} />
 								<FinancialTable title='Expenses' data={expenses} total={calculatedTotals.expenses} />
 								<FinancialTable title='Projections' data={projections} />
 							</Box>
 							{contributions?.anyExtraordinaryExpenses && (
-								<Box mt={2}>
-									<Typography variant='h6' gutterBottom>
+								<Box sx={{ mt: 2 }}>
+									<Typography variant='h6' gutterBottom sx={{ color: 'text.primary' }}>
 										Extraordinary Circumstances
 									</Typography>
-									<Typography variant='body2' sx={{ whiteSpace: 'pre-line' }}>
+									<Typography variant='body2' sx={{ whiteSpace: 'pre-line', color: 'text.primary' }}>
 										{contributions.anyExtraordinaryExpenses}
 									</Typography>
 								</Box>
@@ -426,8 +482,8 @@ export const Application = ({ application: initialApplication }) => {
 			)}
 
 			{awards?.length > 0 && (
-				<Box px='20px' mb='20px'>
-					<AssetCard>
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
 						<Section title='Awards'>
 							<InfoTable
 								data={awards.map((award) => ({
@@ -441,10 +497,10 @@ export const Application = ({ application: initialApplication }) => {
 			)}
 
 			{requiredAttachments.length > 0 && (
-				<Box pb='20px' px='20px' mb='20px'>
-					<AssetCard>
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
 						<Section title='Required Attachments'>
-							<Box display='flex' flexWrap='wrap' gap={1}>
+							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
 								{requiredAttachments.map((field) => {
 									const attachmentData = attachments?.[field.key];
 									if (attachmentData?.home) {

@@ -1,46 +1,22 @@
-// @ts-nocheck
-/**
- * LOGIN PAGE & AUTHENTICATION GATEWAY
- * ---------------------------------------------------------------------------
- * This component handles user sign-in and enforces global access policies.
- *
- * * AUTHENTICATION FLOW:
- * 1. Maintenance Check: Blocks login if site is in maintenance mode.
- * 2. Firebase Auth: Validates email/password with Google Identity Platform.
- * 3. Profile Resolution: Fetches user roles (Member vs. Applicant).
- * 4. Access Control: Checks if the user's role is currently allowed to log in
- * based on global config (e.g. 'APPLICANT_ACCESS').
- * 5. Redirection: Sends user to their intended destination or the default dashboard.
- *
- * * DYNAMIC UI:
- * The form layout (inputs, labels, buttons) is derived from 'loginContent'
- * in 'src/config/content/content.js'.
- */
-
-import React, { useState } from 'react';
+import { Button, TextField, FormControlLabel, Checkbox, Box, Grid, Stack } from '@mui/material';
+import { loginUser, auth, getUserProfiles, logoutUser } from '../../config/data/firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { sendPasswordResetEmail } from 'firebase/auth';
-
-// UI Components
-import { Avatar, Button, CssBaseline, TextField, FormControlLabel, Checkbox, Box, Typography } from '@mui/material';
-import Copyright from '../../components/footer/CopyrightFooter';
-import Loader from '../../components/loader/Loader';
-
-// Contexts
 import { useAuth } from '../../context/AuthContext';
+import { useState } from 'react';
+import Loader from '../../components/loader/Loader';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
-import { useAlert } from '../../context/AlertContext';
-import { useConfig } from '../../context/ConfigContext';
-
-// Backend & Config
-import { loginUser, auth, getUserProfiles, logoutUser } from '../../config/data/firebase';
 import { generatePath } from '../../config/navigation/routeUtils';
 import { paths } from '../../config/navigation/paths';
-import { loginContent as loginConfig } from '../../config/content/content';
+import { useAlert } from '../../context/AlertContext';
+import { useConfig } from '../../context/ConfigContext';
+import { loginContent as loginConfig, homePageContent } from '../../config/content';
+import PublicPageLayout from '../../components/home/PublicPageLayout';
+import AuthFormCard from '../../components/auth/AuthFormCard';
+import { homeAuthSecondaryButtonSx, homeAuthSubmitButtonSx } from '../../components/home/homePageStyles';
 
-// User-Friendly Error Messages for Firebase Codes
-const firebaseLoginErrorMessages = {
+const firebaseLoginErrorMessages: Record<string, string> = {
 	'auth/invalid-credential': 'Invalid credentials. Please try again.',
 	'auth/user-not-found': 'No account found with this email.',
 	'auth/wrong-password': 'Incorrect password. Please try again.',
@@ -50,36 +26,28 @@ const firebaseLoginErrorMessages = {
 	'auth/network-request-failed': 'Network error. Check your connection and try again.',
 };
 
-const firebaseResetErrorMessages = {
+const firebaseResetErrorMessages: Record<string, string> = {
 	'auth/invalid-email': 'Invalid email address format.',
 	'auth/user-not-found': 'No account found with this email.',
 };
 
 export default function Login() {
-	// --- Hooks & State ---
 	const navigate = useNavigate();
 	const location = useLocation();
 	const config = useConfig();
-
-	const { boxShadow } = useTheme();
-	const { loading } = useAuth(); // Global auth loading state
+	const { primaryColor } = useTheme();
+	const { loading } = useAuth();
 	const { showAlert, handleError } = useAlert();
-
-	const [isSubmitting, setIsSubmitting] = useState(false); // Local form loading state
-
+	const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 	useTitle({ title: 'Login', appear: true });
 
-	// --- Form State Initialization ---
-	// Dynamically build initial state based on config fields
-	const initialFormState = loginConfig.fields.reduce((acc, field) => {
-		acc[field.name] = field.component === 'Checkbox' ? false : '';
+	const initialFormState = (loginConfig.fields as any[]).reduce((acc: Record<string, string | boolean>, field: any) => {
+		acc[field.name as string] = field.component === 'Checkbox' ? false : '';
 		return acc;
 	}, {});
-	const [formData, setFormData] = useState(initialFormState);
+	const [formData, setFormData] = useState<Record<string, string | boolean>>(initialFormState);
 
-	// --- Handlers ---
-
-	const handleInputChange = (event) => {
+	const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, value, type, checked } = event.target;
 		setFormData((prev) => ({
 			...prev,
@@ -87,48 +55,54 @@ export default function Login() {
 		}));
 	};
 
-	const handleSubmit = async (event) => {
+	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setIsSubmitting(true);
 
-		// 1. Maintenance Mode Guard
 		if (config.DOWN_FOR_MAINTENANCE) {
-			showAlert({ message: config.MAINTENANCE_MESSAGE || 'The site is currently down for maintenance.', type: 'info' });
+			showAlert({ message: (config.MAINTENANCE_MESSAGE as string) || 'The site is currently down for maintenance.', type: 'info' });
 			setIsSubmitting(false);
 			return;
 		}
 
+		let succeeded = false;
 		try {
-			// 2. Perform Authentication
-			const loginResult = await loginUser(formData.email.trim(), formData.password);
+			const loginResult = await loginUser((formData.email as string).trim(), formData.password as string);
 			const user = loginResult.user;
 
-			// 3. Fetch Roles (Member vs Applicant)
-			const profiles = await getUserProfiles(user.uid);
+			const profiles = await getUserProfiles(user.uid) as Record<string, unknown>;
 			const isMember = !!profiles.member;
 			const isApplicant = !!profiles.applicant;
 
-			// 4. Role-Based Access Control (RBAC)
-			// Ensure the specific role is currently allowed to access the site
 			if ((isMember && !config.MEMBER_ACCESS) || (isApplicant && !isMember && !config.APPLICANT_ACCESS)) {
 				const message = isMember ? 'Access for members is currently disabled.' : 'Access for applicants is currently disabled.';
-
 				showAlert({ message: `${message} Please try again later.`, type: 'error' });
-				await logoutUser(); // Force logout if access is denied
+				await logoutUser();
 			} else {
-				// 5. Success & Redirect
-				showAlert({ message: 'Login successful!', type: 'success' });
+				const from = (location.state as { from?: { pathname?: string } })?.from?.pathname;
+				const destination =
+					from ||
+					(isMember && isApplicant
+						? generatePath(paths.redirect)
+						: isMember
+							? generatePath(paths.memberDash)
+							: isApplicant
+								? generatePath(paths.apply)
+								: generatePath(paths.redirect));
 
-				// Redirect to where they were trying to go, or the default dashboard
-				const from = location.state?.from?.pathname || generatePath(paths.redirect);
-				navigate(from, { replace: true });
+				showAlert({ message: 'Login successful!', type: 'success' });
+				succeeded = true;
+				navigate(destination, { replace: true });
 			}
 		} catch (error) {
-			const userFriendlyMessage = firebaseLoginErrorMessages[error.code] || 'An unexpected error occurred.';
+			const firebaseError = error as { code?: string; message?: string };
+			const userFriendlyMessage = firebaseLoginErrorMessages[firebaseError.code || ''] || 'An unexpected error occurred.';
 			showAlert({ message: userFriendlyMessage, type: 'error' });
 			handleError(error, 'login-handleSubmit', false);
 		} finally {
-			setIsSubmitting(false);
+			// Keep the submitting loader up through a successful navigate so the
+			// form never flashes empty between auth settle and route change.
+			if (!succeeded) setIsSubmitting(false);
 		}
 	};
 
@@ -140,62 +114,107 @@ export default function Login() {
 					showAlert({ message: 'Password reset email sent. Check your inbox.', type: 'success' });
 				})
 				.catch((error) => {
-					const message = firebaseResetErrorMessages[error.code] || 'Failed to send reset email.';
+					const firebaseError = error as { code?: string };
+					const message = firebaseResetErrorMessages[firebaseError.code || ''] || 'Failed to send reset email.';
 					showAlert({ message, type: 'error' });
 					handleError(error, 'login-passwordReset', false);
 				});
 		}
 	};
 
-	const actionMap = { handlePasswordReset: handlePasswordReset };
+	const actionMap: Record<string, () => void> = { handlePasswordReset: handlePasswordReset };
+
+	const loginLinks = [
+		...loginConfig.links,
+		...(config.MEMBER_ONBOARDING_PAGE_ENABLED
+			? [
+					{
+						id: 'boardRegister',
+						label: homePageContent.demoBoardAccess.loginLinkLabel,
+						navigationPath: homePageContent.demoBoardAccess.path || paths.registerMember,
+					},
+				]
+			: []),
+	];
 
 	if (loading || isSubmitting) return <Loader />;
 
 	return (
-		<Box display='flex' flexDirection='column' justifyContent='center' alignItems='center' bgcolor='background.passive' color='secondary.main' sx={{ height: '100vh' }}>
-			<Box width={{ xs: '100%', sm: '75%', md: '50%', lg: '35%' }} height={{ xs: '100%', md: '85vh' }} padding={3} bgcolor='background.main' color='secondary.main' sx={{ borderRadius: { xs: 0, md: 4 }, boxShadow: boxShadow }}>
-				<CssBaseline />
-
-				<Box sx={{ paddingTop: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-					<Avatar sx={{ m: 1, bgcolor: 'secondary' }}>{loginConfig.icon}</Avatar>
-					<Typography component='h1' variant='h5' marginBottom={2} textAlign={'center'}>
-						{loginConfig.title}
-					</Typography>
-
-					{/* Dynamic Form Generation */}
-					<Box component='form' display='flex' flexDirection='column' justifyContent='space-around' alignItems='center' gap={1} width='90%' onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
-						{loginConfig.fields.map(({ component, name, label, ...rest }) => {
+		<PublicPageLayout maxWidth='lg' compact tightMobile>
+			<AuthFormCard
+				layout='split'
+				tightMobile
+				title={loginConfig.title}
+				icon={loginConfig.icon}
+				eyebrow='Welcome Back'
+				subtitle='Sign in to manage your application, upload documents, or access your committee account.'>
+				<Box component='form' onSubmit={handleSubmit} noValidate>
+					<Grid container spacing={1.5}>
+						{(loginConfig.fields as any[]).map(({ component, name, label, ...rest }: { component: string; name: string; label: string; [key: string]: unknown }) => {
 							const commonProps = { name, onChange: handleInputChange, ...rest };
-
 							if (component === 'TextField') {
-								return <TextField key={name} {...commonProps} value={formData[name]} label={label} />;
+								return (
+									<Grid key={name} size={{ xs: 12 }}>
+										<TextField
+											margin='dense'
+											fullWidth
+											variant='outlined'
+											label={label}
+											value={formData[name]}
+											{...commonProps}
+										/>
+									</Grid>
+								);
 							}
 							if (component === 'Checkbox') {
-								return <FormControlLabel key={name} control={<Checkbox key={`${name}-checkbox`} {...commonProps} color='primary' checked={formData[name]} />} label={label} />;
+								return (
+									<Grid key={name} size={{ xs: 12 }}>
+										<FormControlLabel
+											sx={{ ml: 0 }}
+											control={<Checkbox color='primary' checked={formData[name] as boolean} {...commonProps} />}
+											label={label}
+										/>
+									</Grid>
+								);
 							}
 							return null;
 						})}
 
-						{/* Action Buttons (Login, Register, etc.) */}
-						{loginConfig.buttons.map((button) => (
-							<Button key={button.id} type={button.type || 'button'} variant={button.variant} fullWidth={button.fullWidth} onClick={button.navigationPath ? () => navigate(generatePath(button.navigationPath)) : null} disabled={isSubmitting} sx={{ mt: 2, mb: 1 }}>
-								{button.label}
-							</Button>
-						))}
+						<Grid size={{ xs: 12 }}>
+							<Stack spacing={1.25} sx={{ pt: 0.5 }}>
+								{loginConfig.buttons.map((button: { id: string; type?: string; variant?: string; fullWidth?: boolean; navigationPath?: string; label: string }) => (
+									<Button
+										key={button.id}
+										fullWidth
+										type={(button.type || 'button') as 'button' | 'submit' | 'reset'}
+										variant={button.type === 'submit' ? 'contained' : (button.variant as 'text' | 'outlined' | 'contained')}
+										onClick={button.navigationPath ? () => navigate(generatePath(button.navigationPath as string)) : undefined}
+										disabled={isSubmitting}
+										sx={button.type === 'submit' ? homeAuthSubmitButtonSx(primaryColor) : homeAuthSecondaryButtonSx}>
+										{button.label}
+									</Button>
+								))}
+							</Stack>
+						</Grid>
 
-						{/* Links (Forgot Password) */}
-						<Box display='flex' flexDirection='row' gap={1} justifyContent='center' alignItems='center' textAlign='center'>
-							{loginConfig.links.map((link) => (
-								<Button key={link.id} variant='text' disabled={isSubmitting} onClick={link.action ? actionMap[link.action] : () => navigate(generatePath(link.navigationPath))}>
-									{link.label}
-								</Button>
-							))}
-						</Box>
-					</Box>
+						<Grid size={{ xs: 12 }}>
+							<Stack spacing={0.25} sx={{ pt: 0.5 }}>
+								{loginLinks.map((link: { id: string; action?: string; navigationPath?: string; label: string }) => (
+									<Button
+										key={link.id}
+										variant='text'
+										size='small'
+										disabled={isSubmitting}
+										sx={{ alignSelf: 'flex-start', px: 0, minWidth: 0 }}
+										onClick={link.action ? actionMap[link.action] : () => navigate(generatePath(link.navigationPath as string))}>
+										{link.label}
+									</Button>
+								))}
+							</Stack>
+						</Grid>
+					</Grid>
 				</Box>
-
-				<Copyright sx={{ mt: 4, mb: 4 }} />
-			</Box>
-		</Box>
+			</AuthFormCard>
+		</PublicPageLayout>
 	);
 }

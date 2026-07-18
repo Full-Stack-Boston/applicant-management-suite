@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Collapsable Application Table
  * A complex table component that displays a summary list of applications.
@@ -20,10 +19,22 @@ import { useTheme } from '../../context/ThemeContext';
 // Config & Backend
 import { collections } from '../../config/data/collections';
 import { getCollectionData, getApplication, getAwardsData } from '../../config/data/firebase';
+import { formatPlaceAddress } from '../../config/ui/displayFormat';
 
 // Components
 import AttachmentViewer from '../interviews/AttachmentViewer';
 import NotesSection from '../notes/NotesSection';
+
+import type { ApplicationDataBundle, DetailSectionProps } from './types';
+import type {
+	AwardForm,
+	ContributionsForm,
+	ExpensesForm,
+	FamilyForm,
+	IncomesForm,
+	ProfileForm,
+	ProjectionsForm,
+} from '../../types/forms';
 
 // --- Constants & Helpers ---
 
@@ -33,7 +44,7 @@ const detailTableHeadStyles = {
 	bgcolor: 'action.hover',
 };
 
-const calculateAge = (dob) => {
+const calculateAge = (dob: string | Date | null | undefined) => {
 	if (!dob) return '';
 	const birthDate = new Date(dob);
 	const today = new Date();
@@ -47,20 +58,42 @@ const calculateAge = (dob) => {
 
 // --- Custom Hook for Data Fetching ---
 
-const useApplicationData = (id) => {
-	const [data, setData] = useState({
-		app: null,
-		profile: null,
-		family: null,
-		education: null,
-		experience: null,
-		expenses: null,
-		incomes: null,
-		contributions: null,
-		projections: null,
-		attachments: null,
-		awards: [],
-	});
+interface EducationDetailData {
+	schoolName?: string;
+	major?: string;
+	expectedGraduationDate?: Date | string | null;
+	currentGPA?: string;
+	previousSchools?: Array<string | { school?: string }>;
+}
+
+interface ExperiencePositionDetail {
+	type?: string;
+	organization?: string;
+	role?: string;
+	location?: string | { description?: string } | null;
+}
+
+interface ExperienceDetailData {
+	currentOrganization?: string;
+	positions?: ExperiencePositionDetail[];
+}
+
+const emptyApplicationData = (): ApplicationDataBundle => ({
+	app: null,
+	profile: null,
+	family: null,
+	education: null,
+	experience: null,
+	expenses: null,
+	incomes: null,
+	contributions: null,
+	projections: null,
+	attachments: null,
+	awards: [],
+});
+
+const useApplicationData = (id: string | undefined) => {
+	const [data, setData] = useState<ApplicationDataBundle>(emptyApplicationData);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
@@ -80,19 +113,19 @@ const useApplicationData = (id) => {
 
 				setData({
 					app,
-					profile,
-					family,
-					education,
-					experience,
-					expenses,
-					incomes,
-					contributions,
-					projections,
-					attachments,
+					profile: profile ?? null,
+					family: family ?? null,
+					education: education ?? null,
+					experience: experience ?? null,
+					expenses: expenses ?? null,
+					incomes: incomes ?? null,
+					contributions: contributions ?? null,
+					projections: projections ?? null,
+					attachments: attachments ?? null,
 					awards,
 				});
 			} catch (error) {
-				console.error('Failed to fetch application data:', error.message);
+				console.error('Failed to fetch application data:', error instanceof Error ? error.message : String(error));
 			} finally {
 				setLoading(false);
 			}
@@ -110,7 +143,7 @@ const useApplicationData = (id) => {
 
 // --- Sub-Components (Detail Views) ---
 
-export const DetailSection = ({ title, children }) => {
+export const DetailSection = ({ title, children }: DetailSectionProps) => {
 	const { darkMode } = useTheme();
 	return (
 		<Box sx={{ marginY: '15px' }}>
@@ -127,7 +160,7 @@ DetailSection.propTypes = {
 	children: PropTypes.node.isRequired,
 };
 
-export const ProfileDetails = ({ data }) => (
+export const ProfileDetails = ({ data }: { data: Partial<ProfileForm> }) => (
 	<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
 		<Table size='small' aria-label='Profile'>
 			<TableHead>
@@ -143,7 +176,7 @@ export const ProfileDetails = ({ data }) => (
 				<TableRow>
 					<TableCell component='th' scope='row'>{`${data.applicantFirstName} ${data.applicantMiddleInitial || ''} ${data.applicantLastName}`}</TableCell>
 					<TableCell>{`${dayjs(data.applicantDOB).add(12, 'hour').format('M/D/YYYY')} (${calculateAge(data.applicantDOB)})`}</TableCell>
-					<TableCell>{data.applicantMailingAddress?.description || 'N/A'}</TableCell>
+					<TableCell>{formatPlaceAddress(data.applicantMailingAddress) || 'N/A'}</TableCell>
 					<TableCell>{data.applicantCellPhone}</TableCell>
 					<TableCell>{data.applicantEmailAddress}</TableCell>
 				</TableRow>
@@ -154,7 +187,7 @@ export const ProfileDetails = ({ data }) => (
 
 ProfileDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const FamilyDetails = ({ data }) => (
+export const FamilyDetails = ({ data }: { data: Partial<FamilyForm> }) => (
 	<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
 		<Table size='small' aria-label='family'>
 			<TableHead>
@@ -166,7 +199,7 @@ export const FamilyDetails = ({ data }) => (
 				</TableRow>
 			</TableHead>
 			<TableBody>
-				{data.familyMembers?.length > 0 ? (
+				{data.familyMembers && data.familyMembers.length > 0 ? (
 					data.familyMembers.map((entry) => (
 						<TableRow key={`${entry.relation}-${entry.fullName}`}>
 							<TableCell>{entry.fullName}</TableCell>
@@ -187,7 +220,7 @@ export const FamilyDetails = ({ data }) => (
 
 FamilyDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const EducationDetails = ({ data }) => (
+export const EducationDetails = ({ data }: { data: EducationDetailData }) => (
 	<>
 		<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider', marginBottom: '10px' }}>
 			<Table size='small' aria-label='education'>
@@ -217,12 +250,15 @@ export const EducationDetails = ({ data }) => (
 					</TableRow>
 				</TableHead>
 				<TableBody>
-					{data.previousSchools?.length > 0 ? (
-						data.previousSchools.map((school) => (
-							<TableRow key={school}>
-								<TableCell>{school}</TableCell>
-							</TableRow>
-						))
+					{data.previousSchools && data.previousSchools.length > 0 ? (
+						data.previousSchools.map((school, index) => {
+							const schoolName = typeof school === 'string' ? school : school.school;
+							return (
+								<TableRow key={schoolName ?? `school-${index}`}>
+									<TableCell>{schoolName}</TableCell>
+								</TableRow>
+							);
+						})
 					) : (
 						<TableRow>
 							<TableCell>No previous education reported.</TableCell>
@@ -236,8 +272,8 @@ export const EducationDetails = ({ data }) => (
 
 EducationDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const ExperienceDetails = ({ data }) => {
-	const currentIndex = Number.parseInt(data.currentOrganization, 10);
+export const ExperienceDetails = ({ data }: { data: ExperienceDetailData }) => {
+	const currentIndex = Number.parseInt(data.currentOrganization ?? '', 10);
 	const currentPos = Array.isArray(data.positions) ? data.positions[currentIndex] : null;
 
 	const currentOrgString = currentPos ? `${currentPos.role} | ${currentPos.organization}` : 'N/A';
@@ -268,11 +304,11 @@ export const ExperienceDetails = ({ data }) => {
 						</TableRow>
 					</TableHead>
 					<TableBody>
-						{data.positions?.length > 0 ? (
+						{data.positions && data.positions.length > 0 ? (
 							data.positions?.map((pos) => (
 								<TableRow key={`${pos.type}-${pos.organization}`}>
 									<TableCell>{`${pos.type} - ${pos.organization}`}</TableCell>
-									<TableCell>{pos.location}</TableCell>
+									<TableCell>{formatPlaceAddress(pos.location)}</TableCell>
 									<TableCell>{pos.role}</TableCell>
 								</TableRow>
 							))
@@ -290,7 +326,7 @@ export const ExperienceDetails = ({ data }) => {
 
 ExperienceDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const ExpensesDetails = ({ data }) => (
+export const ExpensesDetails = ({ data }: { data: Partial<ExpensesForm> }) => (
 	<>
 		<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider', marginBottom: '10px' }}>
 			<Table size='small' aria-label='expenses'>
@@ -321,7 +357,7 @@ export const ExpensesDetails = ({ data }) => (
 					</TableRow>
 				</TableHead>
 				<TableBody>
-					{data.otherExpenses?.length > 0 ? (
+					{data.otherExpenses && data.otherExpenses.length > 0 ? (
 						data.otherExpenses.map((exp) => (
 							<TableRow key={exp.title}>
 								<TableCell>{exp.title}</TableCell>
@@ -341,7 +377,7 @@ export const ExpensesDetails = ({ data }) => (
 
 ExpensesDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const IncomesDetails = ({ data }) => (
+export const IncomesDetails = ({ data }: { data: Partial<IncomesForm> }) => (
 	<>
 		<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider', marginBottom: '10px' }}>
 			<Table size='small' aria-label='incomes'>
@@ -392,7 +428,7 @@ export const IncomesDetails = ({ data }) => (
 					</TableRow>
 				</TableHead>
 				<TableBody>
-					{data.otherIncomeSources?.length > 0 ? (
+					{data.otherIncomeSources && data.otherIncomeSources.length > 0 ? (
 						data.otherIncomeSources.map((income) => (
 							<TableRow key={income.title}>
 								<TableCell>{income.title}</TableCell>
@@ -412,7 +448,7 @@ export const IncomesDetails = ({ data }) => (
 
 IncomesDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const ContributionsDetails = ({ data }) => (
+export const ContributionsDetails = ({ data }: { data: Partial<ContributionsForm> }) => (
 	<>
 		<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider', marginBottom: '10px' }}>
 			<Table size='small' aria-label='contributions'>
@@ -457,7 +493,7 @@ export const ContributionsDetails = ({ data }) => (
 					</TableRow>
 				</TableHead>
 				<TableBody>
-					{data.siblingSchools?.length > 0 ? (
+					{data.siblingSchools && data.siblingSchools.length > 0 ? (
 						data.siblingSchools.map((school) => (
 							<TableRow key={school.title}>
 								<TableCell>{school.title}</TableCell>
@@ -472,7 +508,7 @@ export const ContributionsDetails = ({ data }) => (
 				</TableBody>
 			</Table>
 		</TableContainer>
-		<Typography gutterBottom paddingTop={1} color='primary'>
+		<Typography gutterBottom color='primary' sx={{ paddingTop: 1 }}>
 			Extraordinary Circumstances &amp; Expenses
 		</Typography>
 		<Typography gutterBottom component='div'>
@@ -483,7 +519,7 @@ export const ContributionsDetails = ({ data }) => (
 
 ContributionsDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const ProjectionsDetails = ({ data }) => (
+export const ProjectionsDetails = ({ data }: { data: Partial<ProjectionsForm> }) => (
 	<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
 		<Table size='small' aria-label='projections'>
 			<TableHead>
@@ -508,14 +544,14 @@ export const ProjectionsDetails = ({ data }) => (
 
 ProjectionsDetails.propTypes = { data: PropTypes.object.isRequired };
 
-export const AttachmentDetails = ({ data }) => (
+export const AttachmentDetails = ({ data }: { data?: Record<string, { home?: string } | undefined> }) => (
 	<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
 		<Table size='small' aria-label='attachments'>
 			<TableHead>
 				<TableRow>
 					<TableCell sx={detailTableHeadStyles}>Personal Letter</TableCell>
 					<TableCell sx={detailTableHeadStyles}>Academic Rec</TableCell>
-					<TableCell sx={detailTableHeadStyles}>Religious Rec</TableCell>
+					<TableCell sx={detailTableHeadStyles}>Community Rec</TableCell>
 					<TableCell sx={detailTableHeadStyles}>Experience Rec</TableCell>
 					<TableCell sx={detailTableHeadStyles}>Student Aid Report</TableCell>
 					<TableCell sx={detailTableHeadStyles}>Transcript</TableCell>
@@ -524,17 +560,20 @@ export const AttachmentDetails = ({ data }) => (
 			</TableHead>
 			<TableBody>
 				<TableRow>
-					{['applicantPersonalLetter', 'academicRecommendationLetter', 'religiousRecommendationLetter', 'scoutRecommendationLetter', 'studentAidReport', 'academicTranscript', 'acceptanceLetter'].map((key) => (
-						<TableCell key={key}>
-							{data?.[key]?.home ? (
-								<Button variant='outlined' href={data[key].home} target='_blank' rel='noopener noreferrer'>
-									View
-								</Button>
-							) : (
-								'None'
-							)}
-						</TableCell>
-					))}
+					{['applicantPersonalLetter', 'academicRecommendationLetter', 'communityRecommendationLetter', 'experienceRecommendationLetter', 'studentAidReport', 'academicTranscript', 'acceptanceLetter'].map((key) => {
+						const home = data?.[key]?.home;
+						return (
+							<TableCell key={key}>
+								{home ? (
+									<Button variant='outlined' href={home} target='_blank' rel='noopener noreferrer'>
+										View
+									</Button>
+								) : (
+									'None'
+								)}
+							</TableCell>
+						);
+					})}
 				</TableRow>
 			</TableBody>
 		</Table>
@@ -543,7 +582,7 @@ export const AttachmentDetails = ({ data }) => (
 
 AttachmentDetails.propTypes = { data: PropTypes.object };
 
-export const AwardsDetails = ({ data }) => (
+export const AwardsDetails = ({ data }: { data: Array<Partial<AwardForm>> }) => (
 	<TableContainer component={Paper} sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
 		<Table size='small' aria-label='awards'>
 			<TableHead>
@@ -577,7 +616,7 @@ AwardsDetails.propTypes = { data: PropTypes.array.isRequired };
 
 // --- Main Row Component ---
 
-const ApplicationRow = ({ id, attachments: showExtraDetails = false }) => {
+const ApplicationRow = ({ id, attachments: showExtraDetails = false }: { id: string; attachments?: boolean }) => {
 	const [open, setOpen] = useState(false);
 	const { darkMode } = useTheme();
 	const { app, profile, family, education, experience, expenses, incomes, contributions, projections, attachments, awards, totalAwarded, loading } = useApplicationData(id);
@@ -701,7 +740,7 @@ const ApplicationRow = ({ id, attachments: showExtraDetails = false }) => {
 							</Box>
 
 							{/* Extra Review Tools */}
-							{showExtraDetails && (
+							{showExtraDetails && app && (
 								<>
 									<Divider sx={{ mb: 2 }} />
 									<NotesSection targetId={app.id} targetCollection={collections.applications} />
@@ -723,7 +762,7 @@ ApplicationRow.propTypes = {
 
 // --- Main Table Component ---
 
-const CollapsableTable = ({ data, attachments = false }) => {
+const CollapsableTable = ({ data, attachments = false }: { data: string[]; attachments?: boolean }) => {
 	const { darkMode } = useTheme();
 
 	const tableHeaderCellStyles = {

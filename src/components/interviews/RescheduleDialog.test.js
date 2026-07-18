@@ -4,6 +4,7 @@ import RescheduleDialog from './RescheduleDialog';
 import { httpsCallable } from 'firebase/functions';
 import { useAlert } from '../../context/AlertContext';
 import dayjs from 'dayjs';
+import * as firebase from '../../config/data/firebase';
 
 // Mock dependencies
 vi.mock('firebase/functions', () => ({
@@ -13,7 +14,6 @@ vi.mock('firebase/functions', () => ({
 vi.mock('../../context/AlertContext', () => ({
 	useAlert: jest.fn(),
 }));
-import * as firebase from '../../config/data/firebase';
 vi.mock('../../config/data/firebase', () => ({
 	rescheduleInterview: jest.fn(),
 }));

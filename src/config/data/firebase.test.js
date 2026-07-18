@@ -58,7 +58,10 @@ let FirebaseConfig;
 
 // --- MOCKS ---
 		vi.mock('firebase/app', () => ({ initializeApp: vi.fn() }));
-		vi.mock('firebase/analytics', () => ({ getAnalytics: vi.fn() }));
+		vi.mock('firebase/analytics', () => ({
+			getAnalytics: vi.fn(),
+			isSupported: vi.fn(() => Promise.resolve(false)),
+		}));
 
 		vi.mock('firebase/auth', () => ({
 			getAuth: jest.fn(() => ({ currentUser: { uid: 'test-uid' } })),
@@ -95,7 +98,8 @@ let FirebaseConfig;
 			arrayRemove: vi.fn(),
 			and: vi.fn(),
 			or: vi.fn(),
-			serverTimestamp: vi.fn(),
+			serverTimestamp: vi.fn(() => 'SERVER_TIMESTAMP'),
+			Timestamp: { fromDate: (d) => ({ toDate: () => d }) },
 			persistentLocalCache: vi.fn(),
 			persistentMultipleTabManager: vi.fn(),
 		}));
@@ -146,9 +150,28 @@ let FirebaseConfig;
 				projections: 'projections',
 				experience: 'experience',
 				sms: 'sms',
+				presence: 'presence',
+				emailTemplates: 'emailTemplates',
+				interviews: 'interviews',
 			},
-			ApplicationStatus: { deleted: 'Deleted', eligible: 'Eligible' },
-			ApplicationType: { newApplication: 'New Application', returningGrant: 'Returning Grant' },
+			ApplicationStatus: {
+				started: 'Started',
+				submitted: 'Submitted',
+				completed: 'Completed',
+				incomplete: 'Incomplete',
+				eligible: 'Eligible',
+				ineligible: 'Ineligible',
+				invited: 'Invited',
+				deferred: 'Deferred',
+				awarded: 'Awarded',
+				denied: 'Not Awarded',
+				deleted: 'Deleted',
+			},
+			ApplicationType: {
+				newApplication: 'New Applicant',
+				returningGrant: 'Returning Grant',
+				scholarship: 'Scholarship Check In',
+			},
 			InterviewStatus: { scheduled: 'Scheduled' },
 			SearchableCollections: {
 				test: { collection: 'testCol', fields: ['name'] },
@@ -290,13 +313,16 @@ describe('src/config/data/firebase.js', () => {
 	// --- FILTERED QUERIES (Window, Type, Status) ---
 
 	it('getApplicationsByYear calls getDocs', async () => {
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CYCLE_YEAR: 2026, APPLICATION_DEADLINE: '2026-12-31' }),
+		});
 		mockGetDocs.mockResolvedValueOnce({
-			// Using a safe mid-year date to avoid timezone shift issues in tests
-			docs: [{ data: () => ({ window: '2024-07-01' }) }],
+			docs: [{ data: () => ({ window: '2024-07-01', status: 'completed' }) }],
 		});
 		const res = await FirebaseConfig.getApplicationsByYear();
 		expect(mockGetDocs).toHaveBeenCalled();
-		expect(res[0].year).toBe('2024');
+		expect(res.some((row) => String(row.name) === '2024' && row.count >= 1)).toBe(true);
 	});
 
 	it('getApplicationsByWindow queries by window', async () => {
@@ -317,28 +343,60 @@ describe('src/config/data/firebase.js', () => {
 	// --- COUNTS (Server Side) ---
 
 	it('getPastApplicationsCountByWindow', async () => {
-		await FirebaseConfig.getPastApplicationsCountByWindow('2023');
-		expect(mockGetCountFromServer).toHaveBeenCalled();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ data: () => ({ cycleYear: 2023, status: 'Eligible' }) },
+				{ data: () => ({ cycleYear: 2024, status: 'Eligible' }) },
+			],
+		});
+		const count = await FirebaseConfig.getPastApplicationsCountByWindow('2023');
+		expect(mockGetDocs).toHaveBeenCalled();
+		expect(count).toBe(1);
 	});
 
 	it('getCurrentApplicationCount', async () => {
-		await FirebaseConfig.getCurrentApplicationCount();
-		expect(mockGetCountFromServer).toHaveBeenCalled();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ data: () => ({ cycleYear: 2026, status: 'Started' }) },
+				{ data: () => ({ cycleYear: 2025, status: 'Started' }) },
+			],
+		});
+		const count = await FirebaseConfig.getCurrentApplicationCount();
+		expect(mockGetDocs).toHaveBeenCalled();
+		expect(count).toBe(1);
 	});
 
 	it('getCurrentlyEligibleApplicationsCount', async () => {
-		await FirebaseConfig.getCurrentlyEligibleApplicationsCount();
-		expect(mockGetCountFromServer).toHaveBeenCalled();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ data: () => ({ cycleYear: 2026, status: 'Eligible' }) },
+				{ data: () => ({ cycleYear: 2026, status: 'Started' }) },
+			],
+		});
+		const count = await FirebaseConfig.getCurrentlyEligibleApplicationsCount();
+		expect(mockGetDocs).toHaveBeenCalled();
+		expect(count).toBe(1);
 	});
 
 	it('getCurrentlyEligibleApplicationsCountByType', async () => {
-		await FirebaseConfig.getCurrentlyEligibleApplicationsCountByType('Type');
-		expect(mockGetCountFromServer).toHaveBeenCalled();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [{ data: () => ({ cycleYear: 2026, status: 'Eligible', type: 'Type' }) }],
+		});
+		const count = await FirebaseConfig.getCurrentlyEligibleApplicationsCountByType('Type');
+		expect(mockGetDocs).toHaveBeenCalled();
+		expect(count).toBe(1);
 	});
 
 	it('getEligibleApplicationsCountByTypeAndWindow', async () => {
-		await FirebaseConfig.getEligibleApplicationsCountByTypeAndWindow('Type', '2024');
-		expect(mockGetCountFromServer).toHaveBeenCalled();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ data: () => ({ cycleYear: 2024, status: 'Eligible', type: 'Type' }) },
+				{ data: () => ({ cycleYear: 2025, status: 'Eligible', type: 'Type' }) },
+			],
+		});
+		const count = await FirebaseConfig.getEligibleApplicationsCountByTypeAndWindow('Type', '2024');
+		expect(mockGetDocs).toHaveBeenCalled();
+		expect(count).toBe(1);
 	});
 
 	it('getMostRecentApplicationIDs', async () => {
@@ -379,12 +437,16 @@ describe('src/config/data/firebase.js', () => {
 	});
 
 	it('getRealTimeCurrentEligibleApplicationsCountByType', async () => {
-		await FirebaseConfig.getRealTimeCurrentEligibleApplicationsCountByType('New Application', jest.fn());
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CYCLE_YEAR: 2026, APPLICATION_DEADLINE: '2026-12-31' }),
+		});
+		await FirebaseConfig.getRealTimeCurrentEligibleApplicationsCountByType('New Applicant', jest.fn());
 		expect(mockOnSnapshot).toHaveBeenCalled();
 	});
 
 	it('getRealTimeEligibleApplicationsCountByTypeAndWindow', () => {
-		FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('New Application', '2024', jest.fn());
+		FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('New Applicant', '2024', jest.fn());
 		expect(mockOnSnapshot).toHaveBeenCalled();
 	});
 
@@ -493,19 +555,30 @@ describe('src/config/data/firebase.js', () => {
 	});
 
 	it('getBenchmarkedAwardCounts calculates metrics', async () => {
-		// Mock awards and applicant data structure
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CYCLE_YEAR: 2026, APPLICATION_DEADLINE: '2026-12-31' }),
+		});
 		mockGetDocs
 			.mockResolvedValueOnce({
-				// Awards
-				docs: [{ data: () => ({ applicantID: 'a1', type: 'New Application' }) }],
+				docs: [
+					{
+						id: 'app1',
+						data: () => ({
+							cycleYear: 2025,
+							type: 'New Applicant',
+							status: 'Completed',
+							completedBy: 'u1',
+						}),
+					},
+				],
 			})
 			.mockResolvedValueOnce({
-				// Applicant for a1
-				docs: [{ data: () => ({ awards: [{ deadline: '2020-01-01' }] }) }],
+				docs: [{ id: 'u1', data: () => ({ gradYear: 2028 }) }],
 			});
 
-		const res = await FirebaseConfig.getBenchmarkedAwardCounts('2024');
-		expect(res['New Application']).toBeDefined();
+		const res = await FirebaseConfig.getBenchmarkedAwardCounts(2025);
+		expect(res['New Applicant']).toBeDefined();
 	});
 
 	// --- STORAGE ---
@@ -613,6 +686,243 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockHttpsCallable).toHaveBeenCalled();
 	});
 
-	// --- TEST UTILS ---
-	// Removed sendToTestDB and wipeTestCollections as they are no longer exported from firebase.js
+	// --- CYCLE YEAR / REQUEST HELPERS ---
+
+	it('resolveApplicationCycleYear prefers cycleYear then window year', () => {
+		expect(FirebaseConfig.resolveApplicationCycleYear({ cycleYear: 2026 })).toBe(2026);
+		expect(FirebaseConfig.resolveApplicationCycleYear({ cycleYear: '2025' })).toBe(2025);
+		expect(FirebaseConfig.resolveApplicationCycleYear({ window: '2024-07-01' })).toBe(2024);
+		expect(FirebaseConfig.resolveApplicationCycleYear({})).toBeNull();
+		expect(FirebaseConfig.resolveApplicationCycleYear({ window: 'not-a-date' })).toBeNull();
+	});
+
+	it('coerceCycleYear accepts years and deadline strings', () => {
+		expect(FirebaseConfig.coerceCycleYear(2026)).toBe(2026);
+		expect(FirebaseConfig.coerceCycleYear('2025')).toBe(2025);
+		expect(FirebaseConfig.coerceCycleYear('2024-07-05T23:59:59')).toBe(2024);
+		expect(FirebaseConfig.coerceCycleYear(null)).toBeNull();
+	});
+
+	it('siteConfigCycleYear prefers CYCLE_YEAR over deadline', () => {
+		expect(FirebaseConfig.siteConfigCycleYear({ CYCLE_YEAR: 2026, APPLICATION_DEADLINE: '2025-01-01' })).toBe(2026);
+		expect(FirebaseConfig.siteConfigCycleYear({ APPLICATION_DEADLINE: '2024-12-31' })).toBe(2024);
+	});
+
+	it('resolveInterviewCycleYear prefers cycleYear then deadline/window', () => {
+		expect(FirebaseConfig.resolveInterviewCycleYear({ cycleYear: 2026 })).toBe(2026);
+		expect(FirebaseConfig.resolveInterviewCycleYear({ cycleYear: '2024' })).toBe(2024);
+		expect(FirebaseConfig.resolveInterviewCycleYear({ deadline: '2023-11-01' })).toBe(2023);
+		expect(FirebaseConfig.resolveInterviewCycleYear({ window: '2022-07-01' })).toBe(2022);
+		expect(FirebaseConfig.resolveInterviewCycleYear({})).toBeNull();
+	});
+
+	it('getRealTimeRequestsForCycleYear filters by application cycle year', () => {
+		const callback = jest.fn();
+		const unsubs = [];
+		mockOnSnapshot.mockImplementation((queryOrCol, onNext) => {
+			const unsub = jest.fn();
+			unsubs.push(unsub);
+			// First subscription = requests, second = applications
+			if (unsubs.length === 1) {
+				onNext({
+					docs: [
+						{ id: 'r1', data: () => ({ applicationID: 'app1', name: 'Alpha', completed: false, attempts: 0 }) },
+						{ id: 'r2', data: () => ({ applicationID: 'app2', name: 'Beta', completed: true, attempts: 0 }) },
+					],
+				});
+			} else {
+				onNext({
+					docs: [
+						{ id: 'app1', data: () => ({ cycleYear: 2026 }) },
+						{ id: 'app2', data: () => ({ cycleYear: 2025 }) },
+					],
+				});
+			}
+			return unsub;
+		});
+
+		const cleanup = FirebaseConfig.getRealTimeRequestsForCycleYear(2026, callback);
+		expect(callback).toHaveBeenCalled();
+		const last = callback.mock.calls.at(-1)[0];
+		expect(last.some((r) => r.id === 'r1')).toBe(true);
+		expect(last.some((r) => r.id === 'r2')).toBe(false);
+		cleanup();
+		unsubs.forEach((u) => expect(u).toHaveBeenCalled());
+	});
+
+	it('wipeCollections clears target collections and applicant arrays', async () => {
+		mockGetDocs.mockResolvedValue({
+			docs: [{ id: '1', data: () => ({}), ref: { path: 'x' } }],
+		});
+		const ok = await FirebaseConfig.wipeCollections({ conn: 'ams-test' });
+		expect(ok).toBe(true);
+		expect(mockDeleteDoc).toHaveBeenCalled();
+		expect(mockUpdateDoc).toHaveBeenCalled();
+	});
+
+	it('migrateEmailTemplates writes system templates', async () => {
+		vi.doMock('../content/emailTemplates', () => ({
+			emailTemplates: {
+				welcome: { label: 'Welcome', subject: 'Hi', html: '<p>Hi</p>', group: 'Reminders' },
+			},
+		}));
+		const res = await FirebaseConfig.migrateEmailTemplates();
+		expect(res).toEqual({ success: true });
+		expect(mockSetDoc).toHaveBeenCalled();
+	});
+
+	it('sendToTestDB copies collections from prod to test', async () => {
+		const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+		mockGetDocs.mockResolvedValue({
+			docs: [{ id: 'doc1', data: () => ({ a: 1 }) }],
+		});
+		await FirebaseConfig.sendToTestDB();
+		expect(mockSetDoc).toHaveBeenCalled();
+		expect(alertSpy).toHaveBeenCalled();
+		alertSpy.mockRestore();
+	});
+
+	it('touchUserPresence and clearUserPresence write presence docs', async () => {
+		await FirebaseConfig.touchUserPresence({ uid: 'u1', role: 'member', displayName: 'Ada' });
+		expect(mockSetDoc).toHaveBeenCalled();
+		await FirebaseConfig.clearUserPresence('u1');
+		expect(mockSetDoc).toHaveBeenCalledWith(expect.anything(), { status: 'offline' }, { merge: true });
+		await FirebaseConfig.touchUserPresence({ uid: '', role: 'member', displayName: 'x' });
+		await FirebaseConfig.clearUserPresence('');
+	});
+
+	it('subscribeUserLastSeen returns null when missing and value when present', () => {
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementation((ref, onNext) => {
+			onNext({ exists: () => false });
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u1', cb);
+		expect(cb).toHaveBeenCalledWith(null);
+
+		cb.mockClear();
+		mockOnSnapshot.mockImplementation((ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ lastSeen: { toDate: () => new Date('2026-01-01T00:00:00Z') }, status: 'online' }),
+			});
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u1', cb);
+		expect(cb).toHaveBeenCalled();
+		expect(cb.mock.calls[0][0]).toBeInstanceOf(Date);
+
+		const emptyUnsub = FirebaseConfig.subscribeUserLastSeen('', cb);
+		expect(typeof emptyUnsub).toBe('function');
+	});
+
+	it('getDashboardBenchmarkData aggregates current counts and trends', async () => {
+		mockGetDocs
+			.mockResolvedValueOnce({
+				docs: [
+					{
+						id: 'a1',
+						data: () => ({
+							cycleYear: 2026,
+							type: 'New Applicant',
+							status: 'Completed',
+							completedBy: 'u1',
+						}),
+					},
+					{
+						id: 'a2',
+						data: () => ({
+							cycleYear: 2025,
+							type: 'Returning Grant',
+							status: 'awarded',
+							completedBy: 'u2',
+						}),
+					},
+					{
+						id: 'a3',
+						data: () => ({
+							cycleYear: 2024,
+							type: 'Scholarship',
+							status: 'awarded',
+							completedBy: 'u3',
+						}),
+					},
+				],
+			})
+			.mockResolvedValueOnce({
+				docs: [
+					{ id: 'u1', data: () => ({ gradYear: 2028 }) },
+					{ id: 'u2', data: () => ({ gradYear: 2028 }) },
+					{ id: 'u3', data: () => ({ gradYear: 2020 }) },
+				],
+			});
+
+		// ApplicationType values may differ — just assert shape
+		const data = await FirebaseConfig.getDashboardBenchmarkData(2026);
+		expect(data).toHaveProperty('currentCounts');
+		expect(data).toHaveProperty('benchmarkTargets');
+		expect(Array.isArray(data.awardTrends)).toBe(true);
+		expect(data.awardTrends).toHaveLength(3);
+	});
+
+	it('migrateDeadlinesToCycleYear backfills cycleYear and site config', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'app1', data: () => ({ window: '2025-07-01' }) },
+				{ id: 'app2', data: () => ({ cycleYear: 2024, deadline: '2024-12-01' }) },
+			],
+		});
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CONFIG_ID: 'cfg1', APPLICATION_DEADLINE: '2026-12-31' }),
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		const results = await FirebaseConfig.migrateDeadlinesToCycleYear();
+		expect(results.applications).toBeGreaterThanOrEqual(1);
+		expect(mockBatchUpdate).toHaveBeenCalled();
+		expect(mockBatchCommit).toHaveBeenCalled();
+	});
+
+	it('backfillApplicantGradYears normalizes grad years', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'u1', data: () => ({ gradYear: '2028' }) },
+				{ id: 'u2', data: () => ({ gradYear: 2027 }) },
+				{ id: 'u3', data: () => ({ gradYear: 'bad' }) },
+			],
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		const results = await FirebaseConfig.backfillApplicantGradYears();
+		expect(results.updated + results.skipped).toBeGreaterThan(0);
+	});
+
+	it('purgeUserRecords requires userId and can clear applications', async () => {
+		await expect(FirebaseConfig.purgeUserRecords({ userId: '' })).rejects.toThrow(/User ID/);
+		mockGetDocs.mockResolvedValue({ docs: [] });
+		mockBatchCommit.mockResolvedValue(true);
+		const res = await FirebaseConfig.purgeUserRecords({ userId: 'u1', expel: false });
+		expect(res.message).toMatch(/purged/i);
+		expect(mockBatchCommit).toHaveBeenCalled();
+	});
+
+	it('getRealTimeActiveAuthenticatedUsersCount subscribes and cleans up', () => {
+		jest.useFakeTimers();
+		const cb = jest.fn();
+		const unsubSnap = jest.fn();
+		mockOnSnapshot.mockImplementation((q, onNext) => {
+			onNext({
+				docs: [
+					{ data: () => ({ status: 'online' }) },
+					{ data: () => ({ status: 'offline' }) },
+				],
+			});
+			return unsubSnap;
+		});
+		const cleanup = FirebaseConfig.getRealTimeActiveAuthenticatedUsersCount(cb);
+		expect(cb).toHaveBeenCalledWith(1);
+		jest.advanceTimersByTime(31000);
+		cleanup();
+		expect(unsubSnap).toHaveBeenCalled();
+		jest.useRealTimers();
+	});
 });

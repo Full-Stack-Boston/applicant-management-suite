@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Email Body Component
  * Renders the actual content of an email message.
@@ -8,19 +7,24 @@
  * - Sandboxes HTML styles to prevent email formatting from breaking the app layout.
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography, type SxProps, type Theme } from '@mui/material';
 
 // Hooks
-import { useProcessedEmailContent } from '../../hooks/useProcessedEmailContent';
+import { useProcessedEmailContent, type ProcessableEmail } from '../../hooks/useProcessedEmailContent';
 
-const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }) => {
+interface EmailBodyProps {
+	email: ProcessableEmail;
+	darkMode: boolean;
+	cardStyles: Record<string, unknown>;
+	cardContentStyles: Record<string, unknown>;
+}
+
+const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }: EmailBodyProps) => {
 	// Custom hook to handle HTML sanitization and inline image processing
 	const { processedContent, contentLoading } = useProcessedEmailContent(email);
 
 	// Styles to ensure external HTML email content renders decently within the app
-	const bodyStyles = {
+	const bodyStyles: SxProps<Theme> = {
 		mt: 1,
 		p: 2,
 		fontFamily: 'sans-serif',
@@ -39,14 +43,12 @@ const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }) => {
 	};
 
 	return (
-		<Box margin='0px 20px 20px' {...cardStyles}>
-			<Box {...cardContentStyles}>
+		<Box sx={{ ...cardStyles }}>
+			<Box sx={{ ...cardContentStyles }}>
 				{contentLoading ? (
 					<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
 						<CircularProgress size={24} />
-						<Typography sx={{ ml: 2 }} color='text.secondary'>
-							Loading email content...
-						</Typography>
+						<Typography sx={{ ml: 2, color: 'text.secondary' }}>Loading email content...</Typography>
 					</Box>
 				) : (
 					<Box dangerouslySetInnerHTML={{ __html: processedContent }} sx={bodyStyles} />
@@ -54,18 +56,6 @@ const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }) => {
 			</Box>
 		</Box>
 	);
-};
-
-EmailBody.propTypes = {
-	email: PropTypes.shape({
-		id: PropTypes.string.isRequired,
-		folderId: PropTypes.string.isRequired,
-		content: PropTypes.string,
-		inlineAttachments: PropTypes.array,
-	}).isRequired,
-	darkMode: PropTypes.bool.isRequired,
-	cardStyles: PropTypes.object.isRequired,
-	cardContentStyles: PropTypes.object.isRequired,
 };
 
 export default EmailBody;

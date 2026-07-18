@@ -28,9 +28,24 @@ vi.mock('../../context/AlertContext', () => ({
 	useAlert: jest.fn(),
 }));
 
+vi.mock('../../context/ConfigContext', () => ({
+	useConfig: () => ({ MEMBER_ONBOARDING_PAGE_ENABLED: false }),
+}));
+
 vi.mock('../../config/data/firebase', () => ({
 	registerUser: jest.fn(),
 	saveApplicantData: jest.fn(),
+	findApplicantAccountsByEmail: jest.fn(() => Promise.resolve([])),
+	saveFile: jest.fn(),
+	getDownloadLinkForFile: jest.fn(),
+}));
+
+vi.mock('../../config/navigation/paths', () => ({
+	paths: { redirect: '/redirect', login: '/login' },
+}));
+
+vi.mock('../../config/navigation/routeUtils', () => ({
+	generatePath: jest.fn((path) => path),
 }));
 
 vi.mock('../../config/content/push', () => ({
@@ -40,6 +55,23 @@ vi.mock('../../config/content/push', () => ({
 
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
 vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div>Copyright</div> }));
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	default: ({ children, title }) => (
+		<div data-testid='auth-form-card'>
+			{title}
+			{children}
+		</div>
+	),
+}));
+vi.mock('../../components/home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+	homeAuthActionRowSx: {},
+	homeAuthProfileUploadRowSx: {},
+}));
 
 // 2. MOCK CONTENT CONFIG
 vi.mock('../../config/content/content', () => ({
@@ -139,6 +171,7 @@ describe('Register Component', () => {
 		await waitFor(() => {
 			expect(pushNotice).toHaveBeenCalled();
 			expect(mockShowAlert).toHaveBeenCalledWith('register', 'success');
+			expect(mockNavigate).toHaveBeenCalledWith('/redirect', { replace: true });
 		});
 	});
 

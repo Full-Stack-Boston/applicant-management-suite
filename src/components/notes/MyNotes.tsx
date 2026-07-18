@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * My Notes Page
  * Displays a chronological list of all notes written by a specific member.
@@ -9,8 +8,7 @@
  * - Handles redacted content display.
  */
 
-import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -32,8 +30,27 @@ import Loader from '../loader/Loader';
 // Init DayJS plugin
 dayjs.extend(relativeTime);
 
-const MyNotes = ({ id }) => {
-	const [notes, setNotes] = useState([]);
+interface MyNotesProps {
+	id?: string;
+}
+
+interface AuthoredNote {
+	id: string;
+	text: string;
+	visibility: string;
+	redacted?: boolean;
+	redactedOn?: { toDate?: () => Date };
+	createdAt?: { toDate?: () => Date };
+	parent?: {
+		id: string;
+		name?: string;
+		collection: string;
+	};
+	[key: string]: unknown;
+}
+
+const MyNotes = ({ id }: MyNotesProps) => {
+	const [notes, setNotes] = useState<AuthoredNote[]>([]);
 	const [loading, setLoading] = useState(true);
 	const { member } = useAuth();
 	const navigate = useNavigate();
@@ -49,7 +66,7 @@ const MyNotes = ({ id }) => {
 			setLoading(true);
 			try {
 				const userNotes = await getNotesByAuthor(targetId);
-				setNotes(userNotes);
+				setNotes((userNotes as AuthoredNote[]) || []);
 			} catch (error) {
 				console.error('Failed to fetch notes:', error);
 			} finally {
@@ -60,7 +77,7 @@ const MyNotes = ({ id }) => {
 		fetchNotes();
 	}, [id, member]);
 
-	const getParentPage = (note) => {
+	const getParentPage = (note: AuthoredNote): string => {
 		if (!note.parent) return '#';
 
 		if (note.parent.collection === collections.applications) {
@@ -83,9 +100,9 @@ const MyNotes = ({ id }) => {
 				A collection of all the committee and private notes you've written.
 			</Typography>
 
-			<Box display='flex' flexDirection='column' gap={2}>
+			<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 				{notes.length === 0 ? (
-					<Typography fontStyle='italic' color='text.secondary'>
+					<Typography sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
 						You haven't written any notes yet.
 					</Typography>
 				) : (
@@ -100,12 +117,12 @@ const MyNotes = ({ id }) => {
 							}}>
 							<CardContent>
 								{/* Header: Link to Parent & Visibility Chip */}
-								<Box display='flex' justifyContent='space-between' alignItems='center' mb={1}>
+								<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
 									<Button size='small' variant='outlined' sx={{ p: 0.5, textTransform: 'none', justifyContent: 'flex-start' }} onClick={() => navigate(getParentPage(note))} disabled={!note.parent}>
-										<Typography sx={{ pr: 0.5 }} variant='caption' color='text.secondary'>
+										<Typography sx={{ pr: 0.5, color: 'text.secondary' }} variant='caption'>
 											Topic:
 										</Typography>
-										<Typography variant='caption' fontWeight='bold'>
+										<Typography variant='caption' sx={{ fontWeight: 'bold' }}>
 											{note.parent?.name || 'Unknown Entity'}
 										</Typography>
 									</Button>
@@ -115,7 +132,7 @@ const MyNotes = ({ id }) => {
 
 								{/* Body Content */}
 								{note.redacted ? (
-									<Typography fontStyle='italic' color='text.disabled' sx={{ py: 1 }}>
+									<Typography sx={{ fontStyle: 'italic', color: 'text.disabled', py: 1 }}>
 										[This note was redacted on {note.redactedOn?.toDate ? dayjs(note.redactedOn.toDate()).format('MM/DD/YYYY') : 'Unknown Date'}]
 									</Typography>
 								) : (
@@ -125,7 +142,7 @@ const MyNotes = ({ id }) => {
 								)}
 
 								{/* Footer: Timestamp */}
-								<Typography variant='caption' display='block' color='text.secondary' sx={{ mt: 1, textAlign: 'right' }}>
+								<Typography variant='caption' sx={{ display: 'block', color: 'text.secondary', mt: 1, textAlign: 'right' }}>
 									{note.createdAt?.toDate ? dayjs(note.createdAt.toDate()).fromNow() : ''}
 								</Typography>
 							</CardContent>
@@ -135,10 +152,6 @@ const MyNotes = ({ id }) => {
 			</Box>
 		</Box>
 	);
-};
-
-MyNotes.propTypes = {
-	id: PropTypes.string,
 };
 
 export default MyNotes;

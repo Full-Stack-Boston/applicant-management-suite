@@ -1,31 +1,27 @@
-// @ts-nocheck
 /**
  * Section Component
- * A layout wrapper that provides a Title, a Divider, and content spacing.
- * Used to segment detailed views (e.g., "Education History" section).
+ * Standardized title, divider, and content spacing for detail view segments.
  */
 
 import React from 'react';
-import { Box, Typography, Divider } from '@mui/material';
 import PropTypes from 'prop-types';
+import { Box } from '@mui/material';
+import AssetSectionHeader from './AssetSectionHeader';
+import type { SectionProps } from './types';
 
-const Section = ({ title, children }) => {
-	// Do not render empty sections
+const Section = ({ title, children }: SectionProps) => {
 	if (!children) return null;
 
 	return (
-		<Box mt={1}>
-			<Typography variant='h5' gutterBottom>
-				{title}
-			</Typography>
-			<Divider />
-			<Box mt={2}>{children}</Box>
+		<Box sx={{ mt: 0 }}>
+			{title && <AssetSectionHeader title={title} />}
+			<Box>{children}</Box>
 		</Box>
 	);
 };
 
 Section.propTypes = {
-	title: PropTypes.string.isRequired,
+	title: PropTypes.string,
 	children: PropTypes.node.isRequired,
 };
 

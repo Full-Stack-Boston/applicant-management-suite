@@ -1,5 +1,5 @@
 import React, { act } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import WindowInfo from './WindowInfo';
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -17,7 +17,7 @@ vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
 describe('WindowInfo', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		useTheme.mockReturnValue({ darkMode: false });
+		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 		// Default config
 		useConfig.mockReturnValue({
 			APPLICATION_DEADLINE: '2025-12-31T23:59:59Z',
@@ -52,6 +52,22 @@ describe('WindowInfo', () => {
 		// Do NOT trigger 'nextOpen' mode here because the component logic
 		// would crash trying to .toLocaleString() null.
 		// We check default/deadline behavior instead.
+		await act(async () => {
+			timerCallback('deadline');
+		});
+		expect(screen.getByText(/Application Window:/)).toBeInTheDocument();
+	});
+
+	test('displays closed window text', async () => {
+		render(<WindowInfo />);
+		await act(async () => {
+			timerCallback('closed');
+		});
+		expect(screen.getByText(/Most Recent Window:/)).toBeInTheDocument();
+	});
+
+	test('uses onDark tone styling', async () => {
+		render(<WindowInfo tone='onDark' />);
 		await act(async () => {
 			timerCallback('deadline');
 		});

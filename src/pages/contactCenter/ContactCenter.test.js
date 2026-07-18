@@ -4,6 +4,21 @@ import { act } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
+import { useTheme } from '../../context/ThemeContext';
+import { useTitle } from '../../context/HelmetContext';
+import { send, templates } from '../../config/content/push';
+import { getRealTimeApplicationsByWindow, getRealTimeCollection, getRealTimeApplicantsByApplicationID } from '../../config/data/firebase';
+import { useConfig } from '../../context/ConfigContext';
+import { senders as staticSenders } from '../../config/Constants';
+import { useAlert } from '../../context/AlertContext';
+import { useDialog } from '../../context/DialogContext';
+import { useLocation } from 'react-router-dom';
+// FIX: Import doc and collection explicitly to set return values
+import { setDoc, doc, collection } from 'firebase/firestore';
+import { useAuth } from '../../context/AuthContext';
+import { useMailbox } from '../../context/MailboxContext';
+import ContactCenter from './ContactCenter';
+
 // --- Mocks ---
 
 // 1. Mock Collections (includes ApplicationStatus)
@@ -97,6 +112,9 @@ vi.mock('../../context/AlertContext');
 vi.mock('../../context/DialogContext');
 vi.mock('../../context/AuthContext');
 vi.mock('../../context/MailboxContext');
+vi.mock('../../context/EmailTemplateContext', () => ({
+	useEmailTemplates: jest.fn(() => ({ templates: [] })),
+}));
 
 const mockNavigate = jest.fn();
 vi.mock('react-router-dom', async () => {
@@ -112,21 +130,6 @@ vi.mock('react-router-dom', async () => {
 		)),
 	};
 });
-
-import { useTheme } from '../../context/ThemeContext';
-import { useTitle } from '../../context/HelmetContext';
-import { send, templates } from '../../config/content/push';
-import { getRealTimeApplicationsByWindow, getRealTimeCollection, getRealTimeApplicantsByApplicationID } from '../../config/data/firebase';
-import { useConfig } from '../../context/ConfigContext';
-import { senders as staticSenders } from '../../config/Constants';
-import { useAlert } from '../../context/AlertContext';
-import { useDialog } from '../../context/DialogContext';
-import { useLocation } from 'react-router-dom';
-// FIX: Import doc and collection explicitly to set return values
-import { setDoc, doc, collection } from 'firebase/firestore';
-import { useAuth } from '../../context/AuthContext';
-import { useMailbox } from '../../context/MailboxContext';
-import ContactCenter from './ContactCenter';
 
 const mockShowAlert = jest.fn();
 const mockShowDialog = jest.fn();
@@ -189,7 +192,7 @@ const setupMocks = (locationState = {}) => {
 	doc.mockReturnValue('mock_doc_ref');
 	collection.mockReturnValue('mock_collection_ref');
 
-	useConfig.mockReturnValue({ APPLICATION_DEADLINE: '2025-01-01', SYSTEM_REPLY_TO: 'reply@test.com' });
+	useConfig.mockReturnValue({ APPLICATION_DEADLINE: '2025-01-01', SYSTEM_REPLY_TO: 'reply@test.com', emailDeliveryMode: 'connected' });
 	staticSenders.length = 0;
 	staticSenders.push(...mockStaticSenders);
 	useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: mockHandleError });

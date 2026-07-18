@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DATA TABLE CONFIGURATION & COMPONENTS
  * ---------------------------------------------------------------------------
@@ -12,44 +11,134 @@
  * 4. TableConfig: Exports the column definitions used by the 'DynamicTable' component.
  */
 
-import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import he from 'he';
 import { format } from 'date-fns';
+import type { DocumentData } from 'firebase/firestore';
+import type { GridColDef } from '@mui/x-data-grid';
 
 // UI Components & Icons
-import { Avatar, Box, Typography } from '@mui/material';
-import { FileUploadOutlined as UploadIcon, MailOutlined, Rsvp, Visibility, PublishedWithChangesOutlined, MeetingRoomOutlined, ChairOutlined, EventOutlined, DeleteOutlined, AddBoxOutlined, NoMeetingRoomOutlined, InfoOutlined, EditOutlined, DoneAllOutlined, ContactPageOutlined, Check, HourglassBottom, Close, CloseOutlined, SendOutlined, Add, Send, Delete, PersonOutlined, Reply, ReplyAll, Forward, MarkEmailReadOutlined, MarkEmailUnreadOutlined, AttachFile as AttachFileIcon, PeopleOutlined } from '@mui/icons-material';
+import { Avatar, Box, Tooltip, Typography } from '@mui/material';
+import type { SvgIconComponent } from '@mui/icons-material';
+import { datatableAvatarCellSx, datatableAvatarSx } from './adminPageStyles';
+import { FileUploadOutlined as UploadIcon, MailOutlined, Rsvp, Visibility, PublishedWithChangesOutlined, MeetingRoomOutlined, ChairOutlined, EventOutlined, DeleteOutlined, AddBoxOutlined, NoMeetingRoomOutlined, InfoOutlined, EditOutlined, DoneAllOutlined, ContactPageOutlined, Check, HourglassBottom, Close, CloseOutlined, SendOutlined, Add, Send, Delete, PersonOutlined, Reply, ReplyAll, Forward, MarkEmailReadOutlined, MarkEmailUnreadOutlined, AttachFile as AttachFileIcon, PeopleOutlined, MergeTypeOutlined } from '@mui/icons-material';
 
 // Contexts & Hooks
 import { useConfig } from '../../context/ConfigContext';
 import { useDialog } from '../../context/DialogContext';
+import type { ShowDialogParams } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
+import type { AlertContextValue } from '../../context/AlertContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
+import type { Member } from '../../types/domain';
+import type { SiteConfig, CollectionName } from '../../types/firebase';
 
 // Config & Utils
 import { generatePath } from '../navigation/routeUtils';
 import { paths } from '../navigation/paths';
 import { collections, InterviewStatus } from '../data/collections';
 import { attachmentFields, generateUploadLink, generateSecurePin, generate6DigitNumber } from '../Constants';
-import { blankApplicant } from '../data/Validation';
+import { formatRelativeTime } from './formatUtils';
 import { sendRequest } from '../content/push';
 
 // Backend / Firebase
-import { getCollectionData, updateCollectionData, db, getDocumentsByIDs, getUserAuthRecord, updateEmailReadStatus, fetchEmailContent, deleteZohoEmail, bulkDeleteZohoEmails, deleteSingleInterview, createInterviewRoom, closeInterviewRoom, updateInterviewStatus, sendInterviewInvitations, bulkDeleteInterviews, deleteDeliberationRoom, createDeliberationRoom, bulkUpdateInterviewStatus } from '../data/firebase';
+import { getCollectionData, updateCollectionData, db, getDocumentsByIDs, getUserAuthRecord, subscribeUserLastSeen, updateEmailReadStatus, fetchEmailContent, deleteZohoEmail, bulkDeleteZohoEmails, deleteSingleInterview, createInterviewRoom, closeInterviewRoom, updateInterviewStatus, sendInterviewInvitations, bulkDeleteInterviews, deleteDeliberationRoom, createDeliberationRoom, bulkUpdateInterviewStatus } from '../data/firebase';
 import { writeBatch, doc } from 'firebase/firestore';
 
 // Components
-import Loader from '../../components/loader/Loader';
 import ContactDialog from '../../components/messaging/ContactDialog';
+import MergeApplicantAccountsDialog from '../../components/dialogs/MergeApplicantAccountsDialog';
 import RescheduleDialog from '../../components/interviews/RescheduleDialog';
 import AutoScheduler from '../../components/interviews/AutoScheduler';
 import ManualScheduler from '../../components/interviews/ManualScheduler';
 
+// =============================================================================
+//  Shared types
+// =============================================================================
+
+/** A row rendered in a data grid — Firestore document data plus its id. */
+export interface RowData extends DocumentData {
+	id: string;
+}
+
+/** Member shape available to row actions (may be an empty object pre-auth). */
+type ActionMember = Partial<Member>;
+
+interface ActionContext {
+	row: RowData;
+	navigate: ReturnType<typeof useNavigate>;
+	showDialog: (params: ShowDialogParams) => void;
+	showAlert: AlertContextValue['showAlert'];
+	handleError: AlertContextValue['handleError'];
+	member: ActionMember;
+	config: SiteConfig;
+	emailActions: ReturnType<typeof useEmailActions>;
+	props: Record<string, unknown>;
+}
+
+type IconResolver = SvgIconComponent | ((row: RowData) => SvgIconComponent);
+
+interface RowActionConfig {
+	label?: string;
+	getLabel?: (row: RowData) => string;
+	icon: IconResolver;
+	color?: string;
+	getColor?: (row: RowData) => string;
+	borderColor?: string;
+	async?: boolean;
+	hide?: (ctx: { row: RowData; member: ActionMember }) => boolean;
+	onClick: (ctx: ActionContext) => void | Promise<void>;
+}
+
+export interface ToolbarContext {
+	navigate: ReturnType<typeof useNavigate>;
+	member?: ActionMember;
+	permittedAliases?: string[];
+	deliberationRoomExists?: boolean;
+}
+
+interface ToolbarHelpers {
+	showDialog: (params: ShowDialogParams) => void;
+	showAlert: AlertContextValue['showAlert'];
+	handleError: AlertContextValue['handleError'];
+	config: SiteConfig;
+}
+
+export interface ToolbarAction {
+	id?: string;
+	label: string;
+	labelAlt?: string;
+	icon?: SvgIconComponent;
+	iconAlt?: SvgIconComponent;
+	onClick: (selectionModel: string[], allRows: RowData[], helpers: ToolbarHelpers, dynamicProps?: Record<string, unknown>) => void | Promise<void>;
+	variant?: 'contained' | 'outlined' | 'text';
+	color?: string;
+	requiresSelection?: boolean;
+	disabled?: boolean;
+	hide?: boolean;
+}
+
+export interface RowActionMeta {
+	label: string;
+	IconComponent: SvgIconComponent;
+	color: string;
+}
+
 // --- Styles ---
+
+// Keep stacked cells content-sized; the DataGrid cell flex-centers the block (PF parity).
+// Style objects stay as plain literals so they can be spread into per-usage `sx` props.
+const stackedCellSx = {
+	display: 'flex',
+	flexDirection: 'column',
+	justifyContent: 'center',
+	width: '100%',
+	minWidth: 0,
+};
 
 const buttonContainerSX = {
 	display: 'flex',
@@ -58,11 +147,26 @@ const buttonContainerSX = {
 	fontWeight: '400',
 	fontSize: '9px',
 	textAlign: 'center',
-	justifyContent: 'space-between',
+	justifyContent: 'center',
 	alignContent: 'center',
-	paddingTop: '5px',
 	alignItems: 'center',
+	alignSelf: 'center',
 	cursor: 'pointer',
+};
+
+const mobileButtonContainerSX = {
+	display: 'flex',
+	flexDirection: 'column',
+	alignItems: 'center',
+	justifyContent: 'center',
+	gap: '2px',
+	cursor: 'pointer',
+	borderRadius: '8px',
+	py: 0.75,
+	px: 0.5,
+	transition: 'background-color 0.15s',
+	'&:hover': { bgcolor: 'action.hover' },
+	'&:active': { bgcolor: 'action.selected' },
 };
 
 const iconButtonSX = {
@@ -72,7 +176,7 @@ const iconButtonSX = {
 
 // --- Helper Functions ---
 
-export const getAttachmentLabel = (key) => {
+export const getAttachmentLabel = (key: string): string => {
 	const match = attachmentFields.find((f) => f.key === key);
 	let label = match ? match?.label : key;
 	if (label?.endsWith('Letter of Recommendation')) {
@@ -81,30 +185,30 @@ export const getAttachmentLabel = (key) => {
 	return label;
 };
 
-export const getStatusIcon = (completed, invalid) => {
+export const getStatusIcon = (completed: boolean, invalid: boolean): ReactElement => {
 	if (completed) return <Check sx={{ color: 'success.main' }} />;
 	if (invalid) return <Close sx={{ color: 'error.main' }} />;
 	return <HourglassBottom sx={{ color: 'warning.main' }} />;
 };
 
-export const parseDisplayName = (addressString) => {
+export const parseDisplayName = (addressString: string | null | undefined): string => {
 	if (!addressString) return 'Unknown';
 	const decodedString = he.decode(addressString);
 	const nameMatch = decodedString.match(/([^<]*)\s*</);
 	if (nameMatch?.[1]) {
-		const name = nameMatch[1].replaceAll('"', '').trim();
+		const name = nameMatch[1].replace(/"/g, '').trim();
 		if (name) return name;
 	}
-	return decodedString.replaceAll(/[<>"]/g, '');
+	return decodedString.replace(/[<>"]/g, '');
 };
 
-export const getRsvpLabel = (status) => {
+export const getRsvpLabel = (status: string): string => {
 	if (status === 'yes') return '✅ Yes';
 	if (status === 'no') return '❌ No';
 	return '❓ Unknown';
 };
 
-export const extractPipeData = (text) => {
+export const extractPipeData = (text: string | null | undefined): { left: string; right: string } => {
 	if (!text || typeof text !== 'string') {
 		return { left: '', right: '' };
 	}
@@ -115,6 +219,48 @@ export const extractPipeData = (text) => {
 	};
 };
 
+
+// =============================================================================
+//  Action column helpers + shared invoker (PF parity)
+// =============================================================================
+
+export const ROW_ACTION_MENU_COLUMN_WIDTH = 128;
+const ACTION_BUTTON_WIDTH = 54;
+const ACTION_COLUMN_PADDING = 16;
+
+const getActionColumnWidth = (buttonCount: number, buttonsPerRow = 3): number => {
+	const colsInWidestRow = Math.min(buttonCount, buttonsPerRow);
+	return colsInWidestRow * ACTION_BUTTON_WIDTH + ACTION_COLUMN_PADDING;
+};
+
+const createActionColumn = (buttonCount: number, renderCell: GridColDef['renderCell'], { buttonsPerRow = 3, width: widthOverride }: { buttonsPerRow?: number; width?: number } = {}): GridColDef => {
+	const width = widthOverride ?? getActionColumnWidth(buttonCount, buttonsPerRow);
+	return {
+		field: 'action',
+		headerName: 'Actions',
+		width,
+		minWidth: width,
+		maxWidth: width,
+		flex: 0,
+		sortable: false,
+		filterable: false,
+		headerAlign: 'center',
+		align: 'center',
+		renderCell,
+	};
+};
+
+export { createActionColumn, getActionColumnWidth };
+
+export const MEMBER_ACTION_KEYS = ['viewMember', 'editMember', 'contact'];
+export const APPLICANT_ACTION_KEYS = ['viewApplicant', 'editApplicant', 'contact'];
+export const APP_ACTION_KEYS = ['viewApp', 'markEligible', 'contact'];
+export const REQUEST_ACTION_KEYS = ['viewRequestApp', 'editRequest', 'resendRequest', 'invalidateRequest', 'contact'];
+export const INTERVIEW_ACTION_KEYS = ['createRoom', 'joinInterview', 'closeRoom', 'waitInterview', 'updateRsvp', 'rescheduleInterview', 'deleteInterview', 'changeStatus'];
+export const SCHEDULER_ACTION_KEYS = ['viewApplicantFromInterview', 'contactApplicantFromInterview', 'sendInvite', 'updateRsvp', 'deleteInterview'];
+export const INBOX_ACTION_KEYS = ['viewEmail', 'replyEmail', 'replyAllEmail', 'forwardEmail', 'toggleRead', 'deleteEmail'];
+
+
 // =============================================================================
 //  1. THE ACTION FACTORY
 // =============================================================================
@@ -123,47 +269,34 @@ export const extractPipeData = (text) => {
  * A "Smart Button" that renders based on a configuration key.
  * Used inside table cells to render Edit, View, Delete buttons dynamically.
  */
-const ActionCellButton = ({ actionKey, row, ...props }) => {
-	const navigate = useNavigate();
-	const { showDialog } = useDialog();
-	const { showAlert, handleError } = useAlert();
-	const { member } = useAuth();
-	const configContext = useConfig();
-	const [loading, setLoading] = useState(false);
+interface ActionCellButtonProps {
+	actionKey: string;
+	row: RowData;
+	variant?: 'cell' | 'mobile';
+	permittedAliases?: string[];
+	[key: string]: unknown;
+}
 
-	const emailActions = useEmailActions({
-		permittedAliases: props.permittedAliases,
-		member,
-		navigate,
-	});
+export const ActionCellButton = ({ actionKey, row, variant = 'cell', ...props }: ActionCellButtonProps): ReactElement | null => {
+	const { runAction, handleError, member } = useRowActionInvoker(props);
+	const [loading, setLoading] = useState(false);
 
 	const config = ROW_ACTIONS[actionKey];
 
 	if (!config) return null;
 
-	// Check visibility conditions
 	if (config?.hide?.({ row, member })) {
 		return null;
 	}
 
-	const handleClick = async (e) => {
+	const handleClick = async (e: React.MouseEvent) => {
 		e.stopPropagation();
 		if (loading) return;
 
 		if (config.async) setLoading(true);
 
 		try {
-			await config.onClick({
-				row,
-				navigate,
-				showDialog,
-				showAlert,
-				handleError,
-				member,
-				config: configContext,
-				emailActions,
-				props,
-			});
+			await runAction(actionKey, row);
 		} catch (error) {
 			console.error(error);
 			if (config.async) handleError(error, `action-${actionKey}`);
@@ -172,27 +305,61 @@ const ActionCellButton = ({ actionKey, row, ...props }) => {
 		}
 	};
 
-	// --- Resolve Visuals ---
 	const IconFromConfig = config.icon;
-	const IconComponent = typeof IconFromConfig === 'function' && !IconFromConfig.muiName ? IconFromConfig(row) : IconFromConfig;
+	const IconComponent = typeof IconFromConfig === 'function' && !(IconFromConfig as SvgIconComponent).muiName ? (IconFromConfig as (row: RowData) => SvgIconComponent)(row) : (IconFromConfig as SvgIconComponent);
 	const resolvedLabel = typeof config.getLabel === 'function' ? config.getLabel(row) : config.label;
 	const color = typeof config.getColor === 'function' ? config.getColor(row) : config.color;
 	const borderColor = config.borderColor || color;
 
+	if (variant === 'mobile') {
+		return (
+			<Box sx={{ ...mobileButtonContainerSX, opacity: loading ? 0.5 : 1 }} onClick={handleClick}>
+				<Box
+					sx={{
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						width: 36,
+						height: 36,
+						borderRadius: '10px',
+						bgcolor: 'action.hover',
+					}}>
+					<IconComponent sx={{ fontSize: 20, color }} />
+				</Box>
+				<Typography
+					variant='caption'
+					sx={{
+						fontSize: '10px',
+						fontWeight: 500,
+						color: 'text.secondary',
+						lineHeight: 1.2,
+					}}>
+					{loading ? '...' : resolvedLabel}
+				</Typography>
+			</Box>
+		);
+	}
+
 	return (
 		<Box sx={{ ...buttonContainerSX, opacity: loading ? 0.5 : 1 }} onClick={handleClick}>
-			<IconComponent
+			<Box
 				sx={{
-					...iconButtonSX,
-					color: color,
-					border: '1px dotted',
-					borderColor: borderColor,
-				}}
-			/>
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					width: 32,
+					height: 32,
+					borderRadius: '10px',
+					bgcolor: 'action.hover',
+					border: '1px solid',
+					borderColor: borderColor || 'divider',
+				}}>
+				<IconComponent sx={{ ...iconButtonSX, color, border: 'none', p: 0 }} />
+			</Box>
 			{loading ? (
 				'...'
 			) : (
-				<Typography variant='subtitle2' fontSize='9.5px'>
+				<Typography variant='subtitle2' sx={{ fontSize: '9.5px', color: 'text.secondary' }}>
 					{resolvedLabel}
 				</Typography>
 			)}
@@ -200,17 +367,11 @@ const ActionCellButton = ({ actionKey, row, ...props }) => {
 	);
 };
 
-ActionCellButton.propTypes = {
-	actionKey: PropTypes.string.isRequired,
-	row: PropTypes.object.isRequired,
-	permittedAliases: PropTypes.array,
-};
-
 // =============================================================================
 //  2. ACTION DEFINITIONS (Logic Mapping)
 // =============================================================================
 
-const ROW_ACTIONS = {
+const ROW_ACTIONS: Record<string, RowActionConfig> = {
 	// -- General --
 	viewApp: {
 		label: 'View',
@@ -222,7 +383,7 @@ const ROW_ACTIONS = {
 		label: 'Evaluate',
 		icon: DoneAllOutlined,
 		color: 'success.light',
-		onClick: ({ row, showDialog, showAlert, handleError }) => {
+		onClick: ({ row, showDialog, showAlert }) => {
 			showDialog({
 				id: 'markEligibility',
 				data: { app: row },
@@ -402,8 +563,9 @@ const ROW_ACTIONS = {
 				id: 'changeInterviewStatus',
 				data: { status: row.status },
 				callback: async (formData) => {
-					if (formData?.status) {
-						await updateInterviewStatus({ interviewId: row.id, newStatus: formData.status });
+					const newStatus = (formData as { status?: string } | null)?.status;
+					if (newStatus) {
+						await updateInterviewStatus({ interviewId: row.id, newStatus });
 						showAlert({ message: 'Interview status updated!', type: 'success' });
 					}
 				},
@@ -437,8 +599,9 @@ const ROW_ACTIONS = {
 				id: 'updateRsvpStatus',
 				data: { rsvpStatus: row.rsvpStatus },
 				callback: async (formData) => {
-					if (formData?.rsvpStatus) {
-						await updateCollectionData(collections.interviews, row.id, { rsvpStatus: formData.rsvpStatus });
+					const rsvpStatus = (formData as { rsvpStatus?: string } | null)?.rsvpStatus;
+					if (rsvpStatus) {
+						await updateCollectionData(collections.interviews, row.id, { rsvpStatus });
 						showAlert({ message: 'RSVP status updated!', type: 'success' });
 					}
 				},
@@ -484,7 +647,7 @@ const ROW_ACTIONS = {
 		async: true,
 		onClick: async ({ row, emailActions }) => {
 			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
-			emailActions.handleReply({ ...result.data, id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
+			emailActions.handleReply({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},
 	replyAllEmail: {
@@ -494,7 +657,7 @@ const ROW_ACTIONS = {
 		async: true,
 		onClick: async ({ row, emailActions }) => {
 			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
-			emailActions.handleReplyAll({ ...result.data, id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
+			emailActions.handleReplyAll({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},
 	forwardEmail: {
@@ -504,7 +667,7 @@ const ROW_ACTIONS = {
 		async: true,
 		onClick: async ({ row, emailActions }) => {
 			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
-			emailActions.handleForward({ ...result.data, id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
+			emailActions.handleForward({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},
 	deleteEmail: {
@@ -541,104 +704,213 @@ const ROW_ACTIONS = {
 //  3. EXPORTED BUTTON WRAPPERS
 // =============================================================================
 
-export const ViewAppButton = (props) => <ActionCellButton actionKey='viewApp' {...props} />;
-export const MarkEligibleButton = (props) => <ActionCellButton actionKey='markEligible' {...props} />;
-export const ViewButton = (props) => <ActionCellButton actionKey='viewMember' {...props} />;
-export const EditAssetButton = (props) => <ActionCellButton actionKey='editMember' {...props} />;
-export const ContactButton = (props) => <ActionCellButton actionKey='contact' {...props} />;
-export const ViewApplicantButton = (props) => <ActionCellButton actionKey='viewApplicant' {...props} />;
-export const EditApplicantButton = (props) => <ActionCellButton actionKey='editApplicant' {...props} />;
-export const ViewRequestButton = (props) => <ActionCellButton actionKey='viewRequestApp' {...props} />;
-export const EditRequestButton = (props) => <ActionCellButton actionKey='editRequest' {...props} />;
-export const ResendRequestButton = (props) => <ActionCellButton actionKey='resendRequest' {...props} />;
-export const InvalidateRequestButton = (props) => <ActionCellButton actionKey='invalidateRequest' {...props} />;
-export const JoinInterviewButton = (props) => <ActionCellButton actionKey='joinInterview' {...props} />;
-export const WaitingRoomButton = (props) => <ActionCellButton actionKey='waitInterview' {...props} />;
-export const RescheduleInterviewButton = (props) => <ActionCellButton actionKey='rescheduleInterview' {...props} />;
-export const DeleteInterviewButton = (props) => <ActionCellButton actionKey='deleteInterview' {...props} />;
-export const CreateRoomButton = (props) => <ActionCellButton actionKey='createRoom' {...props} />;
-export const CloseRoomButton = (props) => <ActionCellButton actionKey='closeRoom' {...props} />;
-export const ChangeStatusButton = (props) => <ActionCellButton actionKey='changeStatus' {...props} />;
-export const SendInvitationButton = (props) => <ActionCellButton actionKey='sendInvite' {...props} />;
-export const UpdateRsvpButton = (props) => <ActionCellButton actionKey='updateRsvp' {...props} />;
-export const ViewApplicantFromInterviewButton = (props) => <ActionCellButton actionKey='viewApplicantFromInterview' {...props} />;
-export const ContactApplicantFromInterviewButton = (props) => <ActionCellButton actionKey='contactApplicantFromInterview' {...props} />;
-export const ViewEmailButton = (props) => <ActionCellButton actionKey='viewEmail' {...props} />;
-export const ReplyButton = (props) => <ActionCellButton actionKey='replyEmail' {...props} />;
-export const ReplyAllButton = (props) => <ActionCellButton actionKey='replyAllEmail' {...props} />;
-export const ForwardButton = (props) => <ActionCellButton actionKey='forwardEmail' {...props} />;
-export const DeleteEmailButton = (props) => <ActionCellButton actionKey='deleteEmail' {...props} />;
-export const ToggleReadButton = (props) => <ActionCellButton actionKey='toggleRead' {...props} />;
+
+export const resolveRowActionMeta = (actionKey: string, row: RowData, member: ActionMember): RowActionMeta | null => {
+	const config = ROW_ACTIONS[actionKey];
+	if (!config || config.hide?.({ row, member })) {
+		return null;
+	}
+	const IconFromConfig = config.icon;
+	const IconComponent = typeof IconFromConfig === 'function' && !(IconFromConfig as SvgIconComponent).muiName ? (IconFromConfig as (row: RowData) => SvgIconComponent)(row) : (IconFromConfig as SvgIconComponent);
+	const label = typeof config.getLabel === 'function' ? config.getLabel(row) : (config.label ?? '');
+	const color = typeof config.getColor === 'function' ? config.getColor(row) : (config.color ?? '');
+	return { label, IconComponent, color };
+};
+
+interface UseRowActionInvokerProps {
+	permittedAliases?: string[];
+	[key: string]: unknown;
+}
+
+interface UseRowActionInvokerReturn {
+	runAction: (actionKey: string, row: RowData) => Promise<void>;
+	handleError: AlertContextValue['handleError'];
+	member: ActionMember;
+}
+
+export const useRowActionInvoker = (props: UseRowActionInvokerProps = {}): UseRowActionInvokerReturn => {
+	const navigate = useNavigate();
+	const { showDialog } = useDialog();
+	const { showAlert, handleError } = useAlert();
+	const { member: authMember } = useAuth();
+	const member = useMemo<ActionMember>(() => authMember ?? {}, [authMember]);
+	const configContext = useConfig();
+	const emailActions = useEmailActions({
+		permittedAliases: props.permittedAliases,
+		// Invoker members may be an empty placeholder pre-auth; the hook only reads `alias`.
+		member: member as Member & { alias?: string },
+		navigate,
+	});
+
+	const runAction = useCallback(
+		async (actionKey: string, row: RowData) => {
+			const config = ROW_ACTIONS[actionKey];
+			if (!config || config.hide?.({ row, member })) return;
+			await config.onClick({
+				row,
+				navigate,
+				showDialog,
+				showAlert,
+				handleError,
+				member,
+				config: configContext,
+				emailActions,
+				props,
+			});
+		},
+		[navigate, showDialog, showAlert, handleError, member, configContext, emailActions, props],
+	);
+
+	return { runAction, handleError, member };
+};
+
+interface ActionCellButtonWrapperProps {
+	row: RowData;
+	variant?: 'cell' | 'mobile';
+	permittedAliases?: string[];
+	[key: string]: unknown;
+}
+
+export const ViewAppButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewApp' {...props} />;
+export const MarkEligibleButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='markEligible' {...props} />;
+export const ViewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewMember' {...props} />;
+export const EditAssetButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='editMember' {...props} />;
+export const ContactButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='contact' {...props} />;
+export const ViewApplicantButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewApplicant' {...props} />;
+export const EditApplicantButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='editApplicant' {...props} />;
+export const ViewRequestButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewRequestApp' {...props} />;
+export const EditRequestButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='editRequest' {...props} />;
+export const ResendRequestButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='resendRequest' {...props} />;
+export const InvalidateRequestButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='invalidateRequest' {...props} />;
+export const JoinInterviewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='joinInterview' {...props} />;
+export const WaitingRoomButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='waitInterview' {...props} />;
+export const RescheduleInterviewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='rescheduleInterview' {...props} />;
+export const DeleteInterviewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='deleteInterview' {...props} />;
+export const CreateRoomButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='createRoom' {...props} />;
+export const CloseRoomButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='closeRoom' {...props} />;
+export const ChangeStatusButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='changeStatus' {...props} />;
+export const SendInvitationButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='sendInvite' {...props} />;
+export const UpdateRsvpButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='updateRsvp' {...props} />;
+export const ViewApplicantFromInterviewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewApplicantFromInterview' {...props} />;
+export const ContactApplicantFromInterviewButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='contactApplicantFromInterview' {...props} />;
+export const ViewEmailButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='viewEmail' {...props} />;
+export const ReplyButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='replyEmail' {...props} />;
+export const ReplyAllButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='replyAllEmail' {...props} />;
+export const ForwardButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='forwardEmail' {...props} />;
+export const DeleteEmailButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='deleteEmail' {...props} />;
+export const ToggleReadButton = (props: ActionCellButtonWrapperProps) => <ActionCellButton actionKey='toggleRead' {...props} />;
 
 // =============================================================================
 //  4. CUSTOM CELL COMPONENTS
 // =============================================================================
 
-export const DynamicApplicantProfilePicture = ({ user }) => {
+/** Resolve a picture field (string URL or { home }) to a usable src. */
+export const resolvePictureSrc = (picture: unknown): string | undefined => {
+	if (typeof picture === 'string' && picture) return picture;
+	if (picture && typeof picture === 'object' && (picture as { home?: string }).home) return (picture as { home?: string }).home;
+	return undefined;
+};
+
+/** Shared in-flight/resolved cache so list rows don't N+1 the same profile docs. */
+const pictureUrlCache = new Map<string, Promise<string | null>>();
+
+/** Test-only: reset shared avatar lookup cache between cases. */
+export const clearPictureUrlCache = () => {
+	pictureUrlCache.clear();
+};
+
+const loadPictureUrl = (collectionName: CollectionName, userId: string): Promise<string | null> => {
+	const key = `${collectionName}:${userId}`;
+	const existing = pictureUrlCache.get(key);
+	if (existing) return existing;
+
+	const pending = getCollectionData(userId, collectionName, userId)
+		.then((fetched) => resolvePictureSrc((fetched as Record<string, unknown> | null)?.picture) || null)
+		.catch(() => null);
+	pictureUrlCache.set(key, pending);
+	return pending;
+};
+
+/**
+ * Fixed-size avatar for list/datatable cells.
+ * Always renders the 40px Avatar (never the full-page Loader) so cards/rows
+ * keep stable layout while optional Firestore lookups complete.
+ * Prefer passing `src` when the row already includes picture data.
+ */
+interface DynamicProfilePictureProps {
+	user?: string;
+	collectionName: CollectionName;
+	src?: string;
+}
+
+const DynamicProfilePicture = ({ user, collectionName, src }: DynamicProfilePictureProps) => {
 	const config = useConfig();
-	const [picture, setPicture] = useState(config.DEFAULT_AVATAR);
-	const [loading, setLoading] = useState(false);
+	const fallback = config.DEFAULT_AVATAR as string | undefined;
+	const [picture, setPicture] = useState<string | undefined>(src || fallback);
 
 	useEffect(() => {
-		const fetch = async () => {
-			try {
-				setLoading(true);
-				const fetched = await getCollectionData(user, collections.applicants, user);
-				fetched?.picture && setPicture(fetched.picture?.home);
-			} catch (error) {
-				console.error(error.message);
-				setPicture(blankApplicant.picture);
-			} finally {
-				setLoading(false);
-			}
-		};
-		fetch();
-	}, [user]);
+		if (src) {
+			setPicture(src);
+			return undefined;
+		}
 
-	if (loading) return <Loader />;
+		if (!user) {
+			setPicture(fallback);
+			return undefined;
+		}
+
+		let cancelled = false;
+		loadPictureUrl(collectionName, user).then((url) => {
+			if (!cancelled) setPicture(url || fallback);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [user, collectionName, src, fallback]);
+
 	return (
-		<Box>
-			<Avatar src={picture} alt='avatar' />
+		<Box sx={datatableAvatarCellSx}>
+			<Avatar sx={datatableAvatarSx} src={picture} alt='avatar' />
 		</Box>
 	);
 };
-DynamicApplicantProfilePicture.propTypes = { user: PropTypes.string.isRequired };
 
-export const DynamicMemberProfilePicture = ({ user }) => {
-	const config = useConfig();
-	const [picture, setPicture] = useState(config.DEFAULT_AVATAR);
-	const [loading, setLoading] = useState(false);
+interface ProfilePictureProps {
+	user?: string;
+	src?: string;
+}
 
-	useEffect(() => {
-		const fetch = async () => {
-			try {
-				setLoading(true);
-				const fetched = await getCollectionData(user, collections.members, user);
-				fetched && setPicture(fetched.picture.home);
-			} catch (error) {
-				console.error(error.message);
-				setPicture(blankApplicant.picture);
-			} finally {
-				setLoading(false);
-			}
-		};
-		fetch();
-	}, [user]);
+export const DynamicApplicantProfilePicture = ({ user, src }: ProfilePictureProps) => (
+	<DynamicProfilePicture user={user} collectionName={collections.applicants} src={src} />
+);
 
-	if (loading) return <Loader />;
-	return (
-		<Box className='cellWithImg'>
-			<Avatar className='cellImg' src={picture} alt='avatar' />
-		</Box>
-	);
-};
-DynamicMemberProfilePicture.propTypes = { user: PropTypes.string.isRequired };
+export const DynamicMemberProfilePicture = ({ user, src }: ProfilePictureProps) => (
+	<DynamicProfilePicture user={user} collectionName={collections.members} src={src} />
+);
 
-export const SenderSubjectCell = React.memo(({ row }) => {
+const pictureColumn = (renderCell: GridColDef['renderCell']): GridColDef => ({
+	field: 'picture',
+	headerName: '',
+	width: 68,
+	minWidth: 68,
+	maxWidth: 68,
+	flex: 0,
+	align: 'center',
+	headerAlign: 'center',
+	sortable: false,
+	filterable: false,
+	renderCell,
+});
+
+interface EmailCellProps {
+	row: DocumentData;
+}
+
+export const SenderSubjectCell = React.memo(({ row }: EmailCellProps) => {
 	const isUnread = row.isRead === false;
 	const displayName = parseDisplayName(row.sender);
 	return (
-		<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
+		<Box sx={{ ...stackedCellSx, alignItems: 'flex-start', overflow: 'hidden' }}>
 			<Typography variant='body2' noWrap sx={{ width: '100%', fontWeight: isUnread ? 700 : 400 }}>
 				{displayName}
 			</Typography>
@@ -649,13 +921,12 @@ export const SenderSubjectCell = React.memo(({ row }) => {
 	);
 });
 SenderSubjectCell.displayName = 'SenderSubjectCell';
-SenderSubjectCell.propTypes = { row: PropTypes.object.isRequired };
 
-export const RecipientSubjectCell = React.memo(({ row }) => {
+export const RecipientSubjectCell = React.memo(({ row }: EmailCellProps) => {
 	const isUnread = row.isRead === false;
 	const displayName = parseDisplayName(row.to);
 	return (
-		<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
+		<Box sx={{ ...stackedCellSx, alignItems: 'flex-start', overflow: 'hidden' }}>
 			<Typography variant='body2' noWrap sx={{ width: '100%', fontWeight: isUnread ? 700 : 400 }}>
 				{displayName}
 			</Typography>
@@ -666,15 +937,19 @@ export const RecipientSubjectCell = React.memo(({ row }) => {
 	);
 });
 RecipientSubjectCell.displayName = 'RecipientSubjectCell';
-RecipientSubjectCell.propTypes = { row: PropTypes.object.isRequired };
 
-export const StackedDateCell = React.memo(({ value, row }) => {
+interface StackedDateCellProps {
+	value: unknown;
+	row?: DocumentData;
+}
+
+export const StackedDateCell = React.memo(({ value, row }: StackedDateCellProps) => {
 	if (!value) return <Typography variant='body2'>N/A</Typography>;
-	const date = dayjs(value);
+	const date = dayjs(value as string | number | Date);
 	if (!date.isValid()) return <Typography variant='body2'>Invalid Date</Typography>;
 
 	return (
-		<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+		<Box sx={{ ...stackedCellSx, alignItems: 'center' }}>
 			<Typography variant='body2'>{date.format('MMM D, YYYY')}</Typography>
 			<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', alignItems: 'center', gap: 0.5 }}>
 				<Typography variant='body2' color='text.active'>
@@ -686,10 +961,13 @@ export const StackedDateCell = React.memo(({ value, row }) => {
 	);
 });
 StackedDateCell.displayName = 'StackedDateCell';
-StackedDateCell.propTypes = { value: PropTypes.any, row: PropTypes.object };
 
-export const UserLastLogin = ({ userId }) => {
-	const [lastLogin, setLastLogin] = useState('Loading...');
+interface UserIdProps {
+	userId: string;
+}
+
+export const UserLastLogin = ({ userId }: UserIdProps) => {
+	const [lastLogin, setLastLogin] = useState<{ relative: string; exact: string } | string>('Loading...');
 	useEffect(() => {
 		if (!userId) {
 			setLastLogin('N/A');
@@ -697,22 +975,116 @@ export const UserLastLogin = ({ userId }) => {
 		}
 		getUserAuthRecord({ uid: userId })
 			.then((result) => {
-				const { lastSignInTime } = result.data;
-				setLastLogin(format(new Date(lastSignInTime), 'M/dd/yy h:mm a'));
+				const { lastSignInTime } = result.data as { lastSignInTime: string };
+				const date = new Date(lastSignInTime);
+				setLastLogin({
+					relative: formatRelativeTime(date),
+					exact: format(date, 'M/dd/yy h:mm a'),
+				});
 			})
 			.catch(() => {
 				setLastLogin('Never');
 			});
 	}, [userId]);
-	return lastLogin;
+
+	if (typeof lastLogin === 'string') return <>{lastLogin}</>;
+
+	return (
+		<Tooltip title={lastLogin.exact} arrow placement='top'>
+			<span>{lastLogin.relative}</span>
+		</Tooltip>
+	);
 };
-UserLastLogin.propTypes = { userId: PropTypes.string.isRequired };
+
+export const UserLastSeen = ({ userId }: UserIdProps) => {
+	const [lastSeen, setLastSeen] = useState<{ relative: string; exact: string } | string>('Loading...');
+
+	useEffect(() => {
+		if (!userId) {
+			setLastSeen('N/A');
+			return;
+		}
+
+		return subscribeUserLastSeen(userId, (date) => {
+			if (!date) {
+				setLastSeen('Never');
+				return;
+			}
+			setLastSeen({
+				relative: formatRelativeTime(date),
+				exact: format(date, 'M/dd/yy h:mm a'),
+			});
+		});
+	}, [userId]);
+
+	if (typeof lastSeen === 'string') return <>{lastSeen}</>;
+
+	return (
+		<Tooltip title={lastSeen.exact} arrow placement='top'>
+			<span>{lastSeen.relative}</span>
+		</Tooltip>
+	);
+};
+
+export const UserActivityStack = ({ userId }: UserIdProps) => {
+	const [lastSeen, setLastSeen] = useState<{ relative: string; exact: string } | string>('Loading...');
+	const [lastLogin, setLastLogin] = useState<{ exact: string } | string>('Loading...');
+
+	useEffect(() => {
+		if (!userId) {
+			setLastSeen('N/A');
+			setLastLogin('N/A');
+			return;
+		}
+
+		return subscribeUserLastSeen(userId, (date) => {
+			if (!date) {
+				setLastSeen('Never');
+				return;
+			}
+			setLastSeen({
+				relative: formatRelativeTime(date),
+				exact: format(date, 'M/dd/yy h:mm a'),
+			});
+		});
+	}, [userId]);
+
+	useEffect(() => {
+		if (!userId) {
+			setLastLogin('N/A');
+			return;
+		}
+
+		getUserAuthRecord({ uid: userId })
+			.then((result) => {
+				const { lastSignInTime } = result.data as { lastSignInTime: string };
+				const date = new Date(lastSignInTime);
+				setLastLogin({ exact: format(date, 'M/dd/yy h:mm a') });
+			})
+			.catch(() => {
+				setLastLogin('Never');
+			});
+	}, [userId]);
+
+	const seenLabel = typeof lastSeen === 'string' ? lastSeen : lastSeen.relative;
+	const loginLabel = typeof lastLogin === 'string' ? lastLogin : lastLogin.exact;
+	const seenTooltip = typeof lastSeen === 'string' ? seenLabel : lastSeen.exact;
+
+	return (
+		<Tooltip title={`Last seen: ${seenTooltip}\nLast login: ${loginLabel}`} arrow placement='top'>
+			<Box>
+				<Typography>{seenLabel}</Typography>
+				<Typography sx={{ color: 'text.secondary' }}>{loginLabel}</Typography>
+			</Box>
+		</Tooltip>
+	);
+};
 
 // =============================================================================
 //  5. TOOLBAR ACTIONS
 // =============================================================================
 
-export const getApplicationToolbarActions = ({ navigate }) => [
+export const getApplicationToolbarActions = ({ navigate }: ToolbarContext): ToolbarAction[] => [
 	{
 		label: 'Manual Upload',
 		icon: UploadIcon,
@@ -765,7 +1137,7 @@ export const getApplicationToolbarActions = ({ navigate }) => [
 	},
 ];
 
-export const getRequestToolbarActions = ({ navigate }) => [
+export const getRequestToolbarActions = (_ctx: ToolbarContext): ToolbarAction[] => [
 	{
 		label: 'Contact Senders',
 		icon: PersonOutlined,
@@ -860,7 +1232,7 @@ export const getRequestToolbarActions = ({ navigate }) => [
 	},
 ];
 
-export const getSchedulerToolbarActions = ({ navigate }) => [
+export const getSchedulerToolbarActions = (_ctx: ToolbarContext): ToolbarAction[] => [
 	{
 		label: 'Auto-Schedule',
 		icon: Add,
@@ -887,7 +1259,7 @@ export const getSchedulerToolbarActions = ({ navigate }) => [
 			if (selectionModel.length === 0) return;
 			try {
 				const result = await sendInterviewInvitations({ interviewIds: selectionModel });
-				showAlert({ message: result.data.message, type: 'success' });
+				showAlert({ message: (result.data as { message: string }).message, type: 'success' });
 			} catch (error) {
 				handleError(error, 'Failed to send invitations.');
 			}
@@ -921,7 +1293,7 @@ export const getSchedulerToolbarActions = ({ navigate }) => [
 	},
 ];
 
-export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists }) => {
+export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists }: ToolbarContext): ToolbarAction[] => {
 	return [
 		{
 			label: 'Join Deliberation Room',
@@ -940,7 +1312,7 @@ export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists })
 						if (confirmed) {
 							try {
 								const result = await deleteDeliberationRoom();
-								showAlert({ message: result.data.message, type: 'success' });
+								showAlert({ message: (result.data as { message: string }).message, type: 'success' });
 							} catch (error) {
 								handleError(error, 'Error deleting Deliberation Room.');
 							}
@@ -958,7 +1330,7 @@ export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists })
 				const createRoom = async () => {
 					try {
 						const result = await createDeliberationRoom();
-						showAlert({ message: result.data.message, type: 'success' });
+						showAlert({ message: (result.data as { message: string }).message, type: 'success' });
 					} catch (error) {
 						handleError(error, 'Error creating Deliberation Room.');
 					}
@@ -979,10 +1351,11 @@ export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists })
 					},
 					messageOverride: `Select a new status to apply to all ${selectionModel.length} selected interviews.`,
 					callback: async (formData) => {
-						if (formData?.status) {
+						const newStatus = (formData as { status?: string } | null)?.status;
+						if (newStatus) {
 							try {
-								await bulkUpdateInterviewStatus({ interviewIds: selectionModel, newStatus: formData.status });
-								showAlert({ message: `${selectionModel.length} interview(s) updated to ${formData.status}.`, type: 'success' });
+								await bulkUpdateInterviewStatus({ interviewIds: selectionModel, newStatus });
+								showAlert({ message: `${selectionModel.length} interview(s) updated to ${newStatus}.`, type: 'success' });
 							} catch (error) {
 								handleError(error, 'bulk-update-interview-status');
 							}
@@ -996,7 +1369,7 @@ export const getInterviewToolbarActions = ({ navigate, deliberationRoomExists })
 	];
 };
 
-export const getMemberToolbarActions = ({ navigate, member }) => [
+export const getMemberToolbarActions = ({ navigate, member }: ToolbarContext): ToolbarAction[] => [
 	{
 		label: 'New Member',
 		icon: Add,
@@ -1025,7 +1398,33 @@ export const getMemberToolbarActions = ({ navigate, member }) => [
 	},
 ];
 
-export const getApplicantToolbarActions = ({ navigate }) => [
+export const getApplicantToolbarActions = (_ctx: ToolbarContext): ToolbarAction[] => [
+	{
+		label: 'Merge Accounts',
+		icon: MergeTypeOutlined,
+		requiresSelection: true,
+		onClick: (selectionModel, allRows, { showDialog, showAlert }) => {
+			if (selectionModel.length !== 2) {
+				showAlert({
+					message: 'Select exactly two applicant rows to merge.',
+					type: 'warning',
+				});
+				return;
+			}
+
+			const selectedApplicants = allRows.filter((row) => selectionModel.includes(row.id));
+
+			showDialog({
+				id: 'mergeApplicantAccountsDialog',
+				data: {
+					title: 'Merge Applicant Accounts',
+					component: MergeApplicantAccountsDialog,
+					applicants: selectedApplicants,
+					maxWidth: 'lg',
+				},
+			});
+		},
+	},
 	{
 		label: 'Contact Selected',
 		icon: ContactPageOutlined,
@@ -1046,7 +1445,7 @@ export const getApplicantToolbarActions = ({ navigate }) => [
 	},
 ];
 
-export const getInboxToolbarActions = ({ navigate, permittedAliases, member }) => [
+export const getInboxToolbarActions = ({ navigate }: ToolbarContext): ToolbarAction[] => [
 	{
 		label: 'New Email',
 		icon: Add,
@@ -1060,7 +1459,7 @@ export const getInboxToolbarActions = ({ navigate, permittedAliases, member }) =
 		iconAlt: MarkEmailUnreadOutlined,
 		requiresSelection: true,
 		onClick: (selectionModel, allRows, helpers, dynamicProps) => {
-			const { newStatus } = dynamicProps;
+			const newStatus = dynamicProps?.newStatus as string;
 			const { handleError } = helpers;
 			const messagesPayload = selectionModel
 				.map((id) => {
@@ -1103,8 +1502,8 @@ export const getInboxToolbarActions = ({ navigate, permittedAliases, member }) =
 //  6. COLUMN DEFINITIONS
 // =============================================================================
 
-export const memberCols = [
-	{ field: 'picture', headerName: '', flex: 0.2, renderCell: (params) => <DynamicMemberProfilePicture user={params.row.id} />, sortable: false, filterable: false },
+export const memberCols: GridColDef[] = [
+	pictureColumn((params) => <DynamicMemberProfilePicture user={params.row.id} src={resolvePictureSrc(params.row.picture)} />),
 	{
 		field: 'name',
 		headerName: 'Name',
@@ -1129,15 +1528,11 @@ export const memberCols = [
 		),
 	},
 	{
-		field: 'lastLogin',
-		headerName: 'Last Login',
-		flex: 0.75,
+		field: 'activity',
+		headerName: 'Seen / Login',
+		flex: 0.9,
 		sortable: false,
-		renderCell: (params) => (
-			<Typography>
-				<UserLastLogin userId={params.row.id} />
-			</Typography>
-		),
+		renderCell: (params) => <UserActivityStack userId={params.row.id} />,
 	},
 	{
 		field: 'contacts',
@@ -1152,8 +1547,8 @@ export const memberCols = [
 	},
 ];
 
-export const applicantCols = [
-	{ field: 'picture', headerName: '', flex: 0.2, renderCell: (params) => <DynamicApplicantProfilePicture user={params.row.id} />, sortable: false, filterable: false },
+export const applicantCols: GridColDef[] = [
+	pictureColumn((params) => <DynamicApplicantProfilePicture user={params.row.id} src={resolvePictureSrc(params.row.picture)} />),
 	{
 		field: 'name',
 		headerName: 'Name',
@@ -1171,7 +1566,7 @@ export const applicantCols = [
 		flex: 1.75,
 		valueGetter: (_value, row) => `${row.school} (${row.gradYear}) ${row.major}`,
 		renderCell: (params) => (
-			<Box>
+			<Box sx={stackedCellSx}>
 				<Typography>{params.row.school}</Typography>
 				<Typography>{`${params.row.major} (${params.row.gradYear})`}</Typography>
 			</Box>
@@ -1185,7 +1580,7 @@ export const applicantCols = [
 		renderCell: (params) => {
 			const extract = extractPipeData(params.row.organization);
 			return (
-				<Box>
+				<Box sx={stackedCellSx}>
 					<Typography>{extract.left}</Typography>
 					<Typography>{extract.right}</Typography>
 				</Box>
@@ -1194,12 +1589,19 @@ export const applicantCols = [
 	},
 	{ field: 'applications', headerName: 'Apps', flex: 0.2, valueGetter: (_value, row) => row.applications?.length || 0, renderCell: (params) => <Typography>{params.row.applications?.length || 0}</Typography> },
 	{
+		field: 'activity',
+		headerName: 'Seen / Login',
+		flex: 0.9,
+		sortable: false,
+		renderCell: (params) => <UserActivityStack userId={params.row.id} />,
+	},
+	{
 		field: 'contact',
 		headerName: 'Contact',
 		flex: 1.75,
 		valueGetter: (_value, row) => `${row.email} ${row.cell}`,
 		renderCell: (params) => (
-			<Box>
+			<Box sx={stackedCellSx}>
 				<Typography>{params.row.email}</Typography>
 				<Typography>{params.row.cell}</Typography>
 			</Box>
@@ -1207,26 +1609,27 @@ export const applicantCols = [
 	},
 ];
 
-export const appCols = [
-	{ field: 'picture', headerName: '', flex: 0.2, renderCell: (params) => <DynamicApplicantProfilePicture user={params.row.completedBy} />, sortable: false, filterable: false },
-	{ field: 'applicantName', headerName: 'Applicant Name', flex: 1.25, valueGetter: (_value, row) => row.applicantName || '', renderCell: (params) => <Typography>{params.row.applicantName}</Typography> },
-	{ field: 'type', headerName: 'App Type', flex: 1.25, renderCell: (params) => <Typography>{params.row.type}</Typography> },
-	{ field: 'status', headerName: 'App Status', flex: 0.75, renderCell: (params) => <Typography>{params.row.status}</Typography> },
-	{ field: 'lastUpdated', headerName: 'Last Touched', flex: 0.75, valueGetter: (_value, row) => new Date(row.lastUpdated), renderCell: (params) => <Typography>{new Date(params.row.lastUpdated).toLocaleDateString()}</Typography> },
+export const appCols: GridColDef[] = [
+	pictureColumn((params) => <DynamicApplicantProfilePicture user={params.row.completedBy} src={resolvePictureSrc(params.row.picture)} />),
+	{ field: 'applicantName', headerName: 'Applicant Name', flex: 1.5, minWidth: 140, valueGetter: (_value, row) => row.applicantName || '', renderCell: (params) => <Typography noWrap>{params.row.applicantName}</Typography> },
+	{ field: 'type', headerName: 'App Type', flex: 1.1, minWidth: 120, renderCell: (params) => <Typography noWrap>{params.row.type}</Typography> },
+	{ field: 'status', headerName: 'App Status', flex: 0.9, minWidth: 100, renderCell: (params) => <Typography noWrap>{params.row.status}</Typography> },
+	{ field: 'lastUpdated', headerName: 'Last Touched', flex: 0.9, minWidth: 110, valueGetter: (_value, row) => new Date(row.lastUpdated), renderCell: (params) => <Typography noWrap>{new Date(params.row.lastUpdated).toLocaleDateString()}</Typography> },
 	{
 		field: 'window',
 		headerName: 'Academic Year',
-		width: 150,
+		flex: 0.85,
+		minWidth: 120,
 		valueGetter: (_value, row) => new Date(row.window).getFullYear(),
 		renderCell: (params) => (
-			<Typography>
+			<Typography noWrap>
 				{new Date(params.row.window).getFullYear()} - {new Date(params.row.window).getFullYear() + 1}
 			</Typography>
 		),
 	},
 ];
 
-export const reqCols = [
+export const reqCols: GridColDef[] = [
 	{
 		field: 'done',
 		headerName: '',
@@ -1239,7 +1642,7 @@ export const reqCols = [
 			const expired = dayjs(expiryDate).isBefore(now);
 			const invalid = !completed && (expired || attempts > 0);
 			return (
-				<Box display='flex' justifyContent='center' alignItems='center' width='100%'>
+				<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
 					{getStatusIcon(completed, invalid)}
 				</Box>
 			);
@@ -1253,13 +1656,13 @@ export const reqCols = [
 	{ field: 'expiryDate', headerName: 'Expires', flex: 1, valueGetter: (_value, row) => new Date(row.expiryDate), renderCell: (params) => <Typography>{new Date(params.row.expiryDate).toLocaleDateString()}</Typography> },
 ];
 
-export const interviewCols = [
+export const interviewCols: GridColDef[] = [
 	{ field: 'displayName', headerName: 'Applicant', flex: 1, renderCell: (params) => <Typography>{params.row.displayName}</Typography> },
 	{
 		field: 'startTime',
 		headerName: 'Date & Time',
 		flex: 1,
-		valueGetter: (value) => (value?.toDate ? dayjs(value.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'),
+		valueGetter: (value: { toDate?: () => Date } | undefined) => (value?.toDate ? dayjs(value.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'),
 		renderCell: (params) => <Typography>{params.row.startTime?.toDate ? dayjs(params.row.startTime.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'}</Typography>,
 	},
 	{ field: 'status', headerName: 'Status', flex: 0.5, renderCell: (params) => <Typography>{params.row.status}</Typography> },
@@ -1271,13 +1674,13 @@ export const interviewCols = [
 	},
 ];
 
-export const schedulerCols = [
+export const schedulerCols: GridColDef[] = [
 	{ field: 'applicantName', headerName: 'Applicant', flex: 1, renderCell: (params) => <Typography>{params.row.applicantName}</Typography> },
 	{
 		field: 'startTime',
 		headerName: 'Date & Time',
 		flex: 1,
-		valueGetter: (value) => (value?.toDate ? dayjs(value.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'),
+		valueGetter: (value: { toDate?: () => Date } | undefined) => (value?.toDate ? dayjs(value.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'),
 		renderCell: (params) => <Typography>{params.row.startTime?.toDate ? dayjs(params.row.startTime.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date'}</Typography>,
 	},
 	{ field: 'status', headerName: 'Status', flex: 0.5, renderCell: (params) => <Typography>{params.row.status}</Typography> },
@@ -1289,13 +1692,13 @@ export const schedulerCols = [
 	},
 ];
 
-export const inboxCols = [
-	{ field: 'senderSubject', headerName: 'Sender / Subject', flex: 2, sortable: false, valueGetter: (_value, row) => `${row.sender} ${row.subject}`, renderCell: (params) => <SenderSubjectCell {...params} /> },
+export const inboxCols: GridColDef[] = [
+	{ field: 'senderSubject', headerName: 'Sender / Subject', flex: 2, sortable: false, valueGetter: (_value, row) => `${row.sender} ${row.subject}`, renderCell: (params) => <SenderSubjectCell row={params.row as RowData} /> },
 	{
 		field: 'timestamp',
 		headerName: 'Received',
 		flex: 0.75,
-		valueGetter: (value) => {
+		valueGetter: (value: unknown) => {
 			const ts = Number(value);
 			return ts > 0 ? new Date(ts) : null;
 		},
@@ -1307,10 +1710,10 @@ export const inboxCols = [
 		flex: 0.75,
 		sortable: false,
 		renderCell: (params) => (
-			<Box>
+			<Box sx={stackedCellSx}>
 				{params.row.tags && params.row.tags.length > 0 && (
 					<Box sx={{ display: 'flex', gap: '4px', mb: '4px', flexWrap: 'wrap' }}>
-						{params.row.tags.map((tag) => (
+						{params.row.tags.map((tag: string) => (
 							<Typography key={tag} variant='caption' sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', px: 1, py: 0.2, borderRadius: '10px', textTransform: 'uppercase', fontSize: '0.6rem', fontWeight: 'bold', lineHeight: 1.5 }}>
 								{tag}
 							</Typography>
@@ -1327,26 +1730,26 @@ export const inboxCols = [
 		sortable: false,
 		cellClassName: 'multiline-cell',
 		renderCell: (params) => (
-			<Typography variant='body2' color='text.secondary' fontWeight={params.row.isRead === false ? 'bold' : 'normal'} sx={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+			<Typography variant='body2' color='text.secondary' sx={{ fontWeight: params.row.isRead === false ? 'bold' : 'normal', whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
 				{params.value}
 			</Typography>
 		),
 	},
 ];
 
-export const legacyFinancesCols = [
-	{ field: 'year', headerName: 'Year', width: 80, type: 'number', headerAlign: 'center', align: 'center', valueFormatter: (value) => (value ? String(value) : 'N/A') },
-	{ field: 'total_allotted_disbursement', headerName: 'Total Allotted', width: 130, headerAlign: 'center', align: 'center', valueFormatter: (value) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A') },
-	{ field: 'prior_year_clawback', headerName: 'Clawback', width: 130, headerAlign: 'center', align: 'center', valueFormatter: (value) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A') },
+export const legacyFinancesCols: GridColDef[] = [
+	{ field: 'year', headerName: 'Year', width: 80, type: 'number', headerAlign: 'center', align: 'center', valueFormatter: (value: number | null | undefined) => (value ? String(value) : 'N/A') },
+	{ field: 'total_allotted_disbursement', headerName: 'Total Allotted', width: 130, headerAlign: 'center', align: 'center', valueFormatter: (value: number | null | undefined) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A') },
+	{ field: 'prior_year_clawback', headerName: 'Clawback', width: 130, headerAlign: 'center', align: 'center', valueFormatter: (value: number | null | undefined) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A') },
 	{
 		field: 'renewable_scholarships',
 		headerName: 'Scholarships',
 		width: 170,
 		headerAlign: 'center',
 		align: 'center',
-		valueGetter: (value) => value?.length || 0,
+		valueGetter: (value: unknown[] | undefined) => value?.length || 0,
 		renderCell: (params) => (
-			<Box display='flex' alignItems='center' gap={1}>
+			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 				<PeopleOutlined fontSize='small' />
 				<Typography variant='body2'>{params.value} Recipients</Typography>
 			</Box>
@@ -1358,9 +1761,9 @@ export const legacyFinancesCols = [
 		width: 170,
 		headerAlign: 'center',
 		align: 'center',
-		valueGetter: (value) => value?.length || 0,
+		valueGetter: (value: unknown[] | undefined) => value?.length || 0,
 		renderCell: (params) => (
-			<Box display='flex' alignItems='center' gap={1}>
+			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 				<PeopleOutlined fontSize='small' />
 				<Typography variant='body2'>{params.value} Recipients</Typography>
 			</Box>
@@ -1373,7 +1776,7 @@ export const legacyFinancesCols = [
 		headerAlign: 'center',
 		align: 'center',
 		valueGetter: (_value, row) => row.financial_summary?.scholarships_grants?.amount_available,
-		valueFormatter: (value) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
+		valueFormatter: (value: number | null | undefined) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
 	},
 	{
 		field: 'nsi_available',
@@ -1382,7 +1785,7 @@ export const legacyFinancesCols = [
 		headerAlign: 'center',
 		align: 'center',
 		valueGetter: (_value, row) => row.financial_summary?.non_scholarship_items?.amount_available,
-		valueFormatter: (value) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
+		valueFormatter: (value: number | null | undefined) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
 	},
 	{
 		field: 'returns',
@@ -1392,7 +1795,7 @@ export const legacyFinancesCols = [
 		align: 'center',
 		type: 'number',
 		valueGetter: (_value, row) => (row.financial_summary?.scholarships_grants?.amount_returned ?? 0) + (row.financial_summary?.non_scholarship_items?.amount_returned ?? 0),
-		valueFormatter: (value) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
+		valueFormatter: (value: number | null | undefined) => (value ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A'),
 	},
 ];
 
@@ -1400,132 +1803,3 @@ export const legacyFinancesCols = [
 //  7. ACTION ARRAYS
 // =============================================================================
 
-export const memberActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 200,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction'>
-				<ViewButton {...params} />
-				<EditAssetButton {...params} />
-				<ContactButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const applicantActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 140,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction'>
-				<ViewApplicantButton {...params} />
-				<EditApplicantButton {...params} />
-				<ContactButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const appActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 350,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction'>
-				<ViewAppButton {...params} />
-				<MarkEligibleButton {...params} />
-				<ContactButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const reqActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 250,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction' display='flex' alignItems='center' justifyContent='center' gap={1}>
-				<ViewRequestButton {...params} />
-				<EditRequestButton {...params} />
-				<ResendRequestButton {...params} />
-				<InvalidateRequestButton {...params} />
-				<ContactButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const interviewActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 320,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction' display='flex' alignItems='center' justifyContent='center' gap={1}>
-				<CreateRoomButton {...params} />
-				<JoinInterviewButton {...params} />
-				<CloseRoomButton {...params} />
-				<WaitingRoomButton {...params} />
-				<RescheduleInterviewButton {...params} />
-				<DeleteInterviewButton {...params} />
-				<ChangeStatusButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const schedulerActions = [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 250,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction' display='flex' alignItems='center' justifyContent='center' gap={1}>
-				<ViewApplicantFromInterviewButton {...params} />
-				<ContactApplicantFromInterviewButton {...params} />
-				<SendInvitationButton {...params} />
-				<UpdateRsvpButton {...params} />
-				<DeleteInterviewButton {...params} />
-			</Box>
-		),
-	},
-];
-
-export const getInboxActions = ({ navigate, permittedAliases, member }) => [
-	{
-		field: 'action',
-		headerName: 'Actions',
-		width: 265,
-		sortable: false,
-		filterable: false,
-		renderCell: (params) => (
-			<Box className='cellAction' sx={{ gap: 0.5 }}>
-				<ViewEmailButton {...params} />
-				<ReplyButton {...params} permittedAliases={permittedAliases} member={member} navigate={navigate} />
-				<ReplyAllButton {...params} permittedAliases={permittedAliases} member={member} navigate={navigate} />
-				<ForwardButton {...params} permittedAliases={permittedAliases} member={member} navigate={navigate} />
-				<ToggleReadButton {...params} />
-				<DeleteEmailButton {...params} />
-			</Box>
-		),
-	},
-];

@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import UploadCenter from './UploadCenter';
 import { saveFile, getRequestData, saveCollectionData, getDownloadLinkForFile, getApplication } from '../../config/data/firebase';
 import { validateRequest, validatePin } from '../../config/Constants';
+import { maybePromoteApplicationToCompleted } from '../../config/data/applicationAttachments';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
@@ -21,14 +22,27 @@ vi.mock('../../config/data/firebase', () => ({
 vi.mock('../../config/Constants', () => ({
 	validateRequest: jest.fn(),
 	validatePin: jest.fn(),
+	brand: {
+		helpEmail: 'demo@fullstackboston.com',
+		theOrganizationName: 'The Application Management Suite',
+		organizationName: 'Application Management Suite',
+	},
 	LettersOfRecommendation: {
 		'rec-letter': { name: 'Recommendation Letter', purpose: 'endorse the candidate' },
 	},
 }));
 
+vi.mock('../../config/data/applicationAttachments', () => ({
+	maybePromoteApplicationToCompleted: jest.fn(),
+}));
+
 vi.mock('../../config/data/collections', () => ({
 	UploadType: { applicationAttachment: 'applicationAttachment' },
 	collections: { requests: 'requests', attachments: 'attachments' },
+}));
+
+vi.mock('../../context/HelmetContext', () => ({
+	useTitle: jest.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -44,12 +58,38 @@ vi.mock('../../context/AlertContext', () => ({
 	useAlert: jest.fn(),
 }));
 
-vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loader</div> }));
-vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div data-testid='footer'>Footer</div> }));
+vi.mock('../../components/home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+	homeDashboardIntroBodySx: {},
+}));
 
-// FIX: Mock must return an object with the Named Export 'VisuallyHiddenInput'
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+
+vi.mock('../../components/home/PublicStatusPage', () => ({
+	default: ({ children, title, subtitle }) => (
+		<div data-testid='public-status-page'>
+			<div>{title}</div>
+			{subtitle && <p>{subtitle}</p>}
+			{children}
+		</div>
+	),
+}));
+
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	default: ({ children, title, subtitle }) => (
+		<div data-testid='auth-form-card'>
+			<div>{title}</div>
+			{subtitle && <p>{subtitle}</p>}
+			{children}
+		</div>
+	),
+}));
+
 vi.mock('../../components/visuallyHiddenInput/VisuallyHiddenInput', () => ({
-	VisuallyHiddenInput: ({ onChange }) => <input data-testid='file-input' type='file' onChange={onChange} />,
+	VisuallyHiddenInput: ({ onChange, ...props }) => <input data-testid='file-input' type='file' onChange={onChange} {...props} />,
 }));
 
 describe('UploadCenter Component', () => {
@@ -61,7 +101,7 @@ describe('UploadCenter Component', () => {
 		applicationID: 'app-1',
 		attachmentsID: 'att-1',
 		attempts: 0,
-		expiryDate: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+		expiryDate: new Date(Date.now() + 86400000).toISOString(),
 		completed: false,
 		fromName: 'John Doe',
 		attachmentType: 'rec-letter',
@@ -71,16 +111,17 @@ describe('UploadCenter Component', () => {
 		jest.clearAllMocks();
 		useParams.mockReturnValue({ token: mockToken });
 		useNavigate.mockReturnValue(mockNavigate);
-		useTheme.mockReturnValue({ boxShadow: 'none' });
+		useTheme.mockReturnValue({ primaryColor: 'green' });
 		useAlert.mockReturnValue({ showAlert: mockShowAlert });
 		window.close = jest.fn();
 		validatePin.mockResolvedValue(true);
+		maybePromoteApplicationToCompleted.mockResolvedValue(true);
 	});
 
-	test('renders Loader initially', async () => {
+	test('renders loading state initially', async () => {
 		validateRequest.mockReturnValue(new Promise(() => {}));
 		render(<UploadCenter />);
-		expect(screen.getByTestId('loader')).toBeInTheDocument();
+		expect(screen.getByText(/Verifying Your Link/i)).toBeInTheDocument();
 	});
 
 	test('renders error message when token is invalid', async () => {
@@ -88,22 +129,23 @@ describe('UploadCenter Component', () => {
 
 		render(<UploadCenter />);
 
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
-		expect(screen.getByText(/You've either attempted to upload too many times/i)).toBeInTheDocument();
+		expect(screen.getByText(/This upload link may be expired/i)).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /Contact the board/i })).toHaveAttribute('href', expect.stringContaining('demo@fullstackboston.com'));
 	});
 
 	test('renders error message when request is expired', async () => {
 		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
 		getRequestData.mockResolvedValue({
 			...mockRequest,
-			expiryDate: new Date(Date.now() - 86400000).toISOString(), // Yesterday
+			expiryDate: new Date(Date.now() - 86400000).toISOString(),
 		});
 
 		render(<UploadCenter />);
 
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
-		expect(screen.getByText(/You've either attempted to upload too many times/i)).toBeInTheDocument();
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		expect(screen.getByText(/This upload link may be expired/i)).toBeInTheDocument();
 	});
 
 	test('renders upload form when token is valid', async () => {
@@ -112,10 +154,11 @@ describe('UploadCenter Component', () => {
 
 		render(<UploadCenter />);
 
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
 		expect(screen.getByText('Upload Recommendation Letter for John Doe')).toBeInTheDocument();
 		expect(screen.getByPlaceholderText('123456')).toBeInTheDocument();
+		expect(screen.getByText(/The Application Management Suite has asked you to submit a letter/i)).toBeInTheDocument();
 		expect(screen.getByText(/endorse the candidate/i)).toBeInTheDocument();
 	});
 
@@ -125,9 +168,19 @@ describe('UploadCenter Component', () => {
 
 		render(<UploadCenter />);
 
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
-		expect(screen.getByText(/Thank you for uploading/i)).toBeInTheDocument();
+		expect(screen.getByText(/Thank you\. We received your/i)).toBeInTheDocument();
+	});
+
+	test('renders upload form when token is valid even if attempts is missing', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue({ ...mockRequest, attempts: undefined });
+
+		render(<UploadCenter />);
+
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		expect(screen.getByText('Upload Recommendation Letter for John Doe')).toBeInTheDocument();
 	});
 
 	test('handles file upload success flow', async () => {
@@ -139,22 +192,22 @@ describe('UploadCenter Component', () => {
 		getDownloadLinkForFile.mockResolvedValue('http://download-link');
 
 		render(<UploadCenter />);
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
-		// 1. Enter Pin
 		const pinInput = screen.getByPlaceholderText('123456');
 		fireEvent.change(pinInput, { target: { value: '123456' } });
 
-		// 2. Upload File
 		const file = new File(['dummy content'], 'test.pdf', { type: 'application/pdf' });
 		const input = screen.getByTestId('file-input');
 
 		Object.defineProperty(input, 'files', { value: [file] });
 		fireEvent.change(input);
 
-		await waitFor(() => expect(screen.getByText(/Thank you for uploading/i)).toBeInTheDocument());
+		await screen.findByText(/Thank you\. We received your/i);
 
+		expect(validatePin).toHaveBeenCalledWith('123456');
 		expect(saveCollectionData).toHaveBeenCalledWith('requests', 'req-1', expect.objectContaining({ attempts: 1 }));
+		expect(maybePromoteApplicationToCompleted).toHaveBeenCalledWith('app-1');
 	});
 
 	test('alerts when file is not a PDF', async () => {
@@ -162,7 +215,7 @@ describe('UploadCenter Component', () => {
 		getRequestData.mockResolvedValue(mockRequest);
 
 		render(<UploadCenter />);
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
 		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
 
@@ -180,7 +233,7 @@ describe('UploadCenter Component', () => {
 		getRequestData.mockResolvedValue(mockRequest);
 
 		render(<UploadCenter />);
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
 		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
 
@@ -200,7 +253,7 @@ describe('UploadCenter Component', () => {
 		getApplication.mockResolvedValue({ attachments: 'WRONG-ID' });
 
 		render(<UploadCenter />);
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
 		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
 
@@ -217,12 +270,12 @@ describe('UploadCenter Component', () => {
 		getRequestData.mockResolvedValue({ ...mockRequest, completed: true });
 
 		render(<UploadCenter />);
-		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
 
-		fireEvent.click(screen.getByText('Home Page'));
+		fireEvent.click(screen.getByText('Return home'));
 		expect(mockNavigate).toHaveBeenCalled();
 
-		fireEvent.click(screen.getByText('Leave'));
+		fireEvent.click(screen.getByText('Close this page'));
 		expect(window.close).toHaveBeenCalled();
 	});
 });

@@ -47,7 +47,7 @@ describe('AdminLayout Component', () => {
 	test('adjusts margins when sidebar is expanded', () => {
 		useSidebar.mockReturnValue({ collapsed: false }); // Expanded (width 180)
 
-		const { container } = render(
+		render(
 			<AdminLayout>
 				<div>Content</div>
 			</AdminLayout>

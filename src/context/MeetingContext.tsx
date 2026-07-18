@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * VIDEO CONFERENCING CONTEXT (Daily.co)
  * ---------------------------------------------------------------------------
@@ -15,26 +14,35 @@
  * callObject.join({ url: 'https://domain.daily.co/room-name' });
  */
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
-import PropTypes from 'prop-types';
-import DailyIframe from '@daily-co/daily-js';
+import { createContext, useContext, useEffect, useState, useMemo, type Dispatch, type SetStateAction, type ReactNode } from 'react';
+import DailyIframe, { type DailyCall } from '@daily-co/daily-js';
 
-const MeetingContext = createContext(null);
+export interface MeetingContextValue {
+	callObject: DailyCall;
+	videoDeviceId: string | null;
+	setVideoDeviceId: Dispatch<SetStateAction<string | null>>;
+	audioDeviceId: string | null;
+	setAudioDeviceId: Dispatch<SetStateAction<string | null>>;
+	participantDetails: Record<string, unknown>;
+	setParticipantDetails: Dispatch<SetStateAction<Record<string, unknown>>>;
+}
 
-export const MeetingProvider = ({ children }) => {
+const MeetingContext = createContext<MeetingContextValue | undefined>(undefined);
+
+export const MeetingProvider = ({ children }: { children: ReactNode }) => {
 	// --- 1. Core Engine ---
 	// Initialize the Daily Call Object only once on mount.
 	// This is the main interface for joining, leaving, and managing the call.
-	const [callObject] = useState(() => DailyIframe.createCallObject());
+	const [callObject] = useState<DailyCall>(() => DailyIframe.createCallObject());
 
 	// --- 2. Device Preferences ---
 	// Store selected device IDs to persist choice from "Pre-Join" screen to "Active Call".
-	const [videoDeviceId, setVideoDeviceId] = useState(null);
-	const [audioDeviceId, setAudioDeviceId] = useState(null);
+	const [videoDeviceId, setVideoDeviceId] = useState<string | null>(null);
+	const [audioDeviceId, setAudioDeviceId] = useState<string | null>(null);
 
 	// --- 3. User Metadata ---
 	// Stores local user info (e.g. name) to pass into the meeting for other participants to see.
-	const [participantDetails, setParticipantDetails] = useState({});
+	const [participantDetails, setParticipantDetails] = useState<Record<string, unknown>>({});
 
 	// --- 4. Lifecycle Cleanup ---
 	// Critical: Destroy the call engine when the provider unmounts (e.g. user logs out)
@@ -44,7 +52,7 @@ export const MeetingProvider = ({ children }) => {
 		};
 	}, [callObject]);
 
-	const value = useMemo(
+	const value = useMemo<MeetingContextValue>(
 		() => ({
 			callObject,
 			// Video Input
@@ -63,14 +71,10 @@ export const MeetingProvider = ({ children }) => {
 	return <MeetingContext.Provider value={value}>{children}</MeetingContext.Provider>;
 };
 
-MeetingProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 /**
  * Hook to access the Daily.co Call Object and device settings.
  */
-export const useMeeting = () => {
+export const useMeeting = (): MeetingContextValue => {
 	const context = useContext(MeetingContext);
 	if (context === undefined) {
 		throw new Error('useMeeting must be used within a MeetingProvider');

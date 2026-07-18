@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PUBLIC RSVP HANDLER
  * ---------------------------------------------------------------------------
@@ -42,7 +41,7 @@ export default function RSVP() {
 		const response = searchParams.get('response');
 
 		// 1. Validation: Ensure we have the necessary data
-		if (!interviewId || !['yes', 'no'].includes(response)) {
+		if (!interviewId || !response || !['yes', 'no'].includes(response)) {
 			setStatus('invalid');
 			return;
 		}
@@ -51,7 +50,7 @@ export default function RSVP() {
 			try {
 				const ref = doc(db, 'interviews', interviewId);
 
-				const dataToUpdate = {
+				const dataToUpdate: { rsvpStatus: string; rsvpTimestamp: ReturnType<typeof serverTimestamp>; status?: string } = {
 					rsvpStatus: response,
 					rsvpTimestamp: serverTimestamp(),
 				};
@@ -81,7 +80,7 @@ export default function RSVP() {
 
 	if (status === 'loading') {
 		return (
-			<Box color='text.active' textAlign='center' width='100%' height='100vh' display='flex' flexDirection='column' justifyContent='center' alignItems='center'>
+			<Box sx={{ color: 'text.active', textAlign: 'center', width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
 				<CircularProgress />
 				<Typography variant='body2' sx={{ mt: 2 }}>
 					Processing response...
@@ -92,7 +91,7 @@ export default function RSVP() {
 
 	if (status === 'invalid') {
 		return (
-			<Box color='text.active' textAlign='center' width='100%' height='100vh' display='flex' flexDirection='column' alignItems='center' justifyContent='center'>
+			<Box sx={{ color: 'text.active', textAlign: 'center', width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
 				<Typography variant='h5' color='error'>
 					Invalid Link
 				</Typography>
@@ -103,7 +102,7 @@ export default function RSVP() {
 
 	if (status === 'error') {
 		return (
-			<Box color='text.active' textAlign='center' width='100%' height='100vh' display='flex' flexDirection='column' alignItems='center' justifyContent='center'>
+			<Box sx={{ color: 'text.active', textAlign: 'center', width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
 				<Typography variant='h5' color='error'>
 					System Error
 				</Typography>
@@ -114,7 +113,7 @@ export default function RSVP() {
 
 	// Success State
 	return (
-		<Box color='text.active' textAlign='center' width='100%' height='100vh' display='flex' flexDirection='column' alignItems='center' justifyContent='center'>
+		<Box sx={{ color: 'text.active', textAlign: 'center', width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
 			<Typography variant='h4' gutterBottom sx={{ color: 'success.main' }}>
 				✅ RSVP Received
 			</Typography>

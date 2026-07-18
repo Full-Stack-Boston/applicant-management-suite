@@ -1,10 +1,9 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Application from './Application';
 import { useTheme } from '../../context/ThemeContext';
 import { getApplication } from '../../config/data/firebase';
-import { blankApp } from '../../config/data/Validation';
 import { generatePath } from '../../config/navigation/routeUtils';
 import { paths } from '../../config/navigation/paths';
 

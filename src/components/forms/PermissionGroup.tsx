@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Permission Group Component
  * Renders a grouped set of checkboxes for managing user permissions.
@@ -6,13 +5,14 @@
  */
 
 import React from 'react';
-import PropTypes from 'prop-types';
 import { get, set } from 'lodash';
 import { Box, Checkbox, FormControl, FormControlLabel, FormGroup, FormLabel, Typography } from '@mui/material';
 
+import type { ApplicationRecord } from './types';
+
 // Helper: Formats permission keys into readable labels
 // e.g. "interviews.canHost" -> "Can Host"
-const createLabel = (path) => {
+const createLabel = (path: string) => {
 	const parts = path.split('.');
 
 	if (parts.length === 1) {
@@ -29,12 +29,19 @@ const createLabel = (path) => {
 
 	const lastPart = parts[parts.length - 1];
 	// Add space before capital letters
-	const spacedLabel = lastPart.replaceAll(/([A-Z])/g, ' $1').trim();
+	const spacedLabel = lastPart.replace(/([A-Z])/g, ' $1').trim();
 	return spacedLabel.charAt(0).toUpperCase() + spacedLabel.slice(1);
 };
 
-const PermissionGroup = ({ formData, onUpdate, groups, disabled }) => {
-	const handlePermissionChange = (event) => {
+interface PermissionGroupProps {
+	formData: ApplicationRecord;
+	onUpdate: (formData: ApplicationRecord) => void;
+	groups: Record<string, string[]>;
+	disabled?: boolean;
+}
+
+const PermissionGroup = ({ formData, onUpdate, groups, disabled }: PermissionGroupProps) => {
+	const handlePermissionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, checked } = event.target;
 		// Deep clone to avoid mutating props directly
 		const newFormData = structuredClone(formData);
@@ -50,7 +57,7 @@ const PermissionGroup = ({ formData, onUpdate, groups, disabled }) => {
 						{groupName}
 					</FormLabel>
 					<FormGroup row>
-						{permissions.map((permPath) => {
+						{permissions.map((permPath: string) => {
 							const fullPath = `permissions.${permPath}`;
 							const isChecked = !!get(formData, fullPath);
 
@@ -61,13 +68,6 @@ const PermissionGroup = ({ formData, onUpdate, groups, disabled }) => {
 			))}
 		</Box>
 	);
-};
-
-PermissionGroup.propTypes = {
-	formData: PropTypes.object.isRequired,
-	onUpdate: PropTypes.func.isRequired,
-	groups: PropTypes.object.isRequired,
-	disabled: PropTypes.bool,
 };
 
 export default PermissionGroup;

@@ -1,8 +1,10 @@
-import { paths } from '../navigation/paths.js';
+// FIX: Statically import the content file now.
+import * as content from './content.js';
 
 vi.mock('../navigation/paths', () => ({
 	paths: {
 		registerApplicant: '/register',
+		registerMember: '/board-registration',
 		login: '/login',
 		home: '/',
 		createApplication: '/apply/create/:applicationType',
@@ -21,9 +23,6 @@ vi.mock('../Constants', () => ({
 	},
 }));
 
-// FIX: Statically import the content file now.
-import * as content from './content.js';
-
 // FIX: Define the mock config here for testing
 const mockConfig = {
 	NEW_APPLICANT_APPLICATIONS_DISABLED: false,
@@ -36,7 +35,9 @@ describe('content.js', () => {
 		const { homePageContent } = content;
 		expect(homePageContent).toBeDefined();
 		expect(homePageContent.intro.welcomeText.line1).toBe('Welcome to the');
-		expect(homePageContent.appBar.navLinks).toEqual(expect.arrayContaining([expect.objectContaining({ label: 'Start Demo' })]));
+		expect(homePageContent.appBar.navLinks).toEqual(expect.arrayContaining([expect.objectContaining({ label: 'Get Started' })]));
+		expect(homePageContent.demoBoardAccess.path).toBe('/board-registration');
+		expect(homePageContent.information.bottomSections.applyNow.boardButton.path).toBe('/board-registration');
 	});
 
 	it('should export applicantRegistrationContent with correct fields', () => {
@@ -57,7 +58,9 @@ describe('content.js', () => {
 		const applyContent = content.getApplyContent(mockConfig);
 
 		expect(applyContent).toBeDefined();
-		expect(applyContent.title).toBe('Application Dashboard');
+		expect(applyContent.title).toBe('Dashboard');
+		expect(applyContent.intro.overview).toContain('AMS Demo');
+		expect(applyContent.availableApps[0].description).toBeTruthy();
 
 		expect(applyContent.availableApps[0].disabled).toBe(false); // NEW_APPLICANT
 		expect(applyContent.availableApps[1].disabled).toBe(true); // RETURNING_APPLICANT

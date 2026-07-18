@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Request Admin Form
  * Allows administrators to manually create or edit Recommendation Requests.
@@ -10,7 +9,6 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import PropTypes from 'prop-types';
 import { v4 as uuid } from 'uuid';
 
 // Context & Hooks
@@ -27,12 +25,21 @@ import { requestFormConfig } from '../../../config/ui/formConfig';
 // Components
 import GenericAdminForm from '../GenericAdminForm';
 
-export const RequestForm = ({ request }) => {
+import type { ApplicationRecord, FieldOption } from '../types';
+
+interface RequestFormData {
+	id: string;
+	expiryDate?: unknown;
+	pinCode?: string;
+	[key: string]: unknown;
+}
+
+export const RequestForm = ({ request }: { request?: Record<string, unknown> | null }) => {
 	const config = useConfig();
 	const { showAlert, handleError } = useAlert();
 
-	const [applicationOptions, setApplicationOptions] = useState([]);
-	const [initialData, setInitialData] = useState({ id: uuid() });
+	const [applicationOptions, setApplicationOptions] = useState<FieldOption[]>([]);
+	const [initialData, setInitialData] = useState<RequestFormData>({ id: uuid() });
 
 	// Initialization Effect: Set up ID, Expiry, and PIN
 	useEffect(() => {
@@ -41,7 +48,8 @@ export const RequestForm = ({ request }) => {
 				if (request) {
 					setInitialData({
 						...request,
-						pinCode: request.pinCode || (await generateSecurePin(generate6DigitNumber())),
+						id: (request.id as string) || uuid(),
+						pinCode: (request.pinCode as string) || (await generateSecurePin(generate6DigitNumber())),
 					});
 				} else {
 					setInitialData({
@@ -96,10 +104,11 @@ export const RequestForm = ({ request }) => {
 		};
 	}, [applicationOptions]);
 
-	const handleSubmit = async (formData) => {
+	const handleSubmit = async (formData: ApplicationRecord) => {
 		try {
 			// 1. Validate Application & Owner
-			const application = await getCollectionData(formData.applicationID, collections.applications, formData.applicationID);
+			const applicationID = String(formData.applicationID ?? '');
+			const application = await getCollectionData(applicationID, collections.applications, applicationID);
 			const completedBy = application?.completedBy;
 			if (!completedBy) throw new Error('Selected application does not have a valid owner.');
 
@@ -108,19 +117,19 @@ export const RequestForm = ({ request }) => {
 			const fromName = `${applicant?.firstName || ''} ${applicant?.lastName || ''}`.trim();
 
 			// 3. Prepare Data
-			const attachmentsID = application.attachments || uuid();
-			const dataToSave = { ...formData, fromName, completedBy, attachmentsID };
+			const attachmentsID = application?.attachments || uuid();
+			const dataToSave: Record<string, unknown> = { ...formData, fromName, completedBy, attachmentsID };
 
 			// 4. Link Request to Application Attachment Slot
-			let attachmentsDoc = (await getCollectionData(completedBy, collections.attachments, attachmentsID)) || { attachmentsID, completedBy };
-			attachmentsDoc[dataToSave.attachmentType] = {
+			const attachmentsDoc = (await getCollectionData(completedBy, collections.attachments, attachmentsID)) || { attachmentsID, completedBy };
+			attachmentsDoc[String(dataToSave.attachmentType)] = {
 				...blankAttachment,
 				requestID: dataToSave.id,
 			};
 
 			// 5. Save Both Records
 			await saveCollectionData(collections.attachments, attachmentsID, attachmentsDoc);
-			await saveCollectionData(collections.requests, dataToSave.id, dataToSave);
+			await saveCollectionData(collections.requests, String(dataToSave.id ?? ''), dataToSave);
 
 			showAlert({ message: 'Request saved successfully.', type: 'success' });
 		} catch (error) {
@@ -129,8 +138,4 @@ export const RequestForm = ({ request }) => {
 	};
 
 	return <GenericAdminForm formConfig={{ ...dynamicFormConfig, name: 'request' }} initialData={initialData} onSubmit={handleSubmit} />;
-};
-
-RequestForm.propTypes = {
-	request: PropTypes.object,
 };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import EmailViewDialog from './EmailViewDialog';
 import { useEmailActions } from '../../hooks/useEmailActions';
 import { updateEmailReadStatus, deleteZohoEmail, fetchAttachmentContent } from '../../config/data/firebase';
@@ -72,7 +73,7 @@ describe('EmailViewDialog', () => {
 	});
 
 	it('renders email content and headers when not loading', () => {
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		expect(screen.getByText('Test Subject')).toBeInTheDocument();
 		expect(screen.getByText(/From:/i).parentElement).toHaveTextContent('From: "Sender" <sender@example.com>');
 		// FIX: Changed selector to .parentElement to match the "From:" test
@@ -85,19 +86,19 @@ describe('EmailViewDialog', () => {
 			processedContent: '',
 			contentLoading: true,
 		});
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		expect(screen.getByText('Loading content...')).toBeInTheDocument();
 	});
 
 	it('calls handleReplyAll from the menu', async () => {
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		fireEvent.click(screen.getByLabelText('select reply type'));
 		await userEvent.click(screen.getByRole('menuitem', { name: 'Reply All' }));
 		expect(mockHandleReplyAll).toHaveBeenCalledWith(mockEmail);
 	});
 
 	it('calls handleToggleRead with "unread" when email is read', async () => {
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		fireEvent.click(screen.getByRole('button', { name: 'Mark as Unread' }));
 
 		await waitFor(() => {
@@ -109,7 +110,7 @@ describe('EmailViewDialog', () => {
 	});
 
 	it('calls handleDelete when delete button is clicked', async () => {
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
 		await waitFor(() => {
@@ -125,7 +126,7 @@ describe('EmailViewDialog', () => {
 		global.URL.revokeObjectURL = jest.fn();
 		HTMLAnchorElement.prototype.click = jest.fn();
 
-		render(<EmailViewDialog email={mockEmail} onClose={mockOnClose} />);
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 
 		const attachmentsButton = screen.getByRole('button', { name: /Attachments \(1\)/i });
 		fireEvent.click(attachmentsButton);

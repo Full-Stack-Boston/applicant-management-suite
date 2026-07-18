@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * FORM CONFIGURATION & SCHEMA
  * ---------------------------------------------------------------------------
@@ -22,53 +21,157 @@
 
 import { attachmentFields } from '../Constants';
 
+// --- Types ---
+
+type FieldType =
+	| 'text'
+	| 'number'
+	| 'date'
+	| 'address'
+	| 'file'
+	| 'switch'
+	| 'dropdown'
+	| 'email'
+	| 'label'
+	| 'header'
+	| 'calculatedLabel'
+	| 'summaryList'
+	| 'pictureUpload'
+	| 'permissionGroup'
+	| 'autocomplete'
+	| 'singleFile';
+
+type ValidatorType =
+	| 'lettersOnly'
+	| 'lettersAndSpacesOnly'
+	| 'numbersOnly'
+	| 'decimalsOnly'
+	| 'emailsOnly'
+	| 'locationOnly'
+	| 'notUndefined';
+
+type ValueFormatterType = 'currency' | 'attachmentChip';
+
+interface CardDisplay {
+	title: string;
+	subtitle?: string;
+	details?: string[];
+}
+
+interface GridSize {
+	xs?: number;
+	sm?: number;
+	md?: number;
+	lg?: number;
+}
+
+export interface FormField {
+	name?: string;
+	label: string;
+	type: FieldType;
+	required?: boolean;
+	validator?: ValidatorType;
+	dateFormat?: string;
+	multiline?: boolean;
+	rows?: number;
+	options?: string[] | readonly string[];
+	optionsSource?: string;
+	defaultValue?: string;
+	grid?: GridSize;
+	placeholder?: string;
+	disableOn?: (permissions: Record<string, unknown> | undefined) => boolean;
+	groups?: Record<string, string[]>;
+	valueFormatter?: ValueFormatterType;
+	calculatedValue?: string;
+	cardDisplay?: CardDisplay;
+	subtitleFormatter?: string;
+	allowRequest?: boolean;
+}
+
+interface ArrayFieldConfig {
+	name: string;
+	label: string;
+	prompt?: string;
+	required?: boolean;
+	cardDisplay: CardDisplay;
+	fields: FormField[];
+}
+
+interface SectionLayout {
+	fields?: string;
+	arrayList?: string;
+	arrayForm?: string;
+}
+
+interface SectionIntro {
+	title: string;
+	description: string;
+}
+
+export interface FormSection {
+	intro: SectionIntro;
+	layout?: SectionLayout;
+	fields?: FormField[] | ((appType: string, applicationData?: Record<string, unknown>) => FormField[]);
+	arrayField?: ArrayFieldConfig;
+}
+
+export interface FormConfig {
+	title: string;
+	name?: string;
+	fields: FormField[];
+}
+
 // --- Helpers ---
 
 /**
  * Dynamically generates file upload fields based on the Application Type.
  * e.g., Only requires 'Service Letter' if the type is 'New Applicant'.
  */
-const getAttachmentFieldsForForm = (appType) => {
+const getAttachmentFieldsForForm = (appType: string): FormField[] => {
 	return attachmentFields
-		.filter((field) => field.requiredBy.includes(appType))
+		.filter((field) => (field.requiredBy as readonly string[]).includes(appType))
 		.map((field) => ({
 			name: `attachments.${field.key}`,
 			label: field.label,
-			type: 'file',
+			type: 'file' as const,
 			required: true,
-			requestable: ['academicRecommendationLetter', 'religiousRecommendationLetter', 'serviceRecommendationLetter'].includes(field.key),
+			allowRequest: ['academicRecommendationLetter', 'communityRecommendationLetter', 'experienceRecommendationLetter'].includes(field.key),
+			grid: { xs: 12 },
 		}));
 };
 
 /**
  * Generates read-only labels for the "Confirmation/Review" step.
  */
-const getAttachmentFieldsForConfirmation = (appType) => {
+const getAttachmentFieldsForConfirmation = (appType: string): FormField[] => {
 	return attachmentFields
-		.filter((field) => field.requiredBy.includes(appType))
+		.filter((field) => (field.requiredBy as readonly string[]).includes(appType))
 		.map((field) => ({
 			name: `attachments.${field.key}`,
 			label: field.label,
-			type: 'label',
-			valueFormatter: 'attachmentChip',
+			type: 'label' as const,
+			valueFormatter: 'attachmentChip' as const,
+			grid: { xs: 12, sm: 6 },
 		}));
 };
 
 // --- 1. Main Application Wizard ---
 
-export const appFormConfig = {
+export const appFormConfig: Record<string, FormSection> = {
 	// -- Section 1: Personal Info --
 	profile: {
 		intro: { title: 'Profile', description: 'Enter your personal details.' },
 		fields: [
-			{ name: 'applicantFirstName', label: 'First Name', type: 'text', required: true, validator: 'lettersOnly' },
-			{ name: 'applicantMiddleInitial', label: 'Middle Initial', type: 'text', validator: 'lettersOnly' },
-			{ name: 'applicantLastName', label: 'Last Name', type: 'text', required: true, validator: 'lettersOnly' },
-			{ name: 'applicantDOB', label: 'Date of Birth', type: 'date', required: true, dateFormat: 'MM/DD/YYYY' },
-			{ name: 'applicantMailingAddress', label: 'Mailing Address', type: 'address', required: true },
-			{ name: 'applicantHomePhone', label: 'Home Phone', type: 'text', validator: 'numbersOnly' },
-			{ name: 'applicantCellPhone', label: 'Cell Phone', type: 'text', required: true, validator: 'numbersOnly' },
-			{ name: 'applicantEmailAddress', label: 'Email Address', type: 'text', required: true, validator: 'emailsOnly' },
+			{ label: 'Your name', type: 'header' },
+			{ name: 'applicantFirstName', label: 'First Name', type: 'text', required: true, validator: 'lettersOnly', grid: { xs: 12, sm: 5 } },
+			{ name: 'applicantMiddleInitial', label: 'MI', type: 'text', validator: 'lettersOnly', grid: { xs: 12, sm: 2 } },
+			{ name: 'applicantLastName', label: 'Last Name', type: 'text', required: true, validator: 'lettersOnly', grid: { xs: 12, sm: 5 } },
+			{ name: 'applicantDOB', label: 'Date of Birth', type: 'date', required: true, dateFormat: 'MM/DD/YYYY', grid: { xs: 12, sm: 6 } },
+			{ label: 'Contact', type: 'header' },
+			{ name: 'applicantMailingAddress', label: 'Mailing Address', type: 'address', required: true, grid: { xs: 12 } },
+			{ name: 'applicantHomePhone', label: 'Home Phone', type: 'text', validator: 'numbersOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantCellPhone', label: 'Cell Phone', type: 'text', required: true, validator: 'numbersOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantEmailAddress', label: 'Email Address', type: 'text', required: true, validator: 'emailsOnly', grid: { xs: 12 } },
 		],
 	},
 
@@ -84,10 +187,10 @@ export const appFormConfig = {
 			required: true,
 			cardDisplay: { title: 'fullName', subtitle: 'relation', details: ['age', 'occupation'] },
 			fields: [
-				{ name: 'fullName', label: 'Full Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-				{ name: 'relation', label: 'Relation to You', type: 'dropdown', required: true, options: ['Mother', 'Father', 'Guardian', 'Sibling', 'Other'] },
-				{ name: 'age', label: 'Age', type: 'number', required: true, validator: 'numbersOnly' },
-				{ name: 'occupation', label: 'Occupation', type: 'text', validator: 'lettersAndSpacesOnly' },
+				{ name: 'fullName', label: 'Full Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12 } },
+				{ name: 'relation', label: 'Relation', type: 'dropdown', required: true, options: ['Mother', 'Father', 'Guardian', 'Sibling', 'Other'], grid: { xs: 12, sm: 6 } },
+				{ name: 'age', label: 'Age', type: 'number', required: true, validator: 'numbersOnly', grid: { xs: 12, sm: 3 } },
+				{ name: 'occupation', label: 'Occupation', type: 'text', validator: 'lettersAndSpacesOnly', grid: { xs: 12, sm: 3 } },
 			],
 		},
 	},
@@ -97,10 +200,10 @@ export const appFormConfig = {
 		intro: { title: 'Education', description: 'Provide your education history.' },
 		layout: { fields: 'left', arrayForm: 'right', arrayList: 'right' },
 		fields: [
-			{ name: 'schoolName', label: 'College/University Enrolled In', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-			{ name: 'major', label: 'Major', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-			{ name: 'expectedGraduationDate', label: 'Expected Graduation', type: 'date', required: true, dateFormat: 'MM/YYYY' },
-			{ name: 'currentGPA', label: 'Current GPA', type: 'number', required: true, validator: 'decimalsOnly' },
+			{ name: 'schoolName', label: 'College/University Enrolled In', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12 } },
+			{ name: 'major', label: 'Major', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12 } },
+			{ name: 'expectedGraduationDate', label: 'Expected Graduation', type: 'date', required: true, dateFormat: 'MM/YYYY', grid: { xs: 12, sm: 6 } },
+			{ name: 'currentGPA', label: 'Current GPA', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
 		],
 		arrayField: {
 			name: 'previousSchools',
@@ -108,7 +211,7 @@ export const appFormConfig = {
 			prompt: 'Add all previous schools starting with High School and they will appear here.',
 			required: true,
 			cardDisplay: { title: 'school' },
-			fields: [{ name: 'school', label: 'School Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly' }],
+			fields: [{ name: 'school', label: 'School Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12 } }],
 		},
 	},
 
@@ -116,7 +219,7 @@ export const appFormConfig = {
 	experience: {
 		intro: { title: 'Experience & Leadership', description: 'Please list your work, volunteer, or leadership experience.' },
 		layout: { fields: 'right', arrayList: 'right', arrayForm: 'left' },
-		fields: [{ name: 'currentOrganization', label: 'Select Current Organization', type: 'dropdown', required: true, validator: 'notUndefined', optionsSource: 'positions' }],
+		fields: [{ name: 'currentOrganization', label: 'Select Current Organization', type: 'dropdown', required: true, validator: 'notUndefined', optionsSource: 'positions', grid: { xs: 12 } }],
 		arrayField: {
 			name: 'positions',
 			label: 'Experience History',
@@ -124,10 +227,10 @@ export const appFormConfig = {
 			prompt: 'Add your positions and they will appear here.',
 			cardDisplay: { title: 'organization', subtitle: 'role', details: ['type', 'location'] },
 			fields: [
-				{ name: 'type', label: 'Organization Type', type: 'dropdown', required: true, options: ['Non-Profit', 'Corporate', 'Educational', 'Community', 'Athletic', 'Other'] },
-				{ name: 'organization', label: 'Organization Name', type: 'text', required: true },
-				{ name: 'location', label: 'City, State', type: 'text', required: true, validator: 'locationOnly' },
-				{ name: 'role', label: 'Role / Title', type: 'text', required: true },
+				{ name: 'type', label: 'Organization Type', type: 'dropdown', required: true, options: ['Non-Profit', 'Corporate', 'Educational', 'Community', 'Athletic', 'Other'], grid: { xs: 12, sm: 6 } },
+				{ name: 'organization', label: 'Organization Name', type: 'text', required: true, grid: { xs: 12, sm: 6 } },
+				{ name: 'location', label: 'City, State', type: 'text', required: true, validator: 'locationOnly', grid: { xs: 12, sm: 6 } },
+				{ name: 'role', label: 'Role / Title', type: 'text', required: true, grid: { xs: 12, sm: 6 } },
 			],
 		},
 	},
@@ -137,10 +240,10 @@ export const appFormConfig = {
 		intro: { title: 'Your Projected Expenses', description: 'Please list the cost of tuition, room and board, books...' },
 		layout: { fields: 'left', arrayForm: 'right', arrayList: 'right' },
 		fields: [
-			{ name: 'tuitionCost', label: 'Tuition Costs', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'roomAndBoardCost', label: 'Room & Board Costs', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'bookCost', label: 'Book Costs', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'commutingCost', label: 'Commuting Costs', type: 'number', required: true, validator: 'decimalsOnly' },
+			{ name: 'tuitionCost', label: 'Tuition Costs', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'roomAndBoardCost', label: 'Room & Board Costs', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'bookCost', label: 'Book Costs', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'commutingCost', label: 'Commuting Costs', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
 		],
 		arrayField: {
 			name: 'otherExpenses',
@@ -148,8 +251,8 @@ export const appFormConfig = {
 			cardDisplay: { title: 'title', subtitle: 'amount' },
 			prompt: 'Add any additional expenses and they will appear here.',
 			fields: [
-				{ name: 'title', label: 'Expense Title', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-				{ name: 'amount', label: 'Amount', type: 'number', required: true, validator: 'decimalsOnly' },
+				{ name: 'title', label: 'Expense Title', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12, sm: 7 } },
+				{ name: 'amount', label: 'Amount', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 5 } },
 			],
 		},
 	},
@@ -159,14 +262,14 @@ export const appFormConfig = {
 		intro: { title: 'Your Income', description: 'List any income you will earn...' },
 		layout: { fields: 'left', arrayForm: 'right', arrayList: 'right' },
 		fields: [
-			{ name: 'summerEarnings', label: 'Summer Earnings', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'fallEarnings', label: 'Fall Earnings', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'winterEarnings', label: 'Winter Earnings', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'springEarnings', label: 'Spring Earnings', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'earningsAppliedToEducation', label: 'Total Earnings Applied', required: true, type: 'number', validator: 'decimalsOnly' },
-			{ name: 'savingsAppliedToEducation', label: 'Total Savings Applied', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'collegeAward', label: 'Total College Award', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'loansAmount', label: 'Total Loans', type: 'number', required: true, validator: 'decimalsOnly' },
+			{ name: 'summerEarnings', label: 'Summer Earnings', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'fallEarnings', label: 'Fall Earnings', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'winterEarnings', label: 'Winter Earnings', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'springEarnings', label: 'Spring Earnings', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'earningsAppliedToEducation', label: 'Total Earnings Applied', required: true, type: 'number', validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'savingsAppliedToEducation', label: 'Total Savings Applied', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'collegeAward', label: 'Total College Award', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'loansAmount', label: 'Total Loans', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
 		],
 		arrayField: {
 			name: 'otherIncomeSources',
@@ -174,8 +277,8 @@ export const appFormConfig = {
 			prompt: 'Add any additional income sources and scholarships and they will appear here.',
 			cardDisplay: { title: 'title', subtitle: 'amount' },
 			fields: [
-				{ name: 'title', label: 'Income Source Title', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-				{ name: 'amount', label: 'Amount', type: 'number', required: true, validator: 'decimalsOnly' },
+				{ name: 'title', label: 'Income Source Title', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12, sm: 7 } },
+				{ name: 'amount', label: 'Amount', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 5 } },
 			],
 		},
 	},
@@ -185,12 +288,12 @@ export const appFormConfig = {
 		intro: { title: 'Family Contributions', description: 'Provide details about your family’s financial contributions...' },
 		layout: { fields: 'left', arrayForm: 'right', arrayList: 'right' },
 		fields: [
-			{ name: 'p1ExpectedAnnualIncome', label: 'Parent/Guardian 1 Expected Annual Income', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'p2ExpectedAnnualIncome', label: 'Parent/Guardian 2 Expected Annual Income', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'parentInvestmentIncome', label: 'Family Investment Income', type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'parentsOwnOrRentHome', label: 'Home Status', type: 'dropdown', required: true, options: ['Own', 'Rent'] },
-			{ name: 'parentsMaritalStatus', label: 'Marital Status', type: 'dropdown', required: true, options: ['Married', 'Divorced', 'Single', 'Separated', 'Widowed'] },
-			{ name: 'anyExtraordinaryExpenses', label: 'Extraordinary Circumstances', type: 'text', multiline: true, rows: 2 },
+			{ name: 'p1ExpectedAnnualIncome', label: 'Parent/Guardian 1 Expected Annual Income', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'p2ExpectedAnnualIncome', label: 'Parent/Guardian 2 Expected Annual Income', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'parentInvestmentIncome', label: 'Family Investment Income', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'parentsOwnOrRentHome', label: 'Home Status', type: 'dropdown', required: true, options: ['Own', 'Rent'], grid: { xs: 12, sm: 6 } },
+			{ name: 'parentsMaritalStatus', label: 'Marital Status', type: 'dropdown', required: true, options: ['Married', 'Divorced', 'Single', 'Separated', 'Widowed'], grid: { xs: 12, sm: 6 } },
+			{ name: 'anyExtraordinaryExpenses', label: 'Extraordinary Circumstances', type: 'text', multiline: true, rows: 2, grid: { xs: 12 } },
 		],
 		arrayField: {
 			name: 'siblingSchools',
@@ -198,8 +301,8 @@ export const appFormConfig = {
 			prompt: 'Add any schools your siblings are attending and their yearly costs and they will appear here.',
 			cardDisplay: { title: 'title', subtitle: 'cost' },
 			fields: [
-				{ name: 'title', label: 'School Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly' },
-				{ name: 'cost', label: 'Cost', type: 'number', required: true, validator: 'decimalsOnly' },
+				{ name: 'title', label: 'School Name', type: 'text', required: true, validator: 'lettersAndSpacesOnly', grid: { xs: 12, sm: 7 } },
+				{ name: 'cost', label: 'Cost', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 5 } },
 			],
 		},
 	},
@@ -210,84 +313,109 @@ export const appFormConfig = {
 		layout: { fields: 'left' },
 		fields: [
 			// Calculated Labels: These evaluate the string equation against the current form data.
-			{ name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')" },
-			{ name: 'applicantEarnings', label: 'Your Applied Earnings', type: 'calculatedLabel', calculatedValue: 'incomes.earningsAppliedToEducation' },
-			{ name: 'applicantSavings', label: 'Your Applied Savings', type: 'calculatedLabel', calculatedValue: 'incomes.savingsAppliedToEducation' },
-			{ name: 'applicantIncomes', label: 'Loans & Other Sources', type: 'calculatedLabel', calculatedValue: "incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')" },
-			{ name: 'applicantFamily', label: "Your Family's Contribution", type: 'number', required: true, validator: 'decimalsOnly' },
-			{ name: 'request', label: 'Request from Grant Fund', type: 'number', required: true, validator: 'decimalsOnly' },
+			{ name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')", grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantEarnings', label: 'Your Applied Earnings', type: 'calculatedLabel', calculatedValue: 'incomes.earningsAppliedToEducation', grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantSavings', label: 'Your Applied Savings', type: 'calculatedLabel', calculatedValue: 'incomes.savingsAppliedToEducation', grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantIncomes', label: 'Loans & Other Sources', type: 'calculatedLabel', calculatedValue: "incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')", grid: { xs: 12, sm: 6 } },
+			{ name: 'applicantFamily', label: "Your Family's Contribution", type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
+			{ name: 'request', label: 'Request from Grant Fund', type: 'number', required: true, validator: 'decimalsOnly', grid: { xs: 12, sm: 6 } },
 			{
 				name: 'totalProjections',
 				label: 'Total Projected Contributions',
 				type: 'calculatedLabel',
 				calculatedValue: "incomes.earningsAppliedToEducation + incomes.savingsAppliedToEducation + incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount') + projections.applicantFamily + projections.request",
+				grid: { xs: 12, sm: 6 },
 			},
-			{ name: 'projectionsMatchCheck', label: 'Projections Balanced?', type: 'calculatedLabel', calculatedValue: 'totalExpenses === totalProjections' },
+			{ name: 'projectionsMatchCheck', label: 'Projections Balanced?', type: 'calculatedLabel', calculatedValue: 'totalExpenses === totalProjections', grid: { xs: 12, sm: 6 } },
 		],
 	},
 
 	// -- Section 9: Attachments --
 	attachments: {
 		intro: { title: 'Attachments', description: 'Please attach or request your required documents.' },
-		fields: (appType) => getAttachmentFieldsForForm(appType),
+		fields: (appType: string) => getAttachmentFieldsForForm(appType),
 	},
 
 	// -- Section 10: Confirmation --
 	confirmation: {
 		intro: { title: 'Review & Submit', description: 'Please review your information before submitting.' },
-		fields: (appType, applicationData) => {
-			const dynamicFields = [];
+		fields: (appType: string, applicationData?: Record<string, unknown>) => {
+			const dynamicFields: FormField[] = [];
 
 			// Profile
-			dynamicFields.push({ type: 'header', label: 'Profile' }, { name: 'profile.applicantFirstName', label: 'First Name', type: 'label' }, { name: 'profile.applicantLastName', label: 'Last Name', type: 'label' }, { name: 'profile.applicantDOB', label: 'Date of Birth', type: 'label', dateFormat: 'MM/DD/YYYY' }, { name: 'profile.applicantEmailAddress', label: 'Email', type: 'label' }, { name: 'profile.applicantHomePhone', label: 'Home Phone', type: 'label' }, { name: 'profile.applicantCellPhone', label: 'Cell Phone', type: 'label' }, { name: 'profile.applicantMailingAddress', label: 'Mailing Address', type: 'label' });
+			dynamicFields.push(
+				{ type: 'header', label: 'Profile' },
+				{ name: 'profile.applicantFirstName', label: 'First Name', type: 'label', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantLastName', label: 'Last Name', type: 'label', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantDOB', label: 'Date of Birth', type: 'label', dateFormat: 'MM/DD/YYYY', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantEmailAddress', label: 'Email', type: 'label', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantHomePhone', label: 'Home Phone', type: 'label', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantCellPhone', label: 'Cell Phone', type: 'label', grid: { xs: 12, sm: 6, md: 4 } },
+				{ name: 'profile.applicantMailingAddress', label: 'Mailing Address', type: 'label', grid: { xs: 12 } }
+			);
 
-			if (applicationData.family) {
-				dynamicFields.push({ type: 'header', label: 'Family' }, { type: 'summaryList', name: 'family.familyMembers', label: 'Family Members', cardDisplay: { title: 'fullName', subtitle: 'relation', details: ['age', 'occupation'] } });
+			if (applicationData?.family) {
+				dynamicFields.push({ type: 'header', label: 'Family' }, { type: 'summaryList', name: 'family.familyMembers', label: 'Family Members', cardDisplay: { title: 'fullName', subtitle: 'relation', details: ['age', 'occupation'] }, grid: { xs: 12 } });
 			}
-			if (applicationData.education) {
-				dynamicFields.push({ type: 'header', label: 'Education' }, { name: 'education.schoolName', label: 'School', type: 'label' }, { name: 'education.major', label: 'Major', type: 'label' }, { name: 'education.currentGPA', label: 'Current GPA', type: 'label' }, { name: 'education.expectedGraduationDate', label: 'Graduation Date', type: 'label', dateFormat: 'MM/YYYY' }, { type: 'summaryList', name: 'education.previousSchools', label: 'Previous Schools', cardDisplay: { title: 'school' } });
+			if (applicationData?.education) {
+				dynamicFields.push(
+					{ type: 'header', label: 'Education' },
+					{ name: 'education.schoolName', label: 'School', type: 'label', grid: { xs: 12 } },
+					{ name: 'education.major', label: 'Major', type: 'label', grid: { xs: 12, sm: 6 } },
+					{ name: 'education.currentGPA', label: 'Current GPA', type: 'label', grid: { xs: 12, sm: 3 } },
+					{ name: 'education.expectedGraduationDate', label: 'Graduation Date', type: 'label', dateFormat: 'MM/YYYY', grid: { xs: 12, sm: 3 } },
+					{ type: 'summaryList', name: 'education.previousSchools', label: 'Previous Schools', cardDisplay: { title: 'school' }, grid: { xs: 12 } }
+				);
 			}
 
-			if (applicationData.experience) {
-				dynamicFields.push({ type: 'header', label: 'Experience' }, { type: 'summaryList', name: 'experience.positions', label: 'Positions', cardDisplay: { title: 'organization', subtitle: 'role', details: ['type', 'location'] } });
+			if (applicationData?.experience) {
+				dynamicFields.push({ type: 'header', label: 'Experience' }, { type: 'summaryList', name: 'experience.positions', label: 'Positions', cardDisplay: { title: 'organization', subtitle: 'role', details: ['type', 'location'] }, grid: { xs: 12 } });
 			}
-			if (applicationData.expenses) {
-				dynamicFields.push({ type: 'header', label: 'Expenses' }, { name: 'expenses.tuitionCost', label: 'Tuition Cost', type: 'label', valueFormatter: 'currency' }, { name: 'expenses.roomAndBoardCost', label: 'Room & Board Cost', type: 'label', valueFormatter: 'currency' }, { name: 'expenses.bookCost', label: 'Book Cost', type: 'label', valueFormatter: 'currency' }, { name: 'expenses.commutingCost', label: 'Commuting Cost', type: 'label', valueFormatter: 'currency' }, { type: 'summaryList', name: 'expenses.otherExpenses', label: 'Other Expenses', cardDisplay: { title: 'title', subtitle: 'amount' }, subtitleFormatter: 'currency' }, { name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')" });
+			if (applicationData?.expenses) {
+				dynamicFields.push(
+					{ type: 'header', label: 'Expenses' },
+					{ name: 'expenses.tuitionCost', label: 'Tuition Cost', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6, md: 3 } },
+					{ name: 'expenses.roomAndBoardCost', label: 'Room & Board Cost', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6, md: 3 } },
+					{ name: 'expenses.bookCost', label: 'Book Cost', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6, md: 3 } },
+					{ name: 'expenses.commutingCost', label: 'Commuting Cost', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6, md: 3 } },
+					{ type: 'summaryList', name: 'expenses.otherExpenses', label: 'Other Expenses', cardDisplay: { title: 'title', subtitle: 'amount' }, subtitleFormatter: 'currency', grid: { xs: 12 } },
+					{ name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')", grid: { xs: 12, sm: 6 } }
+				);
 			}
-			if (applicationData.incomes) {
+			if (applicationData?.incomes) {
 				dynamicFields.push(
 					{ type: 'header', label: 'Incomes' },
-					{ name: 'incomes.earningsAppliedToEducation', label: 'Earnings Applied to Education', type: 'label', valueFormatter: 'currency' },
-					{ name: 'incomes.savingsAppliedToEducation', label: 'Savings Applied to Education', type: 'label', valueFormatter: 'currency' },
-					{ name: 'incomes.collegeAward', label: 'College Award', type: 'label', valueFormatter: 'currency' },
-					{ name: 'incomes.loansAmount', label: 'Loans Amount', type: 'label', valueFormatter: 'currency' },
-					{ type: 'summaryList', name: 'incomes.otherIncomeSources', label: 'Other Income Sources', cardDisplay: { title: 'title', subtitle: 'amount' }, subtitleFormatter: 'currency' },
-					{ name: 'totalIncome', label: 'Total Yearly Income', type: 'calculatedLabel', calculatedValue: "incomes.earningsAppliedToEducation + incomes.savingsAppliedToEducation + incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')" }
+					{ name: 'incomes.earningsAppliedToEducation', label: 'Earnings Applied to Education', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'incomes.savingsAppliedToEducation', label: 'Savings Applied to Education', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'incomes.collegeAward', label: 'College Award', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'incomes.loansAmount', label: 'Loans Amount', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ type: 'summaryList', name: 'incomes.otherIncomeSources', label: 'Other Income Sources', cardDisplay: { title: 'title', subtitle: 'amount' }, subtitleFormatter: 'currency', grid: { xs: 12 } },
+					{ name: 'totalIncome', label: 'Total Yearly Income', type: 'calculatedLabel', calculatedValue: "incomes.earningsAppliedToEducation + incomes.savingsAppliedToEducation + incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')", grid: { xs: 12, sm: 6 } }
 				);
 			}
-			if (applicationData.contributions) {
+			if (applicationData?.contributions) {
 				dynamicFields.push(
 					{ type: 'header', label: 'Contributions' },
-					{ name: 'contributions.p1ExpectedAnnualIncome', label: 'Parent/Guardian 1 Expected Annual Income', type: 'label', valueFormatter: 'currency' },
-					{ name: 'contributions.p2ExpectedAnnualIncome', label: 'Parent/Guardian 2 Expected Annual Income', type: 'label', valueFormatter: 'currency' },
-					{ name: 'contributions.parentInvestmentIncome', label: 'Family Investment Income', type: 'label', valueFormatter: 'currency' },
-					{ name: 'contributions.parentsOwnOrRentHome', label: 'Home Status', type: 'label' },
-					{ name: 'contributions.parentsMaritalStatus', label: 'Marital Status', type: 'label' },
-					{ name: 'contributions.anyExtraordinaryExpenses', label: 'Extraordinary Circumstances', type: 'label' },
-					{ type: 'summaryList', name: 'contributions.siblingSchools', label: 'Sibling Schools', cardDisplay: { title: 'title', subtitle: 'cost' }, subtitleFormatter: 'currency' }
+					{ name: 'contributions.p1ExpectedAnnualIncome', label: 'Parent/Guardian 1 Expected Annual Income', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'contributions.p2ExpectedAnnualIncome', label: 'Parent/Guardian 2 Expected Annual Income', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'contributions.parentInvestmentIncome', label: 'Family Investment Income', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'contributions.parentsOwnOrRentHome', label: 'Home Status', type: 'label', grid: { xs: 12, sm: 6 } },
+					{ name: 'contributions.parentsMaritalStatus', label: 'Marital Status', type: 'label', grid: { xs: 12, sm: 6 } },
+					{ name: 'contributions.anyExtraordinaryExpenses', label: 'Extraordinary Circumstances', type: 'label', grid: { xs: 12 } },
+					{ type: 'summaryList', name: 'contributions.siblingSchools', label: 'Sibling Schools', cardDisplay: { title: 'title', subtitle: 'cost' }, subtitleFormatter: 'currency', grid: { xs: 12 } }
 				);
 			}
-			if (applicationData.projections) {
+			if (applicationData?.projections) {
 				dynamicFields.push(
 					{ type: 'header', label: 'Projections' },
-					{ name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')" },
-					{ name: 'totalProjections', label: 'Total Projected Contributions', type: 'calculatedLabel', calculatedValue: 'projections.applicantEarnings + projections.applicantSavings + projections.applicantFamily + projections.request + totalIncome' },
-					{ name: 'projections.applicantEarnings', label: 'Earnings Contribution', type: 'calculatedLabel', calculatedValue: 'incomes.earningsAppliedToEducation' },
-					{ name: 'projections.applicantSavings', label: 'Savings Contribution', type: 'calculatedLabel', calculatedValue: 'incomes.savingsAppliedToEducation' },
-					{ name: 'projections.allOtherIncome', label: 'All Other Income Sources', type: 'calculatedLabel', calculatedValue: "incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')" },
-					{ name: 'projections.applicantFamily', label: 'Family Contribution', type: 'label', valueFormatter: 'currency' },
-					{ name: 'projections.request', label: 'Amount Requested', type: 'label', valueFormatter: 'currency' },
-					{ name: 'projectionsMatchCheck', label: 'Projections Balanced?', type: 'calculatedLabel', calculatedValue: 'totalExpenses === totalProjections' }
+					{ name: 'totalExpenses', label: 'Total Yearly Expenses', type: 'calculatedLabel', calculatedValue: "expenses.tuitionCost + expenses.roomAndBoardCost + expenses.bookCost + expenses.commutingCost + sumArray(expenses.otherExpenses, 'amount')", grid: { xs: 12, sm: 6 } },
+					{ name: 'totalProjections', label: 'Total Projected Contributions', type: 'calculatedLabel', calculatedValue: 'projections.applicantEarnings + projections.applicantSavings + projections.applicantFamily + projections.request + totalIncome', grid: { xs: 12, sm: 6 } },
+					{ name: 'projections.applicantEarnings', label: 'Earnings Contribution', type: 'calculatedLabel', calculatedValue: 'incomes.earningsAppliedToEducation', grid: { xs: 12, sm: 6 } },
+					{ name: 'projections.applicantSavings', label: 'Savings Contribution', type: 'calculatedLabel', calculatedValue: 'incomes.savingsAppliedToEducation', grid: { xs: 12, sm: 6 } },
+					{ name: 'projections.allOtherIncome', label: 'All Other Income Sources', type: 'calculatedLabel', calculatedValue: "incomes.collegeAward + incomes.loansAmount + sumArray(incomes.otherIncomeSources, 'amount')", grid: { xs: 12, sm: 6 } },
+					{ name: 'projections.applicantFamily', label: 'Family Contribution', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'projections.request', label: 'Amount Requested', type: 'label', valueFormatter: 'currency', grid: { xs: 12, sm: 6 } },
+					{ name: 'projectionsMatchCheck', label: 'Projections Balanced?', type: 'calculatedLabel', calculatedValue: 'totalExpenses === totalProjections', grid: { xs: 12, sm: 6 } }
 				);
 			}
 
@@ -300,7 +428,7 @@ export const appFormConfig = {
 
 // --- 2. Admin & Member Management ---
 
-export const memberFormConfig = {
+export const memberFormConfig: FormConfig = {
 	title: 'Member Attributes & Permissions',
 	fields: [
 		{ name: 'picture', label: 'Profile Picture', type: 'pictureUpload' },
@@ -335,7 +463,7 @@ export const memberFormConfig = {
 
 // --- 3. Applicant Profile Editing (Admin View) ---
 
-export const applicantFormConfig = {
+export const applicantFormConfig: FormConfig = {
 	title: 'Applicant Attributes',
 	fields: [
 		{ name: 'picture', label: 'Profile Picture', type: 'pictureUpload' },
@@ -353,7 +481,7 @@ export const applicantFormConfig = {
 
 // --- 4. Request & Upload Forms ---
 
-export const requestFormConfig = {
+export const requestFormConfig: FormConfig = {
 	title: 'Recommendation Request Details',
 	fields: [
 		{ name: 'name', label: 'Recommender Name', type: 'text', required: true },
@@ -374,7 +502,7 @@ export const requestFormConfig = {
 	],
 };
 
-export const manualUploadFormConfig = {
+export const manualUploadFormConfig: FormConfig = {
 	title: 'Manual Attachment Uploader',
 	name: 'manualUpload',
 	fields: [

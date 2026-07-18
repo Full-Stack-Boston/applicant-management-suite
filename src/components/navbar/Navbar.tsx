@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Global Navigation Bar
  * The top-level persistent navigation component.
@@ -10,8 +9,7 @@
  * - Dynamic Notification Badges.
  */
 
-import React, { useEffect, useState, useRef } from 'react';
-import PropTypes from 'prop-types';
+import { useEffect, useState, useRef, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Box, Menu, MenuItem, Divider, ListItemIcon, Typography, Badge, InputBase } from '@mui/material';
 import { VoiceChatOutlined as MeetingIcon, Email as EmailIcon, MarkEmailUnread as UnreadIcon, MarkEmailRead as ReadIcon, LightModeOutlined as LightModeIcon, DarkModeOutlined as DarkModeIcon, SearchOutlined as SearchIcon, NotificationsNoneOutlined as NotificationsIcon, SettingsOutlined, Logout, AccountCircle as ProfileIcon } from '@mui/icons-material';
@@ -30,29 +28,47 @@ import { paths } from '../../config/navigation/paths';
 import { saveCollectionData, globalSearch } from '../../config/data/firebase';
 
 // Components
-import SearchResultsDropdown from './SearchResultsDropdown';
+import SearchResultsDropdown, { type SearchResults } from './SearchResultsDropdown';
+import type { Member } from '../../types/domain';
 
 // --- Sub-Components ---
 
-const SettingsMenuItem = ({ member, onMenuClose }) => {
+interface MemberNotificationPreferences {
+	email?: boolean;
+	sms?: boolean;
+	forwardingEnabled?: boolean;
+}
+
+interface PreferencesFormData extends MemberNotificationPreferences {
+	callMe?: string;
+}
+
+interface SettingsMenuItemProps {
+	member?: Member | null;
+	onMenuClose: () => void;
+}
+
+const SettingsMenuItem = ({ member, onMenuClose }: SettingsMenuItemProps) => {
 	const { showDialog } = useDialog();
 
 	const handleSettingsClick = () => {
 		onMenuClose();
 		if (!member?.id) return;
 
+		const notifications = member.notifications as MemberNotificationPreferences | undefined;
+
 		showDialog({
 			id: 'notificationsUpdate',
 			data: {
 				userType: UserType.member,
-				email: member.notifications?.email || false,
-				sms: member.notifications?.sms || false,
+				email: notifications?.email || false,
+				sms: notifications?.sms || false,
 				callMe: member.callMe || '',
-				forwardingEnabled: member.notifications?.forwardingEnabled || false,
+				forwardingEnabled: notifications?.forwardingEnabled || false,
 			},
-			callback: async (formData) => {
+			callback: async (formData: unknown) => {
 				if (formData) {
-					const { email, sms, callMe, forwardingEnabled } = formData;
+					const { email, sms, callMe, forwardingEnabled } = formData as PreferencesFormData;
 					const updatedData = {
 						...member,
 						notifications: { email, sms, forwardingEnabled },
@@ -74,11 +90,6 @@ const SettingsMenuItem = ({ member, onMenuClose }) => {
 	);
 };
 
-SettingsMenuItem.propTypes = {
-	member: PropTypes.object,
-	onMenuClose: PropTypes.func.isRequired,
-};
-
 // --- Main Component ---
 
 const Navbar = () => {
@@ -89,27 +100,28 @@ const Navbar = () => {
 	const config = useConfig();
 
 	// State
-	const [profileImage, setProfileImage] = useState(config.DEFAULT_AVATAR);
-	const [anchorEl, setAnchorEl] = useState(null);
+	const defaultAvatar = (config.DEFAULT_AVATAR as string | undefined) ?? '';
+	const [profileImage, setProfileImage] = useState<string>(defaultAvatar);
+	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 	const [searchTerms, setSearchTerms] = useState('');
-	const [searchResults, setSearchResults] = useState(null);
+	const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
 	const [isSearching, setIsSearching] = useState(false);
 
 	const open = Boolean(anchorEl);
-	const searchBarRef = useRef(null);
+	const searchBarRef = useRef<HTMLDivElement | null>(null);
 
 	// Sync Profile Image
 	useEffect(() => {
 		if (user && role) {
 			if ((role === UserType.member || role === UserType.both) && member) {
-				setProfileImage(member.picture?.home || config.DEFAULT_AVATAR);
+				setProfileImage((member.picture?.home as string | undefined) || defaultAvatar);
 			} else {
-				setProfileImage(config.DEFAULT_AVATAR);
+				setProfileImage(defaultAvatar);
 			}
 		} else {
-			setProfileImage(config.DEFAULT_AVATAR);
+			setProfileImage(defaultAvatar);
 		}
-	}, [user, member, role, config.DEFAULT_AVATAR]);
+	}, [user, member, role, defaultAvatar]);
 
 	const handleSearch = async () => {
 		if (searchTerms.trim().length < 3) {
@@ -122,16 +134,16 @@ const Navbar = () => {
 
 		try {
 			const result = await globalSearch({ searchTerm: searchTerms });
-			setSearchResults(result.data);
+			setSearchResults(result.data as SearchResults);
 			setSearchTerms('');
 		} catch (error) {
 			console.error('Search failed:', error);
-			setSearchResults({ error: error.message || 'Search failed. Please try again.' });
+			setSearchResults({ error: (error as Error).message || 'Search failed. Please try again.' });
 		}
 		setIsSearching(false);
 	};
 
-	const handleKeyDown = (e) => {
+	const handleKeyDown = (e: KeyboardEvent<HTMLElement>) => {
 		if (e.key === 'Enter') {
 			handleSearch();
 		}
@@ -144,7 +156,7 @@ const Navbar = () => {
 		}, 200);
 	};
 
-	const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
+	const handleMenuOpen = (event: MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
 	const handleMenuClose = () => setAnchorEl(null);
 
 	const handleLogout = () => {
@@ -176,24 +188,43 @@ const Navbar = () => {
 	};
 
 	return (
-		<Box zIndex={1} position='sticky' top='0' height='50px' display='flex' alignItems='center' fontSize='14px' color='text.primary'>
-			<Box className='wrapper' display='flex' padding='20px' alignItems='center' justifyContent='space-between' width='100%' gap='15px'>
+		<Box
+			sx={{
+				zIndex: 1,
+				position: 'sticky',
+				top: 0,
+				height: '50px',
+				display: 'flex',
+				alignItems: 'center',
+				fontSize: '14px',
+				color: 'text.primary',
+			}}>
+			<Box
+				className='wrapper'
+				sx={{
+					display: 'flex',
+					padding: '20px',
+					alignItems: 'center',
+					justifyContent: 'space-between',
+					width: '100%',
+					gap: '15px',
+				}}>
 				{/* Search Bar */}
 				<Box
 					ref={searchBarRef}
-					position='relative'
-					display='flex'
-					alignItems='center'
-					borderRadius='14px'
-					width='100%'
-					justifyContent='space-between'
 					sx={{
+						position: 'relative',
+						display: 'flex',
+						alignItems: 'center',
+						borderRadius: '14px',
+						width: '100%',
+						justifyContent: 'space-between',
 						border: '2px solid',
-						borderColor: 'divider', // Softer border color
+						borderColor: 'divider',
 						padding: '2px 15px',
 						bgcolor: 'background.paper',
 					}}>
-					<InputBase sx={{ ml: 1, flex: 1, color: 'text.primary' }} placeholder='Search...' value={searchTerms} onChange={(e) => setSearchTerms(e.target.value)} onKeyDown={handleKeyDown} onBlur={handleCloseDropdown} inputProps={{ 'aria-label': 'search site' }} />
+					<InputBase sx={{ ml: 1, flex: 1, color: 'text.primary' }} placeholder='Search...' value={searchTerms} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerms(e.target.value)} onKeyDown={handleKeyDown} onBlur={handleCloseDropdown} inputProps={{ 'aria-label': 'search site' }} />
 					<SearchIcon sx={{ cursor: 'pointer', color: 'text.secondary' }} onClick={handleSearch} />
 				</Box>
 
@@ -201,7 +232,7 @@ const Navbar = () => {
 				{(isSearching || searchResults) && <SearchResultsDropdown results={searchResults} loading={isSearching} anchorEl={searchBarRef.current} onClose={() => setSearchResults(null)} />}
 
 				{/* Right Side Icons */}
-				<Box className='items' display='flex' alignItems='center' gap='20px'>
+				<Box className='items' sx={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
 					<Box className='item' sx={{ cursor: 'pointer' }} onClick={() => dispatch({ type: 'TOGGLE' })}>
 						{darkMode ? <LightModeIcon className='icon' /> : <DarkModeIcon className='icon' />}
 					</Box>

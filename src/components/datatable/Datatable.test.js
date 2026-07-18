@@ -27,6 +27,21 @@ vi.mock('@mui/x-data-grid', () => ({
 	GridToolbarExport: () => <div>Export</div>,
 	GridToolbarFilterButton: () => <div>FilterBtn</div>,
 	GridToolbarContainer: ({ children }) => <div>{children}</div>,
+	useGridApiContext: () => ({
+		current: {
+			getLocaleText: (key) => key,
+		},
+	}),
+	useGridRootProps: () => ({
+		slots: {
+			baseIconButton: (props) => <button type='button' {...props} />,
+			quickFilterIcon: () => null,
+			quickFilterClearIcon: () => null,
+		},
+	}),
+	QuickFilter: ({ children }) => <div data-testid='quick-filter'>{children}</div>,
+	QuickFilterClear: ({ render }) => render || null,
+	QuickFilterControl: (props) => <input aria-label={props['aria-label']} placeholder={props.placeholder} />,
 }));
 
 const mockUseTheme = useTheme;

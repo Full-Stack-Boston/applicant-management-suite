@@ -1,5 +1,4 @@
 import { appFormConfig, memberFormConfig, applicantFormConfig, requestFormConfig, manualUploadFormConfig } from './formConfig';
-import { attachmentFields } from '../Constants';
 import { ApplicationType } from '../data/collections';
 
 // Mock dependencies
@@ -41,7 +40,7 @@ describe('formConfig.js', () => {
 			expect(fields[0].name).toBe('attachments.field1');
 			expect(fields[1].label).toBe('Field 2');
 			expect(fields[2].label).toBe('Academic LOR');
-			expect(fields[2].requestable).toBe(true);
+			expect(fields[2].allowRequest).toBe(true);
 		});
 
 		it('should return correct confirmation fields from function', () => {

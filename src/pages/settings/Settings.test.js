@@ -31,9 +31,19 @@ vi.mock('../../context/AlertContext', () => ({
 	useAlert: jest.fn(),
 }));
 
+vi.mock('../../context/AuthContext', () => ({
+	useAuth: jest.fn(() => ({ member: { permissions: { email: true } } })),
+}));
+
 vi.mock('../../config/data/firebase', () => ({
 	saveCollectionData: jest.fn(),
 	getCollection: jest.fn(),
+	db: {},
+}));
+
+vi.mock('firebase/firestore', () => ({
+	doc: jest.fn(() => ({ path: 'videoBudget/status' })),
+	onSnapshot: jest.fn(() => jest.fn()),
 }));
 
 // **FIX**: Added ApplicationType and other exports that Constants.js depends on
@@ -41,6 +51,7 @@ vi.mock('../../config/data/collections', () => ({
 	collections: {
 		siteConfig: 'site_config',
 		applicants: 'applicants',
+		videoBudget: 'videoBudget',
 	},
 	ApplicationType: {
 		newApplication: 'newApplication',
@@ -53,6 +64,14 @@ vi.mock('../../config/data/collections', () => ({
 	},
 	ApplicationStatus: {
 		started: 'Started',
+	},
+	InterviewStatus: {
+		scheduled: 'Scheduled',
+		invited: 'Invited',
+		confirmed: 'Confirmed',
+		completed: 'Completed',
+		cancelled: 'Cancelled',
+		noShow: 'No Show',
 	},
 }));
 
@@ -179,11 +198,17 @@ describe('SiteSettings Component', () => {
 		expect(screen.getByText('Site Settings')).toBeInTheDocument();
 		expect(screen.getByText('Automated Tasks')).toBeInTheDocument();
 		expect(screen.getByText('Shared Signatures')).toBeInTheDocument();
+		expect(screen.getByText('Email Delivery')).toBeInTheDocument();
+		expect(screen.getByText('Lead Capture')).toBeInTheDocument();
+		expect(screen.getByText('System Identity')).toBeInTheDocument();
+		expect(screen.getByText(/Outbound: Simulated/i)).toBeInTheDocument();
 
 		expect(screen.getByLabelText(/Enable Registration/i)).toBeChecked();
 		expect(screen.getByLabelText(/Signature Chairman/i)).toHaveValue('John Doe');
 		expect(screen.getByLabelText(/Api Key/i)).toHaveValue('12345');
 		expect(screen.getByLabelText(/Application Deadline/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/System Email/i)).toHaveValue('system@test.com');
+		expect(screen.getByLabelText(/Owner Lead Email/i)).toBeInTheDocument();
 	});
 
 	test('handles modifying a setting value', async () => {

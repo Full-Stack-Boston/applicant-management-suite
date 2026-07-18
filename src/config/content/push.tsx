@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * NOTIFICATION DISPATCHER
  * ---------------------------------------------------------------------------
@@ -16,10 +15,33 @@
  */
 
 import { db, getConfigFromDb } from '../data/firebase';
-import { doc, setDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { brand, emailHeader, emailFooter, unsubscribeLink, staticEmailFooter, LettersOfRecommendation } from '../Constants';
 import { collections } from '../data/collections';
 import { emailTemplates } from './emailTemplates';
+import { isDemoEmailMode, withSimulatedDelivery } from './emailDelivery';
+import type { SiteConfig } from '../../types/firebase';
+
+/** Firestore/static email template document: subject + html with {{placeholders}}. */
+interface EmailTemplateDoc {
+	subject?: string;
+	html?: string;
+	[key: string]: unknown;
+}
+
+/** Contact Center recipient: name/email (and cell for SMS) plus per-recipient template data. */
+interface Recipient {
+	name?: string;
+	email?: string;
+	cell?: string;
+	firstName?: string;
+	lastName?: string;
+	id?: string;
+	[key: string]: unknown;
+}
+
+const queueEmailDoc = (email: Record<string, unknown>, config: SiteConfig | null) =>
+	isDemoEmailMode(config as { emailDeliveryMode?: string } | null) ? withSimulatedDelivery(email) : email;
 
 /**
  * Enumeration of available Email Template Keys.
@@ -40,6 +62,7 @@ export const ContactTemplate = {
 	interviewInvitation: 'interviewInvitation',
 	memberActivitySummary: 'memberActivitySummary',
 	incompleteCountAlert: 'incompleteCountAlert',
+	reminderToApply: 'reminderToApply',
 };
 
 // --- Helper Functions ---
@@ -51,14 +74,14 @@ export const ContactTemplate = {
  * @param {object} data - The data context to resolve values from.
  * @returns {string} The processed string with values inserted.
  */
-const processTemplate = (templateString, data) => {
+const processTemplate = (templateString: string | undefined, data: Record<string, unknown>): string => {
 	if (!templateString) return '';
 	const regex = /{{\s*([\w.]+)\s*}}/g;
-	return templateString.replaceAll(regex, (match, key) => {
+	return templateString.replace(regex, (match, key: string) => {
 		const keys = key.split('.');
-		let value = data;
+		let value: unknown = data;
 		for (const k of keys) {
-			value = value?.[k];
+			value = (value as Record<string, unknown> | null | undefined)?.[k];
 			if (value === undefined) return match;
 		}
 
@@ -76,8 +99,18 @@ const processTemplate = (templateString, data) => {
  * @param {object} data - Dynamic data for the specific recipient.
  * @returns {Promise<object>} { subject, text, html }
  */
-const generateMessage = async (templateKey, data, config) => {
-	const template = emailTemplates[templateKey];
+const resolveTemplate = async (templateKey: string): Promise<EmailTemplateDoc | null> => {
+	try {
+		const snap = await getDoc(doc(db, collections.emailTemplates, templateKey));
+		if (snap.exists()) return snap.data() as EmailTemplateDoc;
+	} catch (error) {
+		console.warn('Falling back to static email template', templateKey, error);
+	}
+	return (emailTemplates as Record<string, EmailTemplateDoc>)[templateKey] || null;
+};
+
+const generateMessage = async (templateKey: string, data: Record<string, unknown>, config: SiteConfig | null) => {
+	const template = await resolveTemplate(templateKey);
 	if (!template) throw new Error(`Template not found for key: ${templateKey}`);
 
 	// Combine global brand details with specific user data
@@ -91,18 +124,18 @@ const generateMessage = async (templateKey, data, config) => {
 
 	// Create a plain text version for SMS/Accessibility
 	const plainText = htmlBody
-		.replaceAll(/<[^>]+>/g, ' ')
-		.replaceAll(/ {2,}/g, ' ')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/ {2,}/g, ' ')
 		.trim();
 
 	// Wrap content with standard Branding Header & Footer (w/ Unsubscribe Link)
-	const unsub = await unsubscribeLink(data.id, config);
+	const unsub = await unsubscribeLink(data.id as string);
 	const finalHtml = emailHeader + `<main style="font-family: Arial, Helvetica, sans-serif; color: #333; padding: 5px; margin: 5px;">${htmlBody}</main>` + emailFooter(unsub);
 
 	return { subject, text: plainText, html: finalHtml };
 };
 
-const formatEmail = (name, email) => {
+const formatEmail = (name: string | null | undefined, email: string | null | undefined): string | null => {
 	const cleanName = name?.trim() || '';
 	const cleanEmail = email?.trim() || '';
 	if (!cleanEmail) return null;
@@ -121,20 +154,22 @@ const formatEmail = (name, email) => {
  * @param {Array} smsTo - SMS recipients.
  * @param {object} data - Common data shared across all messages (e.g. custom note).
  */
-export const send = async (templateKey, to, from, cc, smsTo, data) => {
+export const send = async (templateKey: string, to: Recipient[], from: Recipient | null | undefined, cc: Recipient[], smsTo: Recipient[], data: Record<string, unknown>) => {
 	try {
 		// Filter out invalid contacts
 		to = to.filter((email) => email?.email);
 		cc = cc.filter((email) => email?.email);
 		smsTo = smsTo.filter((cell) => cell?.cell);
 
-		const ccEmails = cc.map((ccRecipient) => formatEmail(ccRecipient.name, ccRecipient.email)).filter(Boolean);
-		let ccRecipients = [...ccEmails];
+		const ccEmails = cc.map((ccRecipient) => formatEmail(ccRecipient.name, ccRecipient.email)).filter((entry): entry is string => Boolean(entry));
+		let ccRecipients: string[] = [...ccEmails];
 
 		// Fetch System CCs (e.g. archive email)
 		const config = await getConfigFromDb();
-		if (config.SYSTEM_CC_EMAILS && config.SYSTEM_CC_EMAILS.length > 0) {
-			ccRecipients = [...ccRecipients, ...config.SYSTEM_CC_EMAILS];
+		if (!config) throw new Error('Site configuration unavailable');
+		const systemCc = config.SYSTEM_CC_EMAILS;
+		if (Array.isArray(systemCc) && systemCc.length > 0) {
+			ccRecipients = [...ccRecipients, ...(systemCc as string[])];
 		}
 
 		const batch = writeBatch(db);
@@ -148,16 +183,19 @@ export const send = async (templateKey, to, from, cc, smsTo, data) => {
 				const messageData = { ...data, ...recipient };
 				const generatedMessage = await generateMessage(templateKey, messageData, config);
 
-				const email = {
-					to: formatEmail(recipient.name, recipient.email),
-					from: formatEmail(from.name, from.email),
-					replyTo: config.SYSTEM_REPLY_TO,
-					cc: ccRecipients,
-					message: generatedMessage,
-					createdAt: serverTimestamp(),
-				};
+				const email = queueEmailDoc(
+					{
+						to: formatEmail(recipient.name, recipient.email),
+						from: formatEmail(from.name, from.email),
+						replyTo: config.SYSTEM_REPLY_TO,
+						cc: ccRecipients,
+						message: generatedMessage,
+						createdAt: serverTimestamp(),
+					},
+					config
+				);
 
-				// Writing to this collection triggers the Cloud Function to send
+				// Writing to this collection triggers Trigger Email (or is marked simulated in demo mode)
 				const emailRef = doc(collection(db, collections.emails));
 				batch.set(emailRef, email);
 				emailCount++;
@@ -186,7 +224,7 @@ export const send = async (templateKey, to, from, cc, smsTo, data) => {
 		
 		return { success: true };
 	} catch (error) {
-		console.error(error.message);
+		console.error(error instanceof Error ? error.message : error);
 		return { success: false, error: error };
 	}
 };
@@ -196,10 +234,10 @@ export const send = async (templateKey, to, from, cc, smsTo, data) => {
  * This uses a hardcoded template structure rather than the dynamic `emailTemplates.js`
  * because it requires complex link/pin logic.
  */
-const uploadRequest = async (data) => {
+const uploadRequest = async (data: Record<string, unknown>) => {
 	const subject = 'Letter of Recommendation Request';
-	const typeName = LettersOfRecommendation[data.attachmentType]?.name || 'Recommendation';
-	const purpose = LettersOfRecommendation[data.attachmentType]?.purpose || 'support the application';
+	const typeName = LettersOfRecommendation[String(data.attachmentType)]?.name || 'Recommendation';
+	const purpose = LettersOfRecommendation[String(data.attachmentType)]?.purpose || 'support the application';
 
 	const plainText = `\nDear ${data.name},\n\nThis is a request sent from ${brand.theOrganizationName} on behalf of ${data.fromName} for a letter of recommendation. The applicant requests you submit a(n) ${typeName} to ${purpose}. Please contact the applicant to cancel this request or follow the link to make your submission. You can only submit an upload once. Please use the following pin to complete the upload.\n\nPin: ${data.pin}\nLink: ${data.link}\nRequest Expires: ${data.expiryDate}\n\nBest regards,\n${brand.boardName}`;
 
@@ -222,21 +260,25 @@ const uploadRequest = async (data) => {
 /**
  * Dispatches a Letter of Recommendation Request email.
  */
-export const sendRequest = async (request, link, pin) => {
+export const sendRequest = async (request: Record<string, unknown>, link: string, pin: string) => {
 	try {
 		const config = await getConfigFromDb();
-		const email = {
-			to: `${request.name} <${request.email}>`,
-			from: config.SYSTEM_EMAIL,
-			replyTo: config.SYSTEM_REPLY_TO,
-			cc: config.SYSTEM_CC_EMAILS,
-			message: await uploadRequest({ ...request, link, pin }),
-		};
+		if (!config) throw new Error('Site configuration unavailable');
+		const email = queueEmailDoc(
+			{
+				to: `${request.name} <${request.email}>`,
+				from: config.SYSTEM_EMAIL,
+				replyTo: config.SYSTEM_REPLY_TO,
+				cc: config.SYSTEM_CC_EMAILS,
+				message: await uploadRequest({ ...request, link, pin }),
+			},
+			config
+		);
 
 		const emailRef = doc(collection(db, collections.emails));
 		await setDoc(emailRef, email);
 	} catch (error) {
-		console.error(error.message);
+		console.error(error instanceof Error ? error.message : error);
 	}
 };
 
@@ -244,25 +286,29 @@ export const sendRequest = async (request, link, pin) => {
  * Sends a single notification to a specific user (System Alert).
  * Used for automated triggers (e.g., "Application Submitted" confirmation).
  */
-export const pushNotice = async (templateKey, user, data) => {
+export const pushNotice = async (templateKey: string, user: Recipient, data: Record<string, unknown>) => {
 	try {
 		const config = await getConfigFromDb();
+		if (!config) throw new Error('Site configuration unavailable');
 		const messageData = { ...data, ...user };
 		const generatedMessage = await generateMessage(templateKey, messageData, config);
 
-		const email = {
-			to: formatEmail(`${user.firstName} ${user.lastName}`, user.email),
-			from: config.SYSTEM_EMAIL,
-			replyTo: config.SYSTEM_REPLY_TO,
-			cc: config.SYSTEM_CC_EMAILS,
-			message: generatedMessage,
-			createdAt: serverTimestamp(),
-		};
+		const email = queueEmailDoc(
+			{
+				to: formatEmail(`${user.firstName} ${user.lastName}`, user.email),
+				from: config.SYSTEM_EMAIL,
+				replyTo: config.SYSTEM_REPLY_TO,
+				cc: config.SYSTEM_CC_EMAILS,
+				message: generatedMessage,
+				createdAt: serverTimestamp(),
+			},
+			config
+		);
 
 		const emailRef = doc(collection(db, collections.emails));
 		await setDoc(emailRef, email);
 	} catch (error) {
-		console.error(error.message);
+		console.error(error instanceof Error ? error.message : error);
 	}
 };
 
@@ -286,6 +332,7 @@ export const templates = [
 			{ name: ContactTemplate.incompleteReminder, label: 'App Incomplete Reminder' },
 			{ name: ContactTemplate.interviewInvitation, label: 'Interview Invitation' },
 			{ name: ContactTemplate.incompleteCountAlert, label: 'Incomplete App Summary Alert' },
+			{ name: ContactTemplate.reminderToApply, label: 'Reminder to Apply' },
 		],
 	},
 	{

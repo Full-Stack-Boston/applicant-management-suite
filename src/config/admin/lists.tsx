@@ -1,25 +1,21 @@
-// @ts-nocheck
 import React from 'react';
 import dayjs from 'dayjs';
+import type { DocumentData } from 'firebase/firestore';
+import type { GridColDef } from '@mui/x-data-grid';
 import { Box, Typography, Divider } from '@mui/material';
 import { AttachMoneyOutlined, PeopleOutlined, ListAltOutlined } from '@mui/icons-material';
+import { formatApplicantEnrollmentLines } from '../ui/formatUtils';
+import { StatusCapsule, RsvpCapsule } from '../../components/list/StatusCapsule';
 
 import { UserType, ApplicationType, ApplicationStatus, collections } from '../data/collections';
 import {
 	memberCols,
-	memberActions,
 	applicantCols,
-	applicantActions,
 	appCols,
-	appActions,
 	reqCols,
-	reqActions,
 	interviewCols,
-	interviewActions,
 	schedulerCols,
-	schedulerActions,
 	inboxCols,
-	getInboxActions,
 	legacyFinancesCols,
 	getMemberToolbarActions,
 	getApplicantToolbarActions,
@@ -28,47 +24,50 @@ import {
 	getInterviewToolbarActions,
 	getSchedulerToolbarActions,
 	getInboxToolbarActions,
-	// Buttons & Cells
-	ViewAppButton,
-	MarkEligibleButton,
-	ContactButton,
 	DynamicApplicantProfilePicture,
 	DynamicMemberProfilePicture,
-	ViewRequestButton,
-	EditRequestButton,
-	ResendRequestButton,
-	InvalidateRequestButton,
-	ViewEmailButton,
-	ReplyButton,
-	ReplyAllButton,
-	ForwardButton,
-	ToggleReadButton,
-	DeleteEmailButton,
-	CreateRoomButton,
-	JoinInterviewButton,
-	CloseRoomButton,
-	WaitingRoomButton,
-	RescheduleInterviewButton,
-	DeleteInterviewButton,
-	ChangeStatusButton,
-	ViewApplicantFromInterviewButton,
-	ContactApplicantFromInterviewButton,
-	SendInvitationButton,
-	UpdateRsvpButton,
-	ViewButton,
-	EditAssetButton,
-	UserLastLogin,
-	ViewApplicantButton,
-	EditApplicantButton,
+	resolvePictureSrc,
+	UserActivityStack,
 	getStatusIcon,
 	getAttachmentLabel,
 	SenderSubjectCell,
 	StackedDateCell,
 } from '../ui/tableConfig';
 
-import { getRealTimeCollection, getRealTimeApplications, getRealTimeApplicationsByWindow, getRealTimeApplicationsByType, getRealTimeApplicationsByStatus, getRealTimeRejectedApplications, getRealTimeMeetings, getRealTimeInterviewsByWindow, getRealTimeLegacyFinances } from '../data/firebase';
+import {
+	memberActions,
+	applicantActions,
+	appActions,
+	reqActions,
+	interviewActions,
+	schedulerActions,
+	getInboxActions,
+} from '../ui/tableActionColumns';
 
-export const adminLists = {
+import { getRealTimeCollection, getRealTimeApplications, getRealTimeApplicationsByWindow, getRealTimeApplicationsByType, getRealTimeApplicationsByStatus, getRealTimeRejectedApplications, getRealTimeMeetings, getRealTimeInterviewsByWindow, getRealTimeLegacyFinances, getRealTimeRequestsForCycleYear } from '../data/firebase';
+import type { ApplicationStatusValue, ApplicationTypeValue } from '../data/collections';
+import type { ToolbarAction, ToolbarContext } from '../ui/tableConfig';
+
+/**
+ * Fetcher invoked by useRealTimeList. The extra positional args vary by list:
+ * standard lists get (handler, cycleYear, type); the interview dashboard gets
+ * (handler, userId, isCommittee). Entries narrow the extras they actually use.
+ */
+type ListFetcher = (handler: (data: DocumentData[]) => void, scope?: unknown, extra?: unknown) => unknown;
+
+interface AdminListEntry {
+	title: string | ((year: number) => string);
+	columns: GridColDef[];
+	actions?: GridColDef[];
+	getActions?: (options: { permittedAliases: string[] }) => GridColDef[];
+	fetcher?: ListFetcher;
+	enrich?: boolean;
+	getToolbarActions?: (helpers: ToolbarContext) => ToolbarAction[];
+	// Consumers (useRealTimeList) index entries dynamically.
+	[key: string]: unknown;
+}
+
+export const adminLists: Record<string, AdminListEntry> = {
 	[UserType.member]: {
 		title: 'Administrators',
 		columns: memberCols,
@@ -84,6 +83,14 @@ export const adminLists = {
 		getToolbarActions: getApplicantToolbarActions,
 	},
 	applications: {
+		title: 'Current Applications',
+		columns: appCols,
+		actions: appActions,
+		fetcher: (handler, cycleYear) => getRealTimeApplicationsByWindow(cycleYear as number, false, handler),
+		enrich: true,
+		getToolbarActions: getApplicationToolbarActions,
+	},
+	archives: {
 		title: 'All Applications',
 		columns: appCols,
 		actions: appActions,
@@ -95,14 +102,14 @@ export const adminLists = {
 		title: 'Reference Requests',
 		columns: reqCols,
 		actions: reqActions,
-		fetcher: (handler) => getRealTimeCollection(collections.requests, handler),
+		fetcher: (handler, cycleYear) => getRealTimeRequestsForCycleYear(cycleYear as number, handler),
 		getToolbarActions: getRequestToolbarActions,
 	},
 	year: {
-		title: (year) => `Applications from ${year}`,
+		title: (year: number) => `Applications (${year})`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window) => getRealTimeApplicationsByWindow(window, false, handler),
+		fetcher: (handler, cycleYear) => getRealTimeApplicationsByWindow(cycleYear as number, false, handler),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -110,7 +117,7 @@ export const adminLists = {
 		title: `Standard Grant Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByType(type, window, false, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByType(type as ApplicationTypeValue, cycleYear as number, false, handler),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -118,7 +125,7 @@ export const adminLists = {
 		title: `Renewal Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByType(type, window, false, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByType(type as ApplicationTypeValue, cycleYear as number, false, handler),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -126,7 +133,7 @@ export const adminLists = {
 		title: `Compliance Check-ins`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByType(type, window, false, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByType(type as ApplicationTypeValue, cycleYear as number, false, handler),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -134,21 +141,21 @@ export const adminLists = {
 		title: `Deleted Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 	},
 	[ApplicationStatus.incomplete]: {
 		title: `Incomplete Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 	},
 	[ApplicationStatus.awarded]: {
 		title: `Awarded Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -156,7 +163,7 @@ export const adminLists = {
 		title: `Completed Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -164,7 +171,7 @@ export const adminLists = {
 		title: `Eligible Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -172,7 +179,7 @@ export const adminLists = {
 		title: `Invited Applications`,
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler, window, type) => getRealTimeApplicationsByStatus(type, handler),
+		fetcher: (handler, cycleYear, type) => getRealTimeApplicationsByStatus(type as ApplicationStatusValue, handler, cycleYear as number),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -180,7 +187,7 @@ export const adminLists = {
 		title: 'Rejected Applications',
 		columns: appCols,
 		actions: appActions,
-		fetcher: (handler) => getRealTimeRejectedApplications(handler),
+		fetcher: (handler, cycleYear) => getRealTimeRejectedApplications(handler, cycleYear as number),
 		enrich: true,
 		getToolbarActions: getApplicationToolbarActions,
 	},
@@ -188,14 +195,14 @@ export const adminLists = {
 		title: 'Interview Dashboard',
 		columns: interviewCols,
 		actions: interviewActions,
-		fetcher: (handler, userId, isCommittee) => getRealTimeMeetings(userId, isCommittee, handler, true),
+		fetcher: (handler, userId, isCommittee) => getRealTimeMeetings(userId as string, isCommittee as boolean, handler, true),
 		getToolbarActions: getInterviewToolbarActions,
 	},
 	scheduler: {
 		title: 'Interview Scheduler',
 		columns: schedulerCols,
 		actions: schedulerActions,
-		fetcher: (handler, window) => getRealTimeInterviewsByWindow(window, handler),
+		fetcher: (handler, cycleYear) => getRealTimeInterviewsByWindow(cycleYear as number, handler),
 		getToolbarActions: getSchedulerToolbarActions,
 	},
 	inbox: {
@@ -217,75 +224,87 @@ export const adminLists = {
 	},
 };
 
-export const mobileCardConfig = {
+interface MobileCardEntry {
+	actionKeys: string[];
+	primaryCount?: number;
+	getProps?: (item: DocumentData) => Record<string, unknown>;
+	content: (props: { item: DocumentData }) => React.ReactElement;
+}
+
+export const mobileCardConfig: Record<string, MobileCardEntry> = {
 	[UserType.member]: {
-		actions: [ViewButton, EditAssetButton, ContactButton],
+		actionKeys: ['viewMember', 'editMember', 'contact'],
 		content: ({ item }) => (
 			<>
 				<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
 					<Box>
-						<DynamicMemberProfilePicture user={item.id} />
+						<DynamicMemberProfilePicture user={item.id} src={resolvePictureSrc(item.picture)} />
 					</Box>
 					<Box sx={{ flex: 1, minWidth: 0 }}>
-						<Typography variant='h6' noWrap>
+						<Typography variant='h6' noWrap color='textPrimary'>
 							{item.firstName} {item.lastName}
 						</Typography>
-						<Typography variant='body2' color='text.secondary' noWrap>
+						<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 							{item.position} (Start: {item.since})
 						</Typography>
 					</Box>
 				</Box>
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, px: 1 }}>
-					<Box>
-						<Typography variant='body2' color='text.primary' noWrap>
+					<Box sx={{ flex: 1, minWidth: 0 }}>
+						<Typography variant='body2' noWrap sx={{ color: 'text.primary' }}>
 							{item.email}
 						</Typography>
-						<Typography variant='caption' color='text.secondary' noWrap>
+						<Typography variant='caption' noWrap sx={{ color: 'text.secondary' }}>
 							{item.cell || 'No cell provided'}
 						</Typography>
 					</Box>
-					<Box sx={{ textAlign: 'right' }}>
-						<Typography variant='body2' color='text.primary' noWrap>
-							Last Login:
-						</Typography>
-						<Typography variant='caption' color='text.secondary' noWrap>
-							<UserLastLogin userId={item.id} />
-						</Typography>
+					<Box sx={{ textAlign: 'right', flexShrink: 0, ml: 1 }}>
+						<UserActivityStack userId={item.id} />
 					</Box>
 				</Box>
 			</>
 		),
 	},
 	[UserType.applicant]: {
-		actions: [ViewApplicantButton, EditApplicantButton, ContactButton],
+		actionKeys: ['viewApplicant', 'editApplicant', 'contact'],
 		content: ({ item }) => {
-			const gradYear = item.gradYear ? Number(item.gradYear) : 'N/A';
+			const { schoolLine, detailLine } = formatApplicantEnrollmentLines(item.school, item.major, item.gradYear);
 			return (
 				<>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
 						<Box>
-							<DynamicApplicantProfilePicture user={item.id} />
+							<DynamicApplicantProfilePicture user={item.id} src={resolvePictureSrc(item.picture)} />
 						</Box>
 						<Box sx={{ flex: 1, minWidth: 0 }}>
-							<Typography variant='h6' noWrap>
+							<Typography variant='h6' noWrap color='textPrimary'>
 								{item.firstName} {item.lastName}
 							</Typography>
-							<Typography variant='body2' color='text.secondary' noWrap>
-								{item.school} ({gradYear})
+							<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
+								{schoolLine}
 							</Typography>
-							<Typography variant='caption' color='text.secondary' noWrap>
-								{item.major || 'No major listed'}
-							</Typography>
+							{detailLine && (
+								<Typography variant='caption' noWrap sx={{ color: 'text.secondary' }}>
+									{detailLine}
+								</Typography>
+							)}
 						</Box>
 					</Box>
-					<Box sx={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', mt: 1, px: 1 }}>
-						<Box>
-							<Typography variant='body2' color='text.primary' noWrap>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, px: 1 }}>
+						<Box sx={{ flex: 1, minWidth: 0 }}>
+							<Typography variant='body2' noWrap sx={{ color: 'text.primary' }}>
 								{item.email}
 							</Typography>
-							<Typography variant='caption' color='text.secondary' noWrap>
+							<Typography variant='caption' noWrap sx={{ color: 'text.secondary' }}>
 								{item.cell || 'No cell provided'}
 							</Typography>
+							{item.homePhone && (
+								<Typography variant='caption' noWrap sx={{ color: 'text.secondary' }}>
+									Home: {item.homePhone}
+								</Typography>
+							)}
+						</Box>
+						<Box sx={{ textAlign: 'right', flexShrink: 0, ml: 1 }}>
+							<UserActivityStack userId={item.id} />
 						</Box>
 					</Box>
 				</>
@@ -293,7 +312,7 @@ export const mobileCardConfig = {
 		},
 	},
 	applications: {
-		actions: [ViewAppButton, MarkEligibleButton, ContactButton],
+		actionKeys: ['viewApp', 'markEligible', 'contact'],
 		content: ({ item }) => {
 			const academicYear = item.window ? new Date(item.window).getFullYear() : 'N/A';
 			const lastUpdated = item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString() : 'N/A';
@@ -301,22 +320,20 @@ export const mobileCardConfig = {
 				<>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
 						<Box>
-							<DynamicApplicantProfilePicture user={item.completedBy} />
+							<DynamicApplicantProfilePicture user={item.completedBy} src={resolvePictureSrc(item.picture)} />
 						</Box>
 						<Box sx={{ flex: 1, minWidth: 0 }}>
-							<Typography variant='h6' noWrap>
+							<Typography variant='h6' noWrap color='textPrimary'>
 								{item.applicantName || 'Loading...'}
 							</Typography>
-							<Typography variant='body2' color='text.secondary' noWrap>
+							<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 								{item.type} - {academicYear}
 							</Typography>
 						</Box>
 					</Box>
 					<Box sx={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', mt: 1 }}>
-						<Typography variant='body2' sx={{ fontWeight: 'bold', color: 'text.primary', bgcolor: 'action.hover', px: 1.5, py: 0.5, borderRadius: '16px' }}>
-							Status: {item.status}
-						</Typography>
-						<Typography variant='caption' color='text.secondary'>
+						<StatusCapsule status={item.status}>Status: {item.status}</StatusCapsule>
+						<Typography variant='caption' sx={{ color: 'text.secondary' }}>
 							Updated: {lastUpdated}
 						</Typography>
 					</Box>
@@ -325,7 +342,8 @@ export const mobileCardConfig = {
 		},
 	},
 	requests: {
-		actions: [ViewRequestButton, EditRequestButton, ResendRequestButton, InvalidateRequestButton, ContactButton],
+		actionKeys: ['viewRequestApp', 'editRequest', 'contact', 'resendRequest', 'invalidateRequest'],
+		primaryCount: 3,
 		content: ({ item }) => {
 			const { completed, expiryDate, attempts, fromName } = item;
 			const now = dayjs();
@@ -336,56 +354,66 @@ export const mobileCardConfig = {
 			const expires = dayjs(expiryDate).toDate().toLocaleDateString();
 			return (
 				<>
-					<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-						<Box>{statusIcon}</Box>
+					<Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 1.5, minWidth: 0 }}>
+						<Box sx={{ flexShrink: 0, mt: 0.25 }}>{statusIcon}</Box>
 						<Box sx={{ flex: 1, minWidth: 0 }}>
-							<Typography variant='h6' noWrap>
+							<Typography variant='h6' noWrap color='textPrimary'>
 								{item.name}
 							</Typography>
-							<Typography variant='body2' color='text.secondary' noWrap>
+							<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 								Relation: {item.relation}
 							</Typography>
 						</Box>
 					</Box>
-					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, px: 1 }}>
-						<Box>
-							<Typography variant='body2' color='text.primary' noWrap>
-								{attachmentLabel}
-							</Typography>
-							<Typography variant='caption' color='text.secondary' noWrap>
-								{item.email}
-							</Typography>
-						</Box>
-						<Box sx={{ textAlign: 'right' }}>
-							<Typography variant='body2' color='text.primary' noWrap>
-								Expires: {expires}
-							</Typography>
-							<Typography variant='caption' color='text.secondary' noWrap>
-								For: {fromName}
-							</Typography>
-						</Box>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, minWidth: 0 }}>
+						<Typography variant='body2' noWrap sx={{ color: 'text.primary' }}>
+							{attachmentLabel}
+						</Typography>
+						<Typography variant='body2' noWrap sx={{ color: 'text.primary', flexShrink: 0, ml: 1 }}>
+							Expires: {expires}
+						</Typography>
+					</Box>
+					<Box sx={{ mt: 0.5, minWidth: 0 }}>
+						<Typography variant='caption' noWrap sx={{ color: 'text.secondary', display: 'block' }}>
+							{item.email}
+						</Typography>
+						<Typography variant='caption' noWrap sx={{ color: 'text.secondary', display: 'block' }}>
+							For: {fromName}
+						</Typography>
 					</Box>
 				</>
 			);
 		},
 	},
 	inbox: {
-		actions: [ViewEmailButton, ReplyButton, ReplyAllButton, ForwardButton, ToggleReadButton, DeleteEmailButton],
-		getProps: (item) => ({ isUnread: item.isRead === false }),
+		actionKeys: ['viewEmail', 'replyEmail', 'forwardEmail', 'replyAllEmail', 'toggleRead', 'deleteEmail'],
+		primaryCount: 3,
+		getProps: (item: DocumentData) => ({ isUnread: item.isRead === false }),
 		content: ({ item }) => {
 			const isUnread = item.isRead === false;
 			const emailDate = item.timestamp && Number(item.timestamp) > 0 ? new Date(Number(item.timestamp)) : null;
 			return (
 				<>
-					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-						<Box sx={{ flex: 1, minWidth: 0 }}>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, minWidth: 0, width: '100%' }}>
+						<Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
 							<SenderSubjectCell row={item} />
 						</Box>
-						<Box sx={{ ml: 1, flexShrink: 0 }}>
+						<Box sx={{ ml: 1, flexShrink: 0, maxWidth: '40%' }}>
 							<StackedDateCell value={emailDate} row={item} />
 						</Box>
 					</Box>
-					<Typography variant='body2' color='text.secondary' fontWeight={isUnread ? 'bold' : 'normal'} sx={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', my: 1 }}>
+					<Typography
+						variant='body2'
+						sx={{
+							color: 'text.secondary',
+							fontWeight: isUnread ? 'bold' : 'normal',
+							whiteSpace: 'normal',
+							display: '-webkit-box',
+							WebkitLineClamp: 3,
+							WebkitBoxOrient: 'vertical',
+							overflow: 'hidden',
+							my: 1,
+						}}>
 						{item.description}
 					</Typography>
 				</>
@@ -393,68 +421,56 @@ export const mobileCardConfig = {
 		},
 	},
 	interviews: {
-		actions: [CreateRoomButton, JoinInterviewButton, CloseRoomButton, WaitingRoomButton, RescheduleInterviewButton, DeleteInterviewButton, ChangeStatusButton],
+		actionKeys: ['joinInterview', 'waitInterview', 'changeStatus', 'createRoom', 'closeRoom', 'updateRsvp', 'rescheduleInterview', 'deleteInterview'],
+		primaryCount: 3,
 		content: ({ item }) => {
 			const interviewTime = item.startTime?.toDate ? dayjs(item.startTime.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date';
-			let rsvpText = '❓ Unknown';
-			if (item.rsvpStatus === 'yes') rsvpText = '✅ Yes';
-			else if (item.rsvpStatus === 'no') rsvpText = '❌ No';
 			return (
 				<>
 					<Box sx={{ mb: 2, px: 1 }}>
-						<Typography variant='h6' noWrap>
+						<Typography variant='h6' noWrap color='textPrimary'>
 							{item.displayName}
 						</Typography>
-						<Typography variant='body2' color='text.secondary' noWrap>
+						<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 							{interviewTime}
 						</Typography>
 					</Box>
 					<Box sx={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', mt: 1 }}>
-						<Typography variant='body2' sx={{ fontWeight: 'bold', color: 'text.primary', bgcolor: 'action.hover', px: 1.5, py: 0.5, borderRadius: '16px' }}>
-							Status: {item.status}
-						</Typography>
-						<Typography variant='body2' color='text.primary'>
-							RSVP: {rsvpText}
-						</Typography>
+						<StatusCapsule status={item.status}>Status: {item.status}</StatusCapsule>
+						<RsvpCapsule rsvpStatus={item.rsvpStatus} />
 					</Box>
 				</>
 			);
 		},
 	},
 	scheduler: {
-		actions: [ViewApplicantFromInterviewButton, ContactApplicantFromInterviewButton, SendInvitationButton, UpdateRsvpButton, DeleteInterviewButton],
+		actionKeys: ['viewApplicantFromInterview', 'contactApplicantFromInterview', 'sendInvite', 'updateRsvp', 'deleteInterview'],
+		primaryCount: 3,
 		content: ({ item }) => {
 			const interviewTime = item.startTime?.toDate ? dayjs(item.startTime.toDate()).format('MM/DD/YYYY h:mm A') : 'Invalid Date';
-			let rsvpText = '❓ Unknown';
-			if (item.rsvpStatus === 'yes') rsvpText = '✅ Yes';
-			else if (item.rsvpStatus === 'no') rsvpText = '❌ No';
 			return (
 				<>
 					<Box sx={{ mb: 2, px: 1 }}>
-						<Typography variant='h6' noWrap>
+						<Typography variant='h6' noWrap color='textPrimary'>
 							{item.applicantName}
 						</Typography>
-						<Typography variant='body2' color='text.secondary' noWrap>
+						<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 							{interviewTime}
 						</Typography>
 					</Box>
 					<Box sx={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', mt: 1 }}>
-						<Typography variant='body2' sx={{ fontWeight: 'bold', color: 'text.primary', bgcolor: 'action.hover', px: 1.5, py: 0.5, borderRadius: '16px' }}>
-							Status: {item.status}
-						</Typography>
-						<Typography variant='body2' color='text.primary'>
-							RSVP: {rsvpText}
-						</Typography>
+						<StatusCapsule status={item.status}>Status: {item.status}</StatusCapsule>
+						<RsvpCapsule rsvpStatus={item.rsvpStatus} />
 					</Box>
 				</>
 			);
 		},
 	},
 	legacyFinances: {
-		actions: [],
+		actionKeys: [],
 		content: ({ item }) => {
-			const formatCurrency = (value) => {
-				const num = Number.parseFloat(value);
+			const formatCurrency = (value: unknown) => {
+				const num = Number.parseFloat(value as string);
 				if (Number.isNaN(num) || value === null) return 'N/A';
 				return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 			};
@@ -477,10 +493,10 @@ export const mobileCardConfig = {
 				<>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
 						<Box sx={{ flex: 1, minWidth: 0 }}>
-							<Typography variant='h6' noWrap>
+							<Typography variant='h6' noWrap color='textPrimary'>
 								Fiscal Year: {item.year}
 							</Typography>
-							<Typography variant='body2' color='text.secondary' noWrap>
+							<Typography variant='body2' noWrap sx={{ color: 'text.secondary' }}>
 								<AttachMoneyOutlined sx={{ fontSize: '1rem', verticalAlign: 'middle', mr: 0.5 }} />
 								Total Allotted: {totalAllotted}
 							</Typography>
@@ -507,7 +523,7 @@ export const mobileCardConfig = {
 								<Typography variant='body2' color='text.secondary'>
 									Unused Funds
 								</Typography>
-								<Typography variant='body1' fontWeight='500'>
+								<Typography variant='body1' sx={{ fontWeight: 500 }}>
 									{displayClawback}
 								</Typography>
 							</Box>
@@ -515,7 +531,7 @@ export const mobileCardConfig = {
 								<Typography variant='body2' color='text.secondary'>
 									Returns
 								</Typography>
-								<Typography variant='body1' fontWeight='500'>
+								<Typography variant='body1' sx={{ fontWeight: 500 }}>
 									{displayReturns}
 								</Typography>
 							</Box>
@@ -523,7 +539,7 @@ export const mobileCardConfig = {
 								<Typography variant='body2' color='text.secondary'>
 									Grant Pool
 								</Typography>
-								<Typography variant='body1' fontWeight='500'>
+								<Typography variant='body1' sx={{ fontWeight: 500 }}>
 									{displaySgAvailable}
 								</Typography>
 							</Box>
@@ -531,7 +547,7 @@ export const mobileCardConfig = {
 								<Typography variant='body2' color='text.secondary'>
 									Operational Funds
 								</Typography>
-								<Typography variant='body1' fontWeight='500'>
+								<Typography variant='body1' sx={{ fontWeight: 500 }}>
 									{displayNonSgAvailable}
 								</Typography>
 							</Box>

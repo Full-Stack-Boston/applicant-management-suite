@@ -15,8 +15,11 @@ const {
     getConfigFromDb,
     generateICSFile,
     uploadICSFile,
-    sendSingleInvitationHelper
+    sendSingleInvitationHelper,
+    resolveApplicationCycleYear,
+    siteConfigCycleYear,
 } = require('../utils');
+const { assertVideoBudgetAllows } = require('../videoBudget');
 
 // Schedule Interviews (Bulk)
 // Creates interview slots for a list of applicants based on provided time blocks.
@@ -154,12 +157,15 @@ exports.autoScheduleInterviews = onCall(async (request) => {
 
     const appsSnap = await db.collection('applications')
         .where('status', '==', 'Eligible')
-        .where('window', '==', deadline)
         .where('type', '!=', 'Scholarship Check In').get();
+
+    const configData = await getConfigFromDb();
+    const cycleYear = siteConfigCycleYear(configData);
 
     const eligibleApps = [];
     for (const doc of appsSnap.docs) {
         const app = doc.data();
+        if (resolveApplicationCycleYear(app) !== cycleYear) continue;
         app.id = doc.id;
 
         // Check for existing interview
@@ -202,6 +208,7 @@ exports.autoScheduleInterviews = onCall(async (request) => {
             applicantId: app.completedBy,
             applicationId: app.id,
             deadline,
+            cycleYear,
             startTime: admin.firestore.Timestamp.fromDate(slot.start),
             endTime: admin.firestore.Timestamp.fromDate(slot.end),
             status: 'Scheduled',
@@ -442,7 +449,10 @@ exports.markInterviewAsMissed = onCall(async (request) => {
 
     await interviewRef.update({
         status: 'Missed',
+        endTime: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        roomId: admin.firestore.FieldValue.delete(),
+        roomUrl: admin.firestore.FieldValue.delete(),
     });
 
     return { success: true, message: 'Interview marked as missed and room deleted.' };
@@ -471,6 +481,68 @@ exports.updateInterviewStatus = onCall(async (request) => {
     const headers = { Authorization: `Bearer ${process.env.DAILY_KEY}`, 'Content-Type': 'application/json' };
     const DAILY_API = 'https://api.daily.co/v1';
 
+    const deleteDailyRoom = async (roomId) => {
+        if (!roomId) return;
+        try {
+            await axios.delete(`${DAILY_API}/rooms/${roomId}`, { headers });
+        } catch (error) {
+            if (error.response?.status !== 404) {
+                console.warn(`Could not delete Daily room ${roomId}:`, error.message);
+            }
+        }
+    };
+
+    const ensureInterviewRoomOpen = async () => {
+        const roomName = interviewData.roomId || interviewId;
+        let roomExists = false;
+
+        try {
+            await axios.get(`${DAILY_API}/rooms/${roomName}`, { headers });
+            roomExists = true;
+        } catch (error) {
+            if (error.response?.status !== 404) {
+                console.warn(`Could not verify Daily room ${roomName}:`, error.message);
+            }
+        }
+
+        if (roomExists) {
+            if (!interviewData.roomId || !interviewData.roomUrl) {
+                const roomUrl = `${String(brand.dailyCoDomain).replace(/\/$/, '')}/${roomName}`;
+                await interviewRef.update({ roomId: roomName, roomUrl });
+            }
+            return;
+        }
+
+        await assertVideoBudgetAllows();
+
+        const applicantDoc = interviewData.applicantId
+            ? await db.collection('applicants').doc(interviewData.applicantId).get()
+            : null;
+        const applicantName = applicantDoc?.exists
+            ? `: ${applicantDoc.data().callMe || applicantDoc.data().firstName || ''} ${applicantDoc.data().lastName || ''}`.trimEnd()
+            : '';
+
+        try {
+            const roomResp = await axios.post(
+                `${DAILY_API}/rooms`,
+                {
+                    name: interviewId,
+                    properties: { enable_screenshare: true, enable_chat: true, max_participants: 8 },
+                },
+                { headers }
+            );
+
+            await interviewRef.update({
+                roomId: roomResp.data.name || interviewId,
+                roomUrl: roomResp.data.url || `${String(brand.dailyCoDomain).replace(/\/$/, '')}/${interviewId}`,
+                displayName: `${brand.organizationShortName} Interview${applicantName}`,
+            });
+        } catch (error) {
+            console.error(`Failed to auto-create room for interview ${interviewId}:`, error.response?.data || error.message);
+            throw new HttpsError('internal', 'Failed to create the video room for this interview.');
+        }
+    };
+
     // If starting, close others
     if (newStatus === 'In Progress') {
         const inProgressQuery = db.collection('interviews').where('status', '==', 'In Progress');
@@ -479,52 +551,44 @@ exports.updateInterviewStatus = onCall(async (request) => {
         const batch = db.batch();
         for (const doc of inProgressSnapshot.docs) {
             if (doc.id === interviewId) continue;
-            batch.update(doc.ref, { status: 'Completed' });
-            
-            const oldRoomId = doc.data().roomId;
-            if (oldRoomId) {
-                axios.delete(`${DAILY_API}/rooms/${oldRoomId}`, { headers }).catch(e => {
-                    if (e.response?.status !== 404) console.warn(`Could not delete old room ${oldRoomId}`);
-                });
-            }
+            batch.update(doc.ref, {
+                status: 'Completed',
+                endTime: admin.firestore.FieldValue.serverTimestamp(),
+                roomId: admin.firestore.FieldValue.delete(),
+                roomUrl: admin.firestore.FieldValue.delete(),
+            });
+
+            const oldRoomId = doc.data().roomId || doc.id;
+            await deleteDailyRoom(oldRoomId);
         }
         await batch.commit();
-    }
 
-    // Create Room if starting
-    if (newStatus === 'In Progress' && !interviewData.roomId) {
-        try {
-            const applicantDoc = await db.collection('applicants').doc(interviewData.applicantId).get();
-            const applicantName = applicantDoc.exists ? `: ${applicantDoc.data().callMe} ${applicantDoc.data().lastName}` : '';
-
-            await axios.post(`${DAILY_API}/rooms`, {
-                name: interviewId,
-                properties: { enable_screenshare: true, enable_chat: true, max_participants: 8 },
-            }, { headers });
-
-            await interviewRef.update({ 
-                roomId: interviewId, 
-                roomUrl: `${brand.dailyCoDomain}/${interviewId}`, 
-                displayName: `${brand.organizationShortName} Interview${applicantName}` 
-            });
-        } catch (error) {
-            throw new HttpsError('internal', 'Failed to create the video room for this interview.');
-        }
+        await ensureInterviewRoomOpen();
     }
 
     // Close Room if Terminal
     const terminalStatuses = ['Completed', 'Missed', 'Cancelled'];
-    if (terminalStatuses.includes(newStatus) && interviewData.roomId) {
-        axios.delete(`${DAILY_API}/rooms/${interviewData.roomId}`, { headers }).catch(e => {
-            if (e.response?.status !== 404) console.warn(`Could not delete room '${interviewData.roomId}'`);
+    if (terminalStatuses.includes(newStatus)) {
+        const roomId = interviewData.roomId || interviewId;
+        await deleteDailyRoom(roomId);
+        await interviewRef.update({
+            roomId: admin.firestore.FieldValue.delete(),
+            roomUrl: admin.firestore.FieldValue.delete(),
         });
-        await interviewRef.update({ roomId: admin.firestore.FieldValue.delete(), roomUrl: admin.firestore.FieldValue.delete() });
     }
 
-    await interviewRef.update({
+    const statusUpdate = {
         status: newStatus,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    if (newStatus === 'In Progress') {
+        statusUpdate.startedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+    if (terminalStatuses.includes(newStatus)) {
+        statusUpdate.endTime = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    await interviewRef.update(statusUpdate);
 
     return { success: true, message: `Interview status updated to ${newStatus}.` };
 });

@@ -5,7 +5,8 @@ const { collections } = require('../config');
 
 // Create User In Collection
 // Creates a new user document in Firestore when a new Firebase Auth user is created.
-exports.createUserInCollection = functions.auth.user().onCreate(async (user) => {
+// Gen1 auth triggers: pin Node 20 (Gen1 does not support nodejs24 yet).
+exports.createUserInCollection = functions.runWith({ runtime: 'nodejs20' }).auth.user().onCreate(async (user) => {
 	const db = admin.firestore();
 	const userRef = db.collection(collections.users).doc(user.uid);
 
@@ -23,7 +24,7 @@ exports.createUserInCollection = functions.auth.user().onCreate(async (user) => 
 
 // Delete User From Collection
 // Deletes a user document from Firestore when the corresponding Firebase Auth user is deleted.
-exports.deleteUserFromCollection = functions.auth.user().onDelete(async (user) => {
+exports.deleteUserFromCollection = functions.runWith({ runtime: 'nodejs20' }).auth.user().onDelete(async (user) => {
 	const db = admin.firestore();
 	const userRef = db.collection(collections.users).doc(user.uid);
 

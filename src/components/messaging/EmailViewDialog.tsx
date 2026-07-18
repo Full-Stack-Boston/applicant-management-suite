@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Email View Dialog
  * A modal to view the full details and content of a specific email.
@@ -8,44 +7,62 @@
  * - Complete action set: Reply, Forward, Delete, Mark Read, Download Attachments.
  */
 
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import { useState, type MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, DialogTitle, DialogContent, DialogActions, Button, Typography, Divider, ButtonGroup, Menu, MenuItem, ListItemIcon as MuiListItemIcon, CircularProgress } from '@mui/material';
 import { Reply, Forward, MarkEmailReadOutlined, MarkEmailUnreadOutlined, ArrowDropDown as ArrowDropDownIcon, Delete, Group as ReplyAllIcon, AttachFile as AttachFileIcon, Download as DownloadIcon } from '@mui/icons-material';
 
 // Hooks & Context
-import { useEmailActions } from '../../hooks/useEmailActions';
+import { useEmailActions, type RawEmail } from '../../hooks/useEmailActions';
 import { useAlert } from '../../context/AlertContext';
-import { useProcessedEmailContent } from '../../hooks/useProcessedEmailContent';
+import { useProcessedEmailContent, type ProcessableEmail } from '../../hooks/useProcessedEmailContent';
+import type { Member } from '../../types/domain';
+import type { EmailAttachment } from './EmailActions';
 
 // Backend
 import { updateEmailReadStatus, deleteZohoEmail, fetchAttachmentContent } from '../../config/data/firebase';
 
-const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
-	const { handleReply, handleReplyAll, handleForward } = useEmailActions({ permittedAliases, member });
+type ViewableEmail = RawEmail &
+	ProcessableEmail & {
+		isRead?: boolean;
+		tags?: unknown[];
+		folderId?: string;
+		attachments?: EmailAttachment[];
+	};
+
+interface EmailViewDialogProps {
+	email?: ViewableEmail | null;
+	onClose: () => void;
+	permittedAliases?: string[] | null;
+	member?: (Member & { alias?: string }) | null;
+}
+
+const EmailViewDialog = ({ email, onClose, permittedAliases, member }: EmailViewDialogProps) => {
+	const navigate = useNavigate();
+	const { handleReply, handleReplyAll, handleForward } = useEmailActions({ navigate, permittedAliases, member });
 	const { showAlert, handleError } = useAlert();
 
 	// Process inline images/CIDs
 	const { processedContent, contentLoading } = useProcessedEmailContent(email);
 
 	// State for Reply/ReplyAll Menu
-	const [anchorEl, setAnchorEl] = useState(null);
+	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 	const open = Boolean(anchorEl);
 
 	// State for Attachment Menu
-	const [attachmentAnchorEl, setAttachmentAnchorEl] = useState(null);
+	const [attachmentAnchorEl, setAttachmentAnchorEl] = useState<HTMLElement | null>(null);
 	const attachmentMenuOpen = Boolean(attachmentAnchorEl);
 
-	const [isDownloading, setIsDownloading] = useState(null);
+	const [isDownloading, setIsDownloading] = useState<string | null>(null);
 
 	if (!email) return null;
 
 	// --- Handlers ---
 
-	const handleMenuToggle = (event) => setAnchorEl(event.currentTarget);
+	const handleMenuToggle = (event: MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
 	const handleMenuClose = () => setAnchorEl(null);
 
-	const handleAttachmentMenuToggle = (event) => setAttachmentAnchorEl(event.currentTarget);
+	const handleAttachmentMenuToggle = (event: MouseEvent<HTMLElement>) => setAttachmentAnchorEl(event.currentTarget);
 	const handleAttachmentMenuClose = () => setAttachmentAnchorEl(null);
 
 	const handleReplyClick = () => {
@@ -81,7 +98,7 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
 		}
 	};
 
-	const handleDownload = async (attachment) => {
+	const handleDownload = async (attachment: EmailAttachment) => {
 		if (isDownloading === attachment.attachmentId) return;
 		setIsDownloading(attachment.attachmentId);
 		try {
@@ -91,12 +108,12 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
 				folderId: email.folderId,
 			});
 
-			const { contentType, content } = result.data;
+			const { contentType, content } = result.data as { contentType: string; content: string };
 
 			// Create invisible link to trigger download
 			const link = document.createElement('a');
 			link.href = `data:${contentType};base64,${content}`;
-			link.download = attachment.attachmentName;
+			link.download = attachment.attachmentName || 'attachment';
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -107,20 +124,20 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
 		}
 	};
 
-	const handleAttachmentDownloadClick = (att) => {
+	const handleAttachmentDownloadClick = (att: EmailAttachment) => {
 		handleDownload(att);
 		handleAttachmentMenuClose();
 	};
 
 	// --- Helpers ---
 
-	const getHeader = (key) => {
-		const header = email.headerContent?.[key];
-		return Array.isArray(header) && header.length > 0 ? header[0] : 'N/A';
+	const getHeader = (key: string): string => {
+		const header = (email.headerContent as Record<string, unknown> | undefined)?.[key];
+		return Array.isArray(header) && header.length > 0 ? String(header[0]) : 'N/A';
 	};
 
-	const formatAddressList = (key) => {
-		const header = email.headerContent?.[key];
+	const formatAddressList = (key: string): string => {
+		const header = (email.headerContent as Record<string, unknown> | undefined)?.[key];
 		return Array.isArray(header) && header.length > 0 ? header.join(', ') : 'N/A';
 	};
 
@@ -216,12 +233,12 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
 
 				{/* Attachments Button */}
 				<Button variant='outlined' startIcon={<AttachFileIcon />} endIcon={hasAttachments ? <ArrowDropDownIcon /> : null} onClick={hasAttachments ? handleAttachmentMenuToggle : undefined} disabled={!hasAttachments}>
-					{hasAttachments ? `Attachments (${email.attachments.length})` : 'No Attachments'}
+					{hasAttachments ? `Attachments (${email.attachments?.length})` : 'No Attachments'}
 				</Button>
 
 				<Menu anchorEl={attachmentAnchorEl} open={attachmentMenuOpen} onClose={handleAttachmentMenuClose}>
 					{hasAttachments &&
-						email.attachments.map((att) => (
+						email.attachments?.map((att) => (
 							<MenuItem key={att.attachmentId} onClick={() => handleAttachmentDownloadClick(att)} disabled={isDownloading === att.attachmentId}>
 								<MuiListItemIcon>{isDownloading === att.attachmentId ? <CircularProgress size={24} /> : <DownloadIcon fontSize='small' />}</MuiListItemIcon>
 								{att.attachmentName} {att.attachmentSize ? `(${(att.attachmentSize / 1024).toFixed(1)} KB)` : ''}
@@ -237,22 +254,6 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }) => {
 			</DialogActions>
 		</>
 	);
-};
-
-EmailViewDialog.propTypes = {
-	email: PropTypes.shape({
-		id: PropTypes.string,
-		isRead: PropTypes.bool,
-		content: PropTypes.string,
-		tags: PropTypes.array,
-		headerContent: PropTypes.object,
-		folderId: PropTypes.string,
-		attachments: PropTypes.array,
-		inlineAttachments: PropTypes.array,
-	}),
-	onClose: PropTypes.func.isRequired,
-	permittedAliases: PropTypes.array,
-	member: PropTypes.object,
 };
 
 export default EmailViewDialog;

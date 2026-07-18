@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Area Chart Component
  * Displays application submission trends over time using Recharts.
@@ -6,16 +5,28 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Box, Typography } from '@mui/material';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 import { getApplicationsByYear } from '../../config/data/firebase';
 import Loader from '../loader/Loader';
+import { dashboardModuleSurfaceSx, dashboardSectionTitleSx } from '../../config/ui/adminPageStyles';
 
-const Chart = ({ title }) => {
-	const [graphData, setGraphData] = useState([]);
-	const [loading, setLoading] = useState(true);
+interface GraphDataPoint {
+	name: string;
+	count: number;
+}
+
+interface ChartProps {
+	title: string;
+	variant?: 'default' | 'dashboard';
+}
+
+const Chart = ({ title, variant = 'default' }: ChartProps) => {
+	const muiTheme = useMuiTheme();
+	const [graphData, setGraphData] = useState<GraphDataPoint[]>([]);
+	const [loading, setLoading] = useState<boolean>(true);
 
 	useEffect(() => {
 		const controller = new AbortController();
@@ -25,7 +36,7 @@ const Chart = ({ title }) => {
 			try {
 				const data = await getApplicationsByYear();
 				if (!signal.aborted) {
-					setGraphData(data);
+					setGraphData(data as unknown as { name: string; count: number }[]);
 				}
 			} catch (error) {
 				if (!signal.aborted) {
@@ -41,8 +52,7 @@ const Chart = ({ title }) => {
 		return () => controller.abort();
 	}, []);
 
-	const renderGraph = (data) => {
-		// Calculate gradient offset based on data range
+	const renderGraph = (data: GraphDataPoint[]) => {
 		const gradientOffset = () => {
 			if (!data || data.length === 0) return 0;
 
@@ -56,21 +66,31 @@ const Chart = ({ title }) => {
 		};
 
 		const off = gradientOffset();
+		const axisColor = muiTheme.palette.text.secondary;
+		const gridColor = muiTheme.palette.divider;
+		const strokeColor = muiTheme.palette.text.primary;
 
 		return (
 			<ResponsiveContainer width='100%' height='100%'>
-				<AreaChart width={500} height={400} data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-					<CartesianGrid strokeDasharray='3 3' className='chartGrid' />
-					<XAxis dataKey='year' stroke='gray' />
-					<YAxis />
-					<Tooltip />
+				<AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+					<CartesianGrid strokeDasharray='3 3' stroke={gridColor} />
+					<XAxis dataKey='name' stroke={axisColor} tick={{ fill: axisColor, fontSize: 12 }} />
+					<YAxis stroke={axisColor} tick={{ fill: axisColor, fontSize: 12 }} />
+					<Tooltip
+						contentStyle={{
+							backgroundColor: muiTheme.palette.background.paper,
+							borderColor: muiTheme.palette.divider,
+							color: muiTheme.palette.text.primary,
+							borderRadius: 8,
+						}}
+					/>
 					<defs>
 						<linearGradient id='splitColor' x1='0' y1='0' x2='0' y2='1'>
-							<stop offset={off} stopColor='green' stopOpacity={1} />
-							<stop offset={off} stopColor='red' stopOpacity={1} />
+							<stop offset={off} stopColor={muiTheme.palette.success.main} stopOpacity={0.85} />
+							<stop offset={off} stopColor={muiTheme.palette.error.main} stopOpacity={0.85} />
 						</linearGradient>
 					</defs>
-					<Area type='monotone' dataKey='count' stroke='#000' fill='url(#splitColor)' />
+					<Area type='monotone' dataKey='count' stroke={strokeColor} fill='url(#splitColor)' fillOpacity={0.9} />
 				</AreaChart>
 			</ResponsiveContainer>
 		);
@@ -78,36 +98,25 @@ const Chart = ({ title }) => {
 
 	return (
 		<Box
-			flex={1}
-			width='100%'
-			height='100%'
 			sx={{
-				minHeight: 180,
-				maxHeight: 520,
-				paddingY: 2,
+				...(variant === 'dashboard' ? dashboardModuleSurfaceSx : { px: 2, py: 1.5, borderRadius: '12px', boxShadow: 1 }),
+				flex: variant === 'dashboard' ? undefined : 1,
+				width: '100%',
+				height: '100%',
+				minHeight: variant === 'dashboard' ? 0 : 180,
+				maxHeight: variant === 'dashboard' ? 'none' : 520,
 				bgcolor: 'background.paper',
 				color: 'text.secondary',
 				display: 'flex',
 				flexDirection: 'column',
-				justifyContent: 'center',
-				alignItems: 'center',
+				justifyContent: 'flex-start',
+				alignItems: 'stretch',
 				boxSizing: 'border-box',
-				borderRadius: '12px',
-				boxShadow: 1,
 			}}>
-			<Box display='flex' justifyContent='left' alignItems='center' width='100%'>
-				<Typography fontWeight='bold' fontSize='15px' color='text.secondary' paddingX={3} paddingBottom={2}>
-					{title}
-				</Typography>
-			</Box>
-
+			<Typography sx={dashboardSectionTitleSx}>{title}</Typography>
 			<Box sx={{ flexGrow: 1, width: '100%', overflow: 'hidden', minHeight: 0 }}>{loading ? <Loader /> : renderGraph(graphData)}</Box>
 		</Box>
 	);
-};
-
-Chart.propTypes = {
-	title: PropTypes.string.isRequired,
 };
 
 export default Chart;

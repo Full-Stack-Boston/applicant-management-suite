@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import PDFPreview from './PDFPreview';
 
 // Mock URL.revokeObjectURL globally

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Compose Email Dialog
  * A modal form for writing and sending emails via the Zoho integration.
@@ -10,8 +9,7 @@
  * - "Quoted text" preview for replies.
  */
 
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import { useState } from 'react';
 import { DialogTitle, DialogContent, DialogActions, Button, TextField, Select, MenuItem, FormControlLabel, Switch, Box, InputLabel, FormControl, CircularProgress, Typography, Divider } from '@mui/material';
 
 // Context & Hooks
@@ -25,7 +23,7 @@ import { useComposeEmailOptions } from '../../hooks/useComposeEmailOptions';
 import { sendZohoEmail } from '../../config/data/firebase';
 
 // Helper: Convert comma-separated string to array
-const parseRecipients = (recipientString) => {
+const parseRecipients = (recipientString: unknown): string[] => {
 	if (!recipientString || typeof recipientString !== 'string') return [];
 	return recipientString
 		.split(',')
@@ -33,7 +31,30 @@ const parseRecipients = (recipientString) => {
 		.filter((email) => email.length > 0);
 };
 
-const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPreview, originalMessageId, fromAddress }) => {
+interface ComposeEmailDialogProps {
+	onSuccess: () => void;
+	onClose: () => void;
+	title?: string;
+	to?: string | string[];
+	subject?: string;
+	htmlPreview?: string;
+	originalMessageId?: string;
+	fromAddress?: string;
+}
+
+interface ComposeFormData {
+	fromAddress: string;
+	to: string;
+	cc: string;
+	bcc: string;
+	subject: string;
+	body: string;
+	signature: string;
+	useBranding: boolean;
+	[key: string]: unknown;
+}
+
+const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPreview, originalMessageId, fromAddress }: ComposeEmailDialogProps) => {
 	const { member } = useAuth();
 	const config = useConfig();
 	const { showAlert, handleError } = useAlert();
@@ -52,9 +73,9 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 		fromAddress,
 	});
 
-	const [formData, setFormData] = useState({
+	const [formData, setFormData] = useState<ComposeFormData>({
 		fromAddress: defaultFrom,
-		to: to || '',
+		to: Array.isArray(to) ? to.join(', ') : to || '',
 		cc: '',
 		bcc: '',
 		subject: subject || '',
@@ -63,7 +84,7 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 		useBranding: false,
 	});
 
-	const handleInputChange = (event) => {
+	const handleInputChange = (event: { target: { name: string; value: unknown; type?: string; checked?: boolean } }) => {
 		const { name, value, type, checked } = event.target;
 		setFormData((prev) => ({
 			...prev,
@@ -96,7 +117,8 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 				originalMessageId: originalMessageId || null,
 			});
 
-			showAlert({ message: result.data.message, type: 'success' });
+			const resultData = result.data as { message?: string } | undefined;
+			showAlert({ message: resultData?.message || 'Email sent!', type: 'success' });
 			onSuccess();
 			refreshMailbox();
 		} catch (error) {
@@ -127,7 +149,7 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 
 				{showBcc && <TextField name='bcc' label='Bcc (comma-separated)' value={formData.bcc} onChange={handleInputChange} fullWidth margin='dense' variant='outlined' />}
 
-				<Box textAlign='right' mt={-1} mb={1}>
+				<Box sx={{ textAlign: 'right', mt: -1, mb: 1 }}>
 					{!showCc && (
 						<Button size='small' onClick={() => setShowCc(true)}>
 							Add Cc
@@ -158,12 +180,12 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 				<FormControlLabel control={<Switch name='useBranding' checked={formData.useBranding} onChange={handleInputChange} />} label='Include Branded Email Header & Footer' />
 
 				{htmlPreview && (
-					<Box mt={2}>
+					<Box sx={{ mt: 2 }}>
 						<Divider sx={{ mb: 1 }} />
-						<Typography variant='caption' color='text.secondary'>
+						<Typography variant='caption' sx={{ color: 'text.secondary' }}>
 							Quoted Text:
 						</Typography>
-						<Box px={2} py={1} border='1px solid' borderColor='divider' borderRadius={1} bgcolor='action.hover' sx={{ maxHeight: 200, overflowY: 'auto' }}>
+						<Box sx={{ px: 2, py: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'action.hover', maxHeight: 200, overflowY: 'auto' }}>
 							<div dangerouslySetInnerHTML={{ __html: htmlPreview }} />
 						</Box>
 					</Box>
@@ -180,17 +202,6 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 			</DialogActions>
 		</>
 	);
-};
-
-ComposeEmailDialog.propTypes = {
-	onSuccess: PropTypes.func.isRequired,
-	onClose: PropTypes.func.isRequired,
-	title: PropTypes.string,
-	to: PropTypes.string,
-	subject: PropTypes.string,
-	htmlPreview: PropTypes.string,
-	originalMessageId: PropTypes.string,
-	fromAddress: PropTypes.string,
 };
 
 export default ComposeEmailDialog;

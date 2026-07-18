@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MeetingProvider, useMeeting } from './MeetingContext';
 // We import the module we are mocking. Jest will give us the mocked version.
 import DailyIframe from '@daily-co/daily-js';

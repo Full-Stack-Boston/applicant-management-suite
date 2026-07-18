@@ -1,12 +1,9 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DynamicField from './DynamicField';
 import { ApplicationContext } from '../../context/ApplicationContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import dayjs from 'dayjs';
-import * as Validators from '../../config/data/Validation';
-
 // --- MOCKS ---
 
 vi.mock('../../context/ConfigContext', () => ({
@@ -176,13 +173,13 @@ describe('DynamicField Component', () => {
 	// --- 1. CALCULATION ENGINE TESTS ---
 	describe('Calculation Logic', () => {
 		it('interpolates strings in labels', () => {
-			renderField({ name: 'l1', type: 'label', label: 'Hello ${profile.firstName}' });
-			expect(screen.getByText('Hello John:')).toBeInTheDocument();
+			renderField({ name: 'l1', type: 'label', label: `Hello \${profile.firstName}` });
+			expect(screen.getByText('Hello John')).toBeInTheDocument();
 		});
 
 		it('formats numbers in interpolated strings', () => {
-			renderField({ name: 'l2', type: 'label', label: 'Cost: ${expenses.tuitionCost}' });
-			expect(screen.getByText('Cost: $1,000.00:')).toBeInTheDocument();
+			renderField({ name: 'l2', type: 'label', label: `Cost: \${expenses.tuitionCost}` });
+			expect(screen.getByText('Cost: $1,000.00')).toBeInTheDocument();
 		});
 
 		it('calculates basic addition and subtraction', () => {
@@ -359,8 +356,8 @@ describe('DynamicField Component', () => {
 
 	// --- 5. FILE FIELD & RECOMMENDATIONS ---
 	describe('FileField & Requests', () => {
-		it('handles Request Recommendation flow', async () => {
-			const fieldConfig = { name: 'lor', label: 'LOR', type: 'file', allowRequest: true };
+		it('handles Request letter flow', async () => {
+			const fieldConfig = { name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true };
 
 			mockShowDialog.mockImplementation(({ callback }) => {
 				callback({ name: 'Teacher', email: 't@test.com' });
@@ -368,7 +365,7 @@ describe('DynamicField Component', () => {
 
 			renderField(fieldConfig);
 
-			const reqButton = screen.getByText('Request Recommendation');
+			const reqButton = screen.getByText('Request letter');
 			fireEvent.click(reqButton);
 
 			expect(mockShowDialog).toHaveBeenCalled();
@@ -379,7 +376,33 @@ describe('DynamicField Component', () => {
 				expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 			});
 
-			expect(mockOnChange).toHaveBeenCalledWith('testSection.lor', expect.objectContaining({ requestID: expect.any(String) }));
+			const savedRequest = mockSaveCollectionData.mock.calls[0][2];
+			expect(savedRequest).toEqual(
+				expect.objectContaining({
+					attachmentType: 'academicRecommendationLetter',
+					pinCode: 'pin',
+					attempts: 0,
+					completed: false,
+				})
+			);
+			expect(savedRequest.pin).toBeUndefined();
+
+			expect(mockOnChange).toHaveBeenCalledWith('testSection.attachments.academicRecommendationLetter', expect.objectContaining({ requestID: expect.any(String) }));
+		});
+
+		it('simulates demo upload with seeded filename', () => {
+			renderField({ name: 'attachments.applicantPersonalLetter', label: 'Personal Letter', type: 'file' });
+
+			fireEvent.click(screen.getByText('Simulate upload'));
+
+			expect(mockOnFile).toHaveBeenCalledWith(
+				'upload',
+				'testSection.attachments.applicantPersonalLetter',
+				expect.objectContaining({
+					name: 'Personal_Statement.pdf',
+					type: 'application/pdf',
+				})
+			);
 		});
 
 		it('renders uploaded file name and delete chip', () => {
@@ -390,6 +413,22 @@ describe('DynamicField Component', () => {
 			const deleteIcon = screen.getByTestId('CancelIcon');
 			fireEvent.click(deleteIcon);
 			expect(mockOnFile).toHaveBeenCalledWith('delete', 'testSection.lor', { displayName: 'LOR.pdf', home: 'url' });
+		});
+
+		it('shows Request pending when a letter request is open', () => {
+			const appData = {
+				...mockApplication,
+				testSection: {
+					attachments: {
+						academicRecommendationLetter: { requestID: 'req-1' },
+					},
+				},
+			};
+			renderField({ name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true }, { allowEditing: true }, appData);
+
+			expect(screen.getByText('Request pending')).toBeDisabled();
+			expect(screen.getByText('Request sent')).toBeInTheDocument();
+			expect(screen.getByText('Simulate upload')).toBeInTheDocument();
 		});
 	});
 

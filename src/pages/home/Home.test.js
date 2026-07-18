@@ -1,32 +1,21 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import Home from './Home'; // Adjust path if the test file is not in src/pages
+import Home from './Home';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
 
-// Mock the child components to isolate Home component testing
-vi.mock('../../components/home/Sections/Intro', () => ({
-	default: function MockIntro() {
-		return <div data-testid='intro-section'>Intro Component</div>;
-	},
-}));
-vi.mock('../../components/home/Sections/ResponsiveAppBar', () => ({
-	default: function MockAppBar() {
-		return <div data-testid='appbar-section'>AppBar Component</div>;
-	},
-}));
-vi.mock('../../components/home/Sections/ResponsiveFooter', () => ({
-	default: function MockFooter() {
-		return <div data-testid='footer-section'>Footer Component</div>;
-	},
-}));
-vi.mock('../../components/home/Sections/Information', () => ({
-	default: function MockInformation() {
-		return <div data-testid='information-section'>Information Component</div>;
-	},
+vi.mock('../../components/home/HomeNav', () => ({ default: () => <div data-testid='home-nav'>Nav</div> }));
+vi.mock('../../components/home/HomeHero', () => ({ default: () => <div data-testid='home-hero'>Hero</div> }));
+vi.mock('../../components/home/HomeTrustStats', () => ({ default: () => <div data-testid='home-trust'>Trust</div> }));
+vi.mock('../../components/home/HomeAboutSection', () => ({ default: () => <div data-testid='home-about'>About</div> }));
+vi.mock('../../components/home/HomeRequirementsSection', () => ({ default: () => <div data-testid='home-requirements'>Requirements</div> }));
+vi.mock('../../components/home/HomeContactSection', () => ({ default: () => <div data-testid='home-contact'>Contact</div> }));
+vi.mock('../../components/home/HomeSupportSection', () => ({ default: () => <div data-testid='home-support'>Support</div> }));
+vi.mock('../../components/home/HomeFooter', () => ({ default: () => <div data-testid='home-footer'>Footer</div> }));
+vi.mock('../../components/home/useHomeSectionNav', () => ({
+	useHomeSectionNav: () => ({ activeSection: 'about', navSolid: false, scrollToSection: jest.fn() }),
 }));
 
-// Mock the custom hooks
 vi.mock('../../context/ThemeContext', () => ({
 	useTheme: jest.fn(),
 }));
@@ -35,66 +24,32 @@ vi.mock('../../context/HelmetContext', () => ({
 	useTitle: jest.fn(),
 }));
 
-// Mock the config content
-vi.mock('../../config/content/content', () => ({
+vi.mock('../../config/content', () => ({
 	homePageContent: {
-		intro: { enabled: true },
 		appBar: { enabled: true },
+		intro: { enabled: true },
 		information: { enabled: true },
 		footer: { enabled: true },
+		sectionIds: { about: 'about', apply: 'apply', contact: 'contact', support: 'support' },
 	},
 }));
 
 describe('Home Component', () => {
-	const mockUseTheme = useTheme;
-	const mockUseTitle = useTitle;
-
 	beforeEach(() => {
-		jest.clearAllMocks();
-		// Default mock implementations
-		mockUseTheme.mockReturnValue({ darkMode: false });
-		mockUseTitle.mockImplementation(() => {});
+		useTheme.mockReturnValue({ darkMode: false });
+		useTitle.mockImplementation(() => {});
 	});
 
-	test('renders all enabled sections correctly', () => {
+	it('renders spruced public sections when enabled', () => {
 		render(<Home />);
-
-		expect(screen.getByTestId('intro-section')).toBeInTheDocument();
-		expect(screen.getByTestId('appbar-section')).toBeInTheDocument();
-		expect(screen.getByTestId('information-section')).toBeInTheDocument();
-		expect(screen.getByTestId('footer-section')).toBeInTheDocument();
-	});
-
-	test('calls useTitle with correct arguments', () => {
-		render(<Home />);
-		expect(mockUseTitle).toHaveBeenCalledWith({ title: 'Home', appear: true });
-	});
-
-	test('applies light mode styles to Container when darkMode is false', () => {
-		mockUseTheme.mockReturnValue({ darkMode: false });
-		const { container } = render(<Home />);
-
-		// The Container component from MUI renders a div with MuiContainer-root class
-		// We check the computed style or the sx prop application logic indirectly via inline styles/classes
-		// Since we can't easily check sx computation without a real theme provider, we check if it rendered
-		// and in a real integration test we'd check computed styles.
-		// For unit testing MUI sx, we often trust MUI works and just ensure the component renders without crashing.
-		// However, we can check if the specific props were likely applied if we were doing shallow rendering,
-		// but with RTL we check the DOM.
-
-		const layoutContainer = container.querySelector('.MuiContainer-root');
-		expect(layoutContainer).toBeInTheDocument();
-		// Verify custom styles are applied (approximate check based on JSDOM behavior)
-		expect(layoutContainer).toHaveStyle('width: 100%');
-	});
-
-	test('applies dark mode styles logic (simulated)', () => {
-		// Since actual HEX codes from 'custom.black' require the full ThemeProvider context,
-		// this test primarily ensures the component handles the darkMode flag without crashing
-		// and re-renders the structure.
-		mockUseTheme.mockReturnValue({ darkMode: true });
-		render(<Home />);
-
-		expect(screen.getByTestId('information-section')).toBeInTheDocument();
+		expect(screen.getByTestId('home-nav')).toBeInTheDocument();
+		expect(screen.getByTestId('home-hero')).toBeInTheDocument();
+		expect(screen.getByTestId('home-trust')).toBeInTheDocument();
+		expect(screen.getByTestId('home-about')).toBeInTheDocument();
+		expect(screen.getByTestId('home-requirements')).toBeInTheDocument();
+		expect(screen.getByTestId('home-contact')).toBeInTheDocument();
+		expect(screen.getByTestId('home-support')).toBeInTheDocument();
+		expect(screen.getByTestId('home-footer')).toBeInTheDocument();
+		expect(useTitle).toHaveBeenCalledWith({ title: 'Home', appear: true });
 	});
 });

@@ -1,26 +1,98 @@
-// @ts-nocheck
 import { Box, Typography } from '@mui/material';
-import { PersonAddAlt as NewIcon, Restore as ReturningIcon, WorkspacePremium as ScholarshipIcon, ReportProblem as IncompleteIcon, CheckCircleOutlined as CompletedIcon, ThumbUpAltOutlined as EligibleIcon, MailOutlined as InvitedIcon, MilitaryTech as AwardedIcon, CancelPresentation as RejectedIcon, DeleteOutlined as DeletedIcon } from '@mui/icons-material';
+import {
+	PlayArrow as StartedIcon,
+	PersonAddAlt as NewIcon,
+	Restore as ReturningIcon,
+	WorkspacePremium as ScholarshipIcon,
+	ReportProblem as IncompleteIcon,
+	CheckCircleOutlined as CompletedIcon,
+	ThumbUpAltOutlined as EligibleIcon,
+	MailOutlined as InvitedIcon,
+	MilitaryTech as AwardedIcon,
+	CancelPresentation as RejectedIcon,
+	DeleteOutlined as DeletedIcon,
+	Sensors as LiveCountIcon,
+} from '@mui/icons-material';
+import type { ElementType } from 'react';
+import type { SvgIconComponent } from '@mui/icons-material';
+import type { SxProps, Theme } from '@mui/material';
 
 import { ApplicationType, ApplicationStatus } from '../data/collections';
-import { getRealTimeCurrentEligibleApplicationsCountByType, getRealTimeEligibleApplicationsCountByTypeAndWindow, getRealTimeApplicationCountByStatus, getRealTimeRejectedApplications, getRealTimeMostRecentApplicationIDs, getRealTimeNewApplicantsThisYear } from '../data/firebase';
+import type { RealtimeCallback } from '../../types/firebase';
+import {
+	getRealTimeCurrentNonNegatedApplicationsCountByType,
+	getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear,
+	getRealTimeCurrentNonNegatedApplicationsCountByStatus,
+	getRealTimeCurrentApplicationCountByStatus,
+	getRealTimeApplicationCountByStatus,
+	getRealTimeCurrentRejectedApplicationsCount,
+	getRealTimeMostRecentApplicationIDs,
+	getRealTimeDashboardApplicantOutlook,
+	getRealTimeActiveAuthenticatedUsersCount,
+} from '../data/firebase';
+import { dashboardFeaturedRowSx, dashboardSectionTitleSx } from '../ui/adminPageStyles';
 
-// Components
 import Featured from '../../components/featured/Featured';
 import Chart from '../../components/chart/Chart';
 import InterviewStatusPanel from '../../components/interviews/StatusPanel';
+import ApplicantOutlookPanel from '../../components/dashboard/ApplicantOutlookPanel';
 import CollapsableTable from '../../components/table/Table';
-import SimpleApplicantsTable from '../../components/table/SimpleApplicantsTable';
+
+interface DashboardWidget {
+	id: string;
+	category: 'potentiallyEligible' | 'status' | 'live';
+	fetcher: (callback: RealtimeCallback) => unknown;
+	comparisonFetcher?: (cycleYear: number, callback: RealtimeCallback) => unknown;
+	isGainPositive?: (current: number, previous: number) => boolean;
+	title: string;
+	linkText: string;
+	link: string;
+	IconComponent: SvgIconComponent;
+	color: string;
+}
+
+interface LayoutComponent {
+	id: string;
+	component: ElementType;
+	props?: Record<string, unknown>;
+	fetcher?: (callback: RealtimeCallback) => unknown;
+	initialState?: unknown;
+}
+
+interface LayoutRow {
+	id: string;
+	type: 'widgets' | 'customRow';
+	variant?: string;
+	containerSx?: SxProps<Theme>;
+	display?: Record<string, string>;
+	components?: LayoutComponent[];
+}
+
+interface DashboardContent {
+	widgets: DashboardWidget[];
+	layout: LayoutRow[];
+}
 
 const year = new Date().getFullYear();
 
-export const memberDashContent = {
+export const memberDashContent: DashboardContent = {
 	widgets: [
+		{
+			id: ApplicationStatus.started,
+			category: 'potentiallyEligible',
+			fetcher: (callback) => getRealTimeCurrentNonNegatedApplicationsCountByStatus(ApplicationStatus.started, callback),
+			isGainPositive: (current, previous) => current >= previous,
+			title: 'STARTED',
+			linkText: "See this year's apps",
+			link: `/applications/${year}/all`,
+			IconComponent: StartedIcon,
+			color: 'grey.600',
+		},
 		{
 			id: ApplicationType.newApplication,
 			category: 'potentiallyEligible',
-			fetcher: (callback) => getRealTimeCurrentEligibleApplicationsCountByType(ApplicationType.newApplication, callback),
-			comparisonFetcher: (deadline, callback) => getRealTimeEligibleApplicationsCountByTypeAndWindow(ApplicationType.newApplication, deadline, callback),
+			fetcher: (callback) => getRealTimeCurrentNonNegatedApplicationsCountByType(ApplicationType.newApplication, callback),
+			comparisonFetcher: (cycleYear, callback) => getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear(ApplicationType.newApplication, cycleYear, callback),
 			isGainPositive: (current, previous) => current >= previous,
 			title: 'STANDARD GRANTS',
 			linkText: 'View Queue',
@@ -31,8 +103,8 @@ export const memberDashContent = {
 		{
 			id: ApplicationType.returningGrant,
 			category: 'potentiallyEligible',
-			fetcher: (callback) => getRealTimeCurrentEligibleApplicationsCountByType(ApplicationType.returningGrant, callback),
-			comparisonFetcher: (deadline, callback) => getRealTimeEligibleApplicationsCountByTypeAndWindow(ApplicationType.returningGrant, deadline, callback),
+			fetcher: (callback) => getRealTimeCurrentNonNegatedApplicationsCountByType(ApplicationType.returningGrant, callback),
+			comparisonFetcher: (cycleYear, callback) => getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear(ApplicationType.returningGrant, cycleYear, callback),
 			isGainPositive: (current, previous) => current >= previous,
 			title: 'RENEWALS',
 			linkText: 'View Queue',
@@ -43,8 +115,8 @@ export const memberDashContent = {
 		{
 			id: ApplicationType.scholarship,
 			category: 'potentiallyEligible',
-			fetcher: (callback) => getRealTimeCurrentEligibleApplicationsCountByType(ApplicationType.scholarship, callback),
-			comparisonFetcher: (deadline, callback) => getRealTimeEligibleApplicationsCountByTypeAndWindow(ApplicationType.scholarship, deadline, callback),
+			fetcher: (callback) => getRealTimeCurrentNonNegatedApplicationsCountByType(ApplicationType.scholarship, callback),
+			comparisonFetcher: (cycleYear, callback) => getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear(ApplicationType.scholarship, cycleYear, callback),
 			isGainPositive: (current, previous) => current >= previous,
 			title: 'COMPLIANCE',
 			linkText: 'View Check-ins',
@@ -55,7 +127,7 @@ export const memberDashContent = {
 		{
 			id: ApplicationStatus.incomplete,
 			category: 'potentiallyEligible',
-			fetcher: (callback) => getRealTimeApplicationCountByStatus(ApplicationStatus.incomplete, callback),
+			fetcher: (callback) => getRealTimeCurrentApplicationCountByStatus(ApplicationStatus.incomplete, callback),
 			isGainPositive: (current) => current <= 0,
 			title: 'INCOMPLETE',
 			linkText: 'View Stalled Apps',
@@ -66,7 +138,7 @@ export const memberDashContent = {
 		{
 			id: ApplicationStatus.completed,
 			category: 'status',
-			fetcher: (callback) => getRealTimeApplicationCountByStatus(ApplicationStatus.completed, callback),
+			fetcher: (callback) => getRealTimeCurrentApplicationCountByStatus(ApplicationStatus.completed, callback),
 			title: 'COMPLETED',
 			linkText: 'Ready for Review',
 			link: `/applications/completed`,
@@ -76,7 +148,7 @@ export const memberDashContent = {
 		{
 			id: ApplicationStatus.eligible,
 			category: 'status',
-			fetcher: (callback) => getRealTimeApplicationCountByStatus(ApplicationStatus.eligible, callback),
+			fetcher: (callback) => getRealTimeCurrentApplicationCountByStatus(ApplicationStatus.eligible, callback),
 			title: 'ELIGIBLE',
 			linkText: 'Qualified Candidates',
 			link: `/applications/eligible`,
@@ -86,7 +158,7 @@ export const memberDashContent = {
 		{
 			id: ApplicationStatus.invited,
 			category: 'status',
-			fetcher: (callback) => getRealTimeApplicationCountByStatus(ApplicationStatus.invited, callback),
+			fetcher: (callback) => getRealTimeCurrentApplicationCountByStatus(ApplicationStatus.invited, callback),
 			title: 'INVITED',
 			linkText: 'Interview Queue',
 			link: `/applications/invited`,
@@ -96,7 +168,7 @@ export const memberDashContent = {
 		{
 			id: ApplicationStatus.awarded,
 			category: 'status',
-			fetcher: (callback) => getRealTimeApplicationCountByStatus(ApplicationStatus.awarded, callback),
+			fetcher: (callback) => getRealTimeCurrentApplicationCountByStatus(ApplicationStatus.awarded, callback),
 			title: 'AWARDED',
 			linkText: 'Finalized Grants',
 			link: `/applications/awarded`,
@@ -106,7 +178,7 @@ export const memberDashContent = {
 		{
 			id: 'rejected',
 			category: 'status',
-			fetcher: (callback) => getRealTimeRejectedApplications(callback),
+			fetcher: (callback) => getRealTimeCurrentRejectedApplicationsCount(callback),
 			title: 'REJECTED',
 			linkText: 'View Denials',
 			link: `/applications/rejected`,
@@ -123,93 +195,58 @@ export const memberDashContent = {
 			IconComponent: DeletedIcon,
 			color: 'custom.red',
 		},
+		{
+			id: 'live-count',
+			category: 'live',
+			fetcher: (callback) => getRealTimeActiveAuthenticatedUsersCount(callback),
+			title: 'LIVE COUNT',
+			linkText: 'View members',
+			link: '/members',
+			IconComponent: LiveCountIcon,
+			color: 'success.main',
+		},
 	],
 	layout: [
 		{ id: 'widgets', type: 'widgets' },
 		{
 			id: 'featuredComponent',
+			variant: 'featured',
 			type: 'customRow',
-			containerSx: {
-				flexDirection: { xs: 'column', lg: 'row' },
-				height: { xs: 'auto', sm: 'auto', md: 'auto', lg: '515px' },
-			},
+			containerSx: dashboardFeaturedRowSx,
 			components: [
-				{
-					id: 'featured',
-					component: Featured,
-					wrapperSx: {
-						flexGrow: 0,
-						flexShrink: 1,
-						flexBasis: { xs: '100%', md: '360px' },
-					},
-				},
-				{
-					id: 'chart',
-					component: Chart,
-					props: { title: 'PROGRAM HISTORY' },
-					wrapperSx: {
-						flexGrow: { xs: 0, md: 1 },
-						flexShrink: 1,
-						flexBasis: { xs: '100%', md: 'auto' },
-						height: '100%',
-					},
-				},
-				{
-					id: 'interviews',
-					component: InterviewStatusPanel,
-					wrapperSx: {
-						flexGrow: 0,
-						flexShrink: 1,
-						flexBasis: { xs: '100%', md: '320px' },
-					},
-				},
+				{ id: 'featured', component: Featured, props: { variant: 'dashboard' } },
+				{ id: 'chart', component: Chart, props: { title: 'PROGRAM HISTORY', variant: 'dashboard' } },
+				{ id: 'interviews', component: InterviewStatusPanel, props: { variant: 'dashboard' } },
 			],
 		},
 		{
-			id: 'newApplicantsComponent',
+			id: 'applicantOutlookComponent',
+			variant: 'panel',
 			type: 'customRow',
-			containerSx: {
-				flexDirection: 'column',
-				gap: '14px',
-				bgcolor: 'background.paper',
-				borderRadius: '12px',
-				mt: 2,
-			},
+			display: { xs: 'none', sm: 'flex' },
+			containerSx: { flexDirection: 'column', mb: 2 },
 			components: [
 				{
-					id: 'newApplicantsTable',
-					component: ({ data }) => (
-						<Box display='flex' flexDirection='column' width='100%' mx={1} my={1}>
-							<Typography fontWeight='bold' fontSize='15px' color='text.secondary' my={2} pl={3}>
-								NEW APPLICANTS THIS YEAR
-							</Typography>
-							<SimpleApplicantsTable data={data} />
-						</Box>
-					),
-					fetcher: (callback) => getRealTimeNewApplicantsThisYear(callback, 20),
-					initialState: [],
+					id: 'applicantOutlook',
+					component: ApplicantOutlookPanel,
+					fetcher: (callback) => getRealTimeDashboardApplicantOutlook(callback),
+					initialState: null,
 				},
 			],
 		},
 		{
 			id: 'recentAppsComponent',
+			variant: 'panel',
 			type: 'customRow',
 			display: { xs: 'none', sm: 'flex' },
-			containerSx: {
-				flexDirection: 'column',
-				gap: '14px',
-				bgcolor: 'background.paper',
-				borderRadius: '12px',
-			},
+			containerSx: { flexDirection: 'column' },
 			components: [
 				{
 					id: 'recentAppsTable',
-					component: ({ data }) => (
-						<Box display='flex' flexDirection='column' width='100%' mx={1} my={1}>
-							<Typography fontWeight='bold' fontSize='15px' color='text.secondary' my={2} pl={3}>
-								RECENT ACTIVITY
-							</Typography>
-							<CollapsableTable data={data} />
+					component: ({ data }: { data: unknown }) => (
+						<Box sx={{ width: '100%', minWidth: 0, px: 2, pt: 1.5, pb: 1.5 }}>
+							<Typography sx={dashboardSectionTitleSx}>RECENT ACTIVITY</Typography>
+							<CollapsableTable data={data as string[]} />
 						</Box>
 					),
 					fetcher: (callback) => getRealTimeMostRecentApplicationIDs(callback, 5),

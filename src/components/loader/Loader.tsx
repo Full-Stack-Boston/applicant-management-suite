@@ -1,18 +1,15 @@
-// @ts-nocheck
 /**
  * Global Loader
  * A full-screen spinner used during data fetching or authentication checks.
  * Centers a CircularProgress indicator in the viewport.
  */
 
-import React from 'react';
-
 import { Box, CircularProgress, Typography } from '@mui/material';
 
 const Loader = () => (
 	<Box
-		bgcolor='transparent'
 		sx={{
+			bgcolor: 'transparent',
 			display: 'flex',
 			justifyContent: 'center',
 			alignItems: 'center',

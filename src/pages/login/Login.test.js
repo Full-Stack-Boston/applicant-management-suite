@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Login from './Login';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -54,11 +54,17 @@ vi.mock('../../config/navigation/routeUtils', () => ({
 }));
 
 vi.mock('../../config/navigation/paths', () => ({
-	paths: { redirect: '/redirect', home: '/home' },
+	paths: {
+		redirect: '/redirect',
+		home: '/home',
+		registerMember: '/board-registration',
+		memberDash: '/members/dashboard',
+		apply: '/apply',
+	},
 }));
 
 // Mock the content config to ensure stable DOM elements
-vi.mock('../../config/content/content', () => ({
+vi.mock('../../config/content', () => ({
 	loginContent: {
 		title: 'Test Login',
 		icon: 'T',
@@ -72,8 +78,33 @@ vi.mock('../../config/content/content', () => ({
 			{ id: 'link-register', label: 'Register', navigationPath: '/register' },
 		],
 	},
+	homePageContent: {
+		demoBoardAccess: {
+			loginLinkLabel: 'Demo staff access? Register a committee account',
+			path: '/board-registration',
+		},
+	},
 }));
 
+
+vi.mock('../../components/home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+}));
+
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	__esModule: true,
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	__esModule: true,
+	default: ({ title, children }) => (
+		<div data-testid='auth-form-card'>
+			<h1>{title}</h1>
+			{children}
+		</div>
+	),
+}));
 vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div data-testid='copyright'>Copyright</div> }));
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
 
@@ -88,7 +119,7 @@ describe('Login Component', () => {
 		useLocation.mockReturnValue({ state: null });
 		useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: mockHandleError });
 		useAuth.mockReturnValue({ loading: false });
-		useTheme.mockReturnValue({ boxShadow: 'none' });
+		useTheme.mockReturnValue({ boxShadow: 'none', primaryColor: '#0288D1', darkMode: false });
 		useTitle.mockImplementation(() => {});
 
 		// Default Config
@@ -96,6 +127,7 @@ describe('Login Component', () => {
 			DOWN_FOR_MAINTENANCE: false,
 			MEMBER_ACCESS: true,
 			APPLICANT_ACCESS: true,
+			MEMBER_ONBOARDING_PAGE_ENABLED: true,
 		});
 
 		// Default route generation
@@ -110,6 +142,18 @@ describe('Login Component', () => {
 		expect(screen.getByLabelText(/Password/i)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
 		expect(screen.getByText('Forgot Password?')).toBeInTheDocument();
+		expect(screen.getByText(/Demo staff access/i)).toBeInTheDocument();
+	});
+
+	test('hides board registration link when member onboarding is disabled', () => {
+		useConfig.mockReturnValue({
+			DOWN_FOR_MAINTENANCE: false,
+			MEMBER_ACCESS: true,
+			APPLICANT_ACCESS: true,
+			MEMBER_ONBOARDING_PAGE_ENABLED: false,
+		});
+		render(<Login />);
+		expect(screen.queryByText(/Demo staff access/i)).not.toBeInTheDocument();
 	});
 
 	test('blocks login if site is down for maintenance', async () => {
@@ -141,8 +185,7 @@ describe('Login Component', () => {
 		await waitFor(() => {
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 		});
-		// Should navigate to redirect path (from routeUtils mock or location)
-		expect(mockNavigate).toHaveBeenCalled();
+		expect(mockNavigate).toHaveBeenCalledWith('/apply', { replace: true });
 	});
 
 	test('handles successful member login', async () => {
@@ -158,6 +201,22 @@ describe('Login Component', () => {
 
 		await waitFor(() => {
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+		});
+		expect(mockNavigate).toHaveBeenCalledWith('/members/dashboard', { replace: true });
+	});
+
+	test('sends dual-role users to redirect picker', async () => {
+		loginUser.mockResolvedValue({ user: { uid: 'both-1' } });
+		getUserProfiles.mockResolvedValue({ applicant: true, member: true });
+
+		render(<Login />);
+
+		fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'both@test.com' } });
+		fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+		fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+
+		await waitFor(() => {
+			expect(mockNavigate).toHaveBeenCalledWith('/redirect', { replace: true });
 		});
 	});
 

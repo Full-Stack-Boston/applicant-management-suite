@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GLOBAL CONSTANTS & CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -14,12 +13,15 @@
  * 'brand' object and the 'Assets' imports below.
  */
 
-import { PersonOutlined as PersonOutlinedIcon, School as SchoolIcon, Church as ChurchIcon, Forest as ForestIcon, Savings as SavingsIcon, History as HistoryIcon, Apartment as CommunityIcon } from '@mui/icons-material';
+import { type ReactNode } from 'react';
+import { PersonOutlined as PersonOutlinedIcon, School as SchoolIcon, Groups as GroupsIcon, Savings as SavingsIcon, History as HistoryIcon, Apartment as CommunityIcon } from '@mui/icons-material';
 
 import CryptoJS from 'crypto-js';
 import * as pdfjsLib from 'pdfjs-dist/webpack.mjs';
 import { getConfigFromDb } from './data/firebase';
 import { ApplicationType } from './data/collections';
+import type { ApplicationTypeValue } from './data/collections';
+import type { SiteConfig } from '../types/firebase';
 
 // --- Assets Imports ---
 // To rebrand, replace these files in 'src/assets/images/'
@@ -53,9 +55,10 @@ export const brand = {
 	tagline: 'To facilitate the administration and review of applications, interviews, and deliberations.',
 	broughtToYouBy: 'Full Stack Boston', // "Powered By" footer text
 
-	// Contact Information (Displayed in Footers/Help pages)
-	organizationAddress: 'Application Management Suite<br />Attn: AMS Board<br />123 Main St<br />City, ST 01234',
-	organizationEstablished: 'City, State | Established 2000',
+	// Contact Information (email / phone / web — no public street address)
+	organizationAddress:
+		'Full Stack Boston<br />demo@fullstackboston.com<br />+1-978-238-9832<br />https://ams.fullstackboston.com',
+	organizationEstablished: 'Full Stack Boston | ams.fullstackboston.com',
 	contactEmail: 'demo@fullstackboston.com',
 	helpEmail: 'demo@fullstackboston.com',
 	contactTelephone: '+1-978-238-9832',
@@ -64,6 +67,8 @@ export const brand = {
 	url: 'https://ams.fullstackboston.com',
 	domain: 'ams.fullstackboston.com',
 	emailDomain: 'fullstackboston.com', // Used for validation logic
+	githubUrl: 'https://github.com/full-stack-boston/applicant-management-suite',
+	githubLabel: 'View AMS on GitHub',
 
 	// SEO / Meta Data
 	metaAuthor: 'Full Stack Boston',
@@ -114,11 +119,18 @@ export const Assets = {
  * Configurations for Letter of Recommendation requirements.
  * Defines the "Types" of letters applicants can/must request.
  */
-export const LettersOfRecommendation = {
-	religiousRecommendationLetter: {
-		name: 'Religious Letter of Recommendation',
-		purpose: 'attest the applicant takes an active role in their faith and religious community',
-		icon: <ChurchIcon />,
+interface LetterOfRecommendation {
+	name: string;
+	purpose: string;
+	icon: ReactNode;
+	requiredBy: readonly ApplicationTypeValue[];
+}
+
+export const LettersOfRecommendation: Record<string, LetterOfRecommendation> = {
+	communityRecommendationLetter: {
+		name: 'Community Letter of Recommendation',
+		purpose: 'attest the applicant contributes meaningfully in their organization or community',
+		icon: <CommunityIcon />,
 		requiredBy: [ApplicationType.newApplication],
 	},
 	academicRecommendationLetter: {
@@ -127,13 +139,15 @@ export const LettersOfRecommendation = {
 		icon: <SchoolIcon />,
 		requiredBy: [ApplicationType.newApplication, ApplicationType.returningGrant],
 	},
-	serviceRecommendationLetter: {
-		name: 'Service Letter of Recommendation',
-		purpose: "attest to the applicant's leadership and service in their organization or community",
-		icon: <ForestIcon />,
+	experienceRecommendationLetter: {
+		name: 'Experience Letter of Recommendation',
+		purpose: "attest to the applicant's leadership and experience in their organization or community",
+		icon: <GroupsIcon />,
 		requiredBy: [ApplicationType.newApplication],
 	},
 };
+
+type LetterOfRecommendationKey = keyof typeof LettersOfRecommendation;
 
 /**
  * Aggregates all file attachment requirements for the "Attachments" page of the application.
@@ -147,7 +161,7 @@ export const attachmentFields = [
 		requiredBy: [ApplicationType.newApplication, ApplicationType.returningGrant, ApplicationType.scholarship],
 	},
 	// Spread the LORs defined above
-	...Object.keys(LettersOfRecommendation).map((key) => ({
+	...(Object.keys(LettersOfRecommendation) as LetterOfRecommendationKey[]).map((key) => ({
 		label: LettersOfRecommendation[key].name,
 		key: key,
 		icon: LettersOfRecommendation[key].icon,
@@ -227,6 +241,9 @@ export const Pages = {
 	newAppsInYear: 'newAppsInYear',
 	returningAppsInYear: 'returningAppsInYear',
 	scholarshipAppsInYear: 'scholarshipAppsInYear',
+	newApps: 'newApps',
+	returningApps: 'returningApps',
+	scholarshipApps: 'scholarshipApps',
 	completedApps: 'completedApps',
 	eligibleApps: 'eligibleApps',
 	invitedApps: 'invitedApps',
@@ -234,6 +251,13 @@ export const Pages = {
 	rejectedApps: 'rejectedApps',
 	deletedApps: 'deletedApps',
 	incompleteApps: 'incompleteApps',
+	completedAppsInYear: 'completedAppsInYear',
+	eligibleAppsInYear: 'eligibleAppsInYear',
+	invitedAppsInYear: 'invitedAppsInYear',
+	awardedAppsInYear: 'awardedAppsInYear',
+	deletedAppsInYear: 'deletedAppsInYear',
+	rejectedAppsInYear: 'rejectedAppsInYear',
+	incompleteAppsInYear: 'incompleteAppsInYear',
 	viewApp: 'viewApp',
 	exportApp: 'exportApp',
 	archives: 'archives',
@@ -330,7 +354,7 @@ export const domain = ENV === 'development' ? 'https://localhost:3000' : getDoma
 
 // -- String Helpers --
 
-export const capitalize = (s) => {
+export const capitalize = (s: string): string => {
 	if (typeof s !== 'string' || !s) return '';
 	return s.charAt(0).toUpperCase() + s.slice(1);
 };
@@ -345,9 +369,14 @@ export const generate6DigitNumber = () => {
 /**
  * Generates a secure, hashed PIN for verify-by-email flows.
  */
-export const generateSecurePin = async (pin) => {
+const siteConfigKey = (config: SiteConfig | null, key: string): string => {
+	const value = config?.[key];
+	return typeof value === 'string' ? value : '';
+};
+
+export const generateSecurePin = async (pin: string): Promise<string> => {
 	const config = await getConfigFromDb();
-	const hash = CryptoJS.HmacSHA256(pin, config.PIN_KEY).toString();
+	const hash = CryptoJS.HmacSHA256(pin, siteConfigKey(config, 'PIN_KEY')).toString();
 	const payload = `${pin}:${hash}`;
 	return btoa(payload);
 };
@@ -355,12 +384,12 @@ export const generateSecurePin = async (pin) => {
 /**
  * Validates a PIN against its hash to prevent tampering.
  */
-export const validatePin = async (pin) => {
+export const validatePin = async (pin: string): Promise<boolean> => {
 	try {
 		const config = await getConfigFromDb();
 		const decodedPayload = atob(pin);
 		const [code, hash] = decodedPayload.split(':');
-		const recalculatedHash = CryptoJS.HmacSHA256(code, config.PIN_KEY).toString();
+		const recalculatedHash = CryptoJS.HmacSHA256(code, siteConfigKey(config, 'PIN_KEY')).toString();
 		return hash === recalculatedHash;
 	} catch (error) {
 		console.error('Error validating pin: ', error);
@@ -371,49 +400,55 @@ export const validatePin = async (pin) => {
 /**
  * Generates a secure "One-Click Upload" link for Reference Requests.
  */
-export const generateUploadLink = async (requestID) => {
+export const generateUploadLink = async (requestID: string): Promise<string> => {
 	const config = await getConfigFromDb();
-	const hash = CryptoJS.HmacSHA256(requestID, config.UPLOAD_KEY).toString();
+	const hash = CryptoJS.HmacSHA256(requestID, siteConfigKey(config, 'UPLOAD_KEY')).toString();
 	const payload = `${requestID}:${hash}`;
 	const encodedLink = btoa(payload);
 	return `${domain}/requests/${encodedLink}`;
 };
 
-export const validateRequest = async (token) => {
+interface ValidateResult {
+	result: boolean;
+	id?: string;
+	error?: string;
+}
+
+export const validateRequest = async (token: string): Promise<ValidateResult> => {
 	try {
 		const config = await getConfigFromDb();
 		const decodedPayload = atob(token);
 		const [id, hash] = decodedPayload.split(':');
-		const recalculatedHash = CryptoJS.HmacSHA256(id, config.UPLOAD_KEY).toString();
+		const recalculatedHash = CryptoJS.HmacSHA256(id, siteConfigKey(config, 'UPLOAD_KEY')).toString();
 		const isValid = hash === recalculatedHash;
 		return { result: isValid, id };
 	} catch (error) {
 		console.error('Error validating upload link:', error);
-		return { result: false, error: error.message };
+		return { result: false, error: (error as Error).message };
 	}
 };
 
 /**
  * Generates a secure Unsubscribe link for emails.
  */
-export const unsubscribeLink = async (id) => {
+export const unsubscribeLink = async (id: string): Promise<string> => {
 	const config = await getConfigFromDb();
-	const hash = CryptoJS.HmacSHA256(id, config.UNSUB_KEY).toString();
+	const hash = CryptoJS.HmacSHA256(id, siteConfigKey(config, 'UNSUB_KEY')).toString();
 	const payload = `${id}:${hash}`;
 	const encodedLink = btoa(payload);
 	return `${domain}/unsubscribe/${encodedLink}`;
 };
 
-export const validateLink = async (encID) => {
+export const validateLink = async (encID: string): Promise<ValidateResult> => {
 	try {
 		const config = await getConfigFromDb();
 		const decodedPayload = atob(encID);
 		const [id, hash] = decodedPayload.split(':');
-		const recalculatedHash = CryptoJS.HmacSHA256(id, config.UNSUB_KEY).toString();
+		const recalculatedHash = CryptoJS.HmacSHA256(id, siteConfigKey(config, 'UNSUB_KEY')).toString();
 		return { result: hash === recalculatedHash, id };
 	} catch (error) {
 		console.error('Error validating unsubscribe link:', error);
-		return { result: false, error: error.message };
+		return { result: false, error: (error as Error).message };
 	}
 };
 
@@ -423,11 +458,11 @@ export const validateLink = async (encID) => {
  * Converts the first page of a PDF Blob into an Image URL.
  * Used for generating thumbnails in the "Attachment Preview" view.
  */
-export const convertPDFBlobToImages = async (blob) => {
+export const convertPDFBlobToImages = async (blob: Blob): Promise<string[]> => {
 	const objectURL = URL.createObjectURL(blob);
 	const pdf = await pdfjsLib.getDocument(objectURL).promise;
 	const pageCount = pdf.numPages;
-	const imageURLs = [];
+	const imageURLs: string[] = [];
 
 	// Render all pages
 	for (let i = 1; i <= pageCount; i++) {
@@ -436,6 +471,7 @@ export const convertPDFBlobToImages = async (blob) => {
 
 		const canvas = document.createElement('canvas');
 		const context = canvas.getContext('2d');
+		if (!context) continue;
 		canvas.height = viewport.height;
 		canvas.width = viewport.width;
 
@@ -449,8 +485,8 @@ export const convertPDFBlobToImages = async (blob) => {
 	return imageURLs;
 };
 
-export const createBlobUrl = (blob) => URL.createObjectURL(blob);
-export const revokeBlobUrl = (url) => URL.revokeObjectURL(url);
+export const createBlobUrl = (blob: Blob): string => URL.createObjectURL(blob);
+export const revokeBlobUrl = (url: string): void => URL.revokeObjectURL(url);
 
 // --- 6. Email Templates ---
 
@@ -458,16 +494,16 @@ export const revokeBlobUrl = (url) => URL.revokeObjectURL(url);
  * Standard Email Header HTML.
  * Injects the brand logo, name, and tagline.
  */
-export const emailHeader = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to ${brand.organizationShortName}</title></head><body style="width: 100%; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif;"><header><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-bottom: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td align="center"><table cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; padding: 20px; border-radius: 5px;"><tr><td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #333333; padding: 10px;"><h1 style="font-size: 24px; color: #006B3F; margin: 0;">${brand.theOrganizationName}</h1><p style="font-size: 16px; color: #666666; margin: 5px 0 20px;">${brand.tagline}</p></td></tr><tr><td style="border-top: 2px solid #006B3F; padding-top: 10px;"><p style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #666666; text-align: center;">${brand.organizationEstablished}</p></td></tr></table></td></tr></table></header>`;
+export const emailHeader = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to ${brand.organizationShortName}</title></head><body style="width: 100%; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif;"><header><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-bottom: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td align="center"><table cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; padding: 20px; border-radius: 5px;"><tr><td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #333333; padding: 10px;"><h1 style="font-size: 24px; color: #0288D1; margin: 0;">${brand.theOrganizationName}</h1><p style="font-size: 16px; color: #666666; margin: 5px 0 20px;">${brand.tagline}</p></td></tr><tr><td style="border-top: 2px solid #0288D1; padding-top: 10px;"><p style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #666666; text-align: center;">${brand.organizationEstablished}</p></td></tr></table></td></tr></table></header>`;
 
 /**
  * Dynamic Email Footer HTML (Includes Unsubscribe Link).
  */
-export const emailFooter = (unsubLink) => {
-	return `<footer><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-top: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td style="font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #666666; padding: 20px 0 10px; text-align: center;"><p>You are receiving this email because you opted in at our website.<br /><a href=${unsubLink} style="color: #006B3F;">Unsubscribe</a> | <a href="#" style="color: #006B3F;">Privacy Policy</a></p><p>© ${new Date().getFullYear()} ${brand.theOrganizationName}. All rights reserved.</p></td></tr></table></footer></body></html>`;
+export const emailFooter = (unsubLink: string): string => {
+	return `<footer><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-top: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td style="font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #666666; padding: 20px 0 10px; text-align: center;"><p>You are receiving this email because you opted in at our website.<br /><a href=${unsubLink} style="color: #0288D1;">Unsubscribe</a> | <a href="#" style="color: #0288D1;">Privacy Policy</a></p><p>© ${new Date().getFullYear()} ${brand.theOrganizationName}. All rights reserved.</p></td></tr></table></footer></body></html>`;
 };
 
 /**
  * Static Email Footer HTML (No Unsubscribe Link - for transactional emails).
  */
-export const staticEmailFooter = `<footer><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-top: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td style="font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #666666; padding: 20px 0 10px; text-align: center;"><p>You are receiving this email because you opted in at our website.<br /><a href="#" style="color: #006B3F;">Privacy Policy</a></p><p>© ${new Date().getFullYear()} ${brand.theOrganizationName}. All rights reserved.</p></td></tr></table></footer></body></html>`;
+export const staticEmailFooter = `<footer><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4; padding: 20px; margin-top: 20px; font-family: Arial, Helvetica, sans-serif;"><tr><td style="font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #666666; padding: 20px 0 10px; text-align: center;"><p>You are receiving this email because you opted in at our website.<br /><a href="#" style="color: #0288D1;">Privacy Policy</a></p><p>© ${new Date().getFullYear()} ${brand.theOrganizationName}. All rights reserved.</p></td></tr></table></footer></body></html>`;

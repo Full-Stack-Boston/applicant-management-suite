@@ -6,8 +6,7 @@ import { useMeeting } from '../../context/MeetingContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
 import { useTitle } from '../../context/HelmetContext';
-import { getRealTimeMeetings, updateCollectionData, generateJoinToken } from '../../config/data/firebase';
-import { httpsCallable } from 'firebase/functions';
+import { getRealTimeMeetings, updateInterviewStatus, generateJoinToken } from '../../config/data/firebase';
 import { getDoc } from 'firebase/firestore';
 
 // --- Mocks ---
@@ -27,13 +26,14 @@ vi.mock('firebase/functions', () => ({
 vi.mock('firebase/firestore', () => ({
 	doc: jest.fn(),
 	getDoc: jest.fn(),
+	updateDoc: jest.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../config/data/firebase', () => ({
 	functions: {},
 	db: {},
 	getRealTimeMeetings: jest.fn(),
-	updateCollectionData: jest.fn(),
+	updateInterviewStatus: jest.fn(),
 	generateJoinToken: jest.fn(),
 }));
 
@@ -79,6 +79,17 @@ vi.mock('../../components/interviews/AdminDrawer', () => ({ default: (props) => 
 
 vi.mock('../../components/interviews/ApplicationViewer', () => ({ default: () => <div data-testid='app-viewer'>App Viewer</div> }));
 vi.mock('../../components/interviews/CallInterface', () => ({ default: () => <div data-testid='call-ui'>Call UI</div> }));
+vi.mock('../../components/interviews/VideoRoomUnavailable', () => ({
+	default: ({ title, message, onLeave, leaveLabel }) => (
+		<div data-testid='video-unavailable'>
+			<h1>{title}</h1>
+			<p>{message}</p>
+			<button type='button' onClick={onLeave}>
+				{leaveLabel}
+			</button>
+		</div>
+	),
+}));
 
 describe('DeliberationRoom Component', () => {
 	const mockNavigate = jest.fn();
@@ -119,6 +130,7 @@ describe('DeliberationRoom Component', () => {
 		generateJoinToken.mockResolvedValue({
 			data: { token: 'mock-token', roomUrl: 'mock-url' },
 		});
+		updateInterviewStatus.mockResolvedValue({ data: { success: true } });
 
 		getRealTimeMeetings.mockImplementation((uid, bool, callback) => {
 			callback([]);
@@ -275,7 +287,7 @@ describe('DeliberationRoom Component', () => {
 			fireEvent.click(startBtn);
 		});
 
-		expect(updateCollectionData).toHaveBeenCalledWith('interviews', 'next-id', { status: 'in-progress' });
+		expect(updateInterviewStatus).toHaveBeenCalledWith({ interviewId: 'next-id', newStatus: 'in-progress' });
 		expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 	});
 });

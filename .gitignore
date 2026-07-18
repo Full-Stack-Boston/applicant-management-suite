@@ -20,6 +20,7 @@ nonSGData.json
 functions/obfuscatedData.json
 .cursor/
 
-# Local handoff working docs (do not publish — Phase 16 trail)
-docs/pf-to-ams-transfer-playbook.md
-docs/pf-ams-diff-matrix.md
+# Local test dumps (do not re-commit)
+coverage_report.txt
+coverage_report_final.txt
+test_out.txt

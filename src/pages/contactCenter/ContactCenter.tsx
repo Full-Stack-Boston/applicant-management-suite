@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CONTACT CENTER (Bulk Messaging)
  * ---------------------------------------------------------------------------
@@ -11,15 +10,19 @@
  * 4. Preset Loaders: "Add Preset" buttons quickly populate the recipient list with bulk groups.
  */
 
-import React, { useEffect, useCallback, useReducer, useState } from 'react';
+import { useEffect, useCallback, useReducer, useState, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { v4 as uuid } from 'uuid';
-import { doc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, collection, writeBatch, serverTimestamp, type DocumentData } from 'firebase/firestore';
+import type { SelectChangeEvent } from '@mui/material';
 
 // UI Components
-import { Box, Button, Typography, TextField, Autocomplete, Chip, Select, MenuItem, FormControl, InputLabel, FormControlLabel, Switch, Grid, Menu } from '@mui/material';
+import { Alert, Box, Button, Typography, TextField, Autocomplete, Chip, Select, MenuItem, FormControl, InputLabel, FormControlLabel, Switch, Grid, Menu } from '@mui/material';
+import { adminPageHeaderSx, adminPagePanelSx, adminPageTitleSx, getAdminPageTitleColor } from '../../config/ui/adminPageStyles';
 import { FiberNewOutlined as NewIcon, KeyboardReturnOutlined as ReturningIcon, SchoolOutlined as SchoolIcon, GroupAddOutlined as GroupAddIcon, CloseOutlined, AlternateEmail as AliasIcon, ArrowDropDown as ArrowDropDownIcon } from '@mui/icons-material';
 import EmailLogsDialog from '../../components/dialogs/EmailLogsDialog';
+import TemplateManagerDialog from '../../components/dialogs/TemplateManagerDialog';
+import { DEMO_EMAIL_BANNER, isDemoEmailMode, withSimulatedDelivery } from '../../config/content/emailDelivery';
 
 // Contexts
 import { useTheme } from '../../context/ThemeContext';
@@ -31,7 +34,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
 
 // Backend & Config
-import { send, templates } from '../../config/content/push';
+import { send, templates as staticTemplateGroups } from '../../config/content/push';
+import { useEmailTemplates } from '../../context/EmailTemplateContext';
 import { getRealTimeApplicationsByWindow, getRealTimeCollection, getRealTimeApplicantsByApplicationID, db } from '../../config/data/firebase';
 import { brand, emailHeader, staticEmailFooter, senders as staticSenders } from '../../config/Constants';
 import { ApplicationType, collections } from '../../config/data/collections';
@@ -41,7 +45,50 @@ import '../memberDash/memberDash.scss';
 //  STATE MANAGEMENT (Reducer)
 // =============================================================================
 
-const initialState = {
+/** A selectable contact (recipient, CC, sender, or SMS target). */
+type ContactUser = {
+	id: string;
+	name?: string;
+	email?: string;
+	cell?: string;
+	alias?: string;
+	isSystem?: boolean;
+};
+
+interface ContactCenterState {
+	recipients: ContactUser[];
+	sender: ContactUser | '';
+	cc: ContactUser[];
+	smsRecipients: ContactUser[];
+	override: boolean;
+	applicantEmails: ContactUser[];
+	applicantCells: ContactUser[];
+	newApplicantEmails: ContactUser[];
+	newApplicantCells: ContactUser[];
+	returningApplicantEmails: ContactUser[];
+	returningApplicantCells: ContactUser[];
+	scholarshipApplicantEmails: ContactUser[];
+	scholarshipApplicantCells: ContactUser[];
+	memberEmails: ContactUser[];
+	memberCells: ContactUser[];
+	memberAliases: ContactUser[];
+	allUserEmails: ContactUser[];
+	allCC: ContactUser[];
+	allUserCells: ContactUser[];
+	availableSenders: ContactUser[];
+}
+
+/** State keys holding ContactUser lists that presets/removals operate on. */
+type ContactListField = 'recipients' | 'cc' | 'smsRecipients' | 'newApplicantEmails' | 'newApplicantCells' | 'returningApplicantEmails' | 'returningApplicantCells' | 'scholarshipApplicantEmails' | 'scholarshipApplicantCells';
+
+type ContactCenterAction =
+	| { type: 'SET_FIELD'; field: ContactListField | 'override' | 'sender'; payload: unknown }
+	| { type: 'SET_DATA_LISTS'; payload: { applicants?: ContactUser[]; members?: ContactUser[]; prefilled?: ContactUser[] } }
+	| { type: 'PREFILL_DATA'; payload: { prefilledRecipients?: ContactUser[]; prefilledSms?: ContactUser[] } }
+	| { type: 'INITIALIZE_SENDERS'; payload: ContactUser[] }
+	| { type: 'RESET_FORM' };
+
+const initialState: ContactCenterState = {
 	recipients: [], // Selected To: list
 	sender: '', // Selected From: address
 	cc: [], // Selected CC: list
@@ -71,8 +118,8 @@ const initialState = {
 /**
  * Merges two lists of user objects, removing duplicates based on ID or Email.
  */
-const combineUnique = (list1 = [], list2 = []) => {
-	const map = new Map();
+const combineUnique = (list1: ContactUser[] = [], list2: ContactUser[] = []): ContactUser[] => {
+	const map = new Map<string, ContactUser>();
 	for (const item of [...list1, ...list2]) {
 		if (item && (item.id || item.email)) {
 			map.set(item.email || item.id, item);
@@ -81,10 +128,10 @@ const combineUnique = (list1 = [], list2 = []) => {
 	return Array.from(map.values());
 };
 
-function reducer(state, action) {
+function reducer(state: ContactCenterState, action: ContactCenterAction): ContactCenterState {
 	switch (action.type) {
 		case 'SET_FIELD':
-			return { ...state, [action.field]: action.payload };
+			return { ...state, [action.field]: action.payload } as ContactCenterState;
 
 		case 'SET_DATA_LISTS': {
 			// updates the "pool" of available users when Firestore data changes
@@ -92,7 +139,7 @@ function reducer(state, action) {
 
 			const applicantCells = applicants.map((u) => ({ id: u.id, name: u.name, cell: u.cell })).filter((u) => u.cell);
 			const memberCells = members.map((u) => ({ id: u.id, name: u.name, cell: u.cell })).filter((u) => u.cell);
-			const memberAliases = members.map((u) => ({ id: u.id, name: u.name, email: u.alias })).filter((u) => u.alias);
+			const memberAliases = members.map((u) => ({ id: u.id, name: u.name, email: u.alias })).filter((u) => u.email);
 
 			return {
 				...state,
@@ -139,7 +186,7 @@ function reducer(state, action) {
 			return { ...state, recipients: [], cc: [], smsRecipients: [], sender: '' };
 
 		default:
-			throw new Error(`Unhandled action type: ${action.type}`);
+			throw new Error(`Unhandled action type: ${(action as { type: string }).type}`);
 	}
 }
 
@@ -150,7 +197,26 @@ function reducer(state, action) {
 /**
  * Groups active applications by type (New vs. Returning) to populate the preset lists.
  */
-const processApplications = (currentApplications, appTypeMap) => {
+interface AppTypeBucket {
+	ids: Set<string>;
+	handler: (applicants: DocumentData[]) => void;
+}
+
+interface TemplateOption {
+	name: string;
+	label: string;
+	requiredFields?: { name: string; label: string; type: string }[];
+}
+
+interface TemplateGroup {
+	title: string;
+	options: TemplateOption[];
+}
+
+/** freeSolo Autocomplete entries may be raw strings until normalized on change. */
+const contactId = (entry: string | ContactUser): string => (typeof entry === 'string' ? entry : entry.id);
+
+const processApplications = (currentApplications: DocumentData[], appTypeMap: Record<string, AppTypeBucket>) => {
 	// 1. Buckets IDs into Sets based on application type
 	for (const app of currentApplications) {
 		if (appTypeMap[app.type]?.ids && app.completedBy) {
@@ -195,33 +261,50 @@ const ContactCenter = () => {
 	const [state, dispatch] = useReducer(reducer, initialState);
 
 	// Local state for Presets Dropdown Menus
-	const [allMembersData, setAllMembersData] = useState([]);
-	const [recipientPresetAnchorEl, setRecipientPresetAnchorEl] = useState(null);
-	const [ccPresetAnchorEl, setCcPresetAnchorEl] = useState(null);
-	const [smsPresetAnchorEl, setSmsPresetAnchorEl] = useState(null);
+	const [allMembersData, setAllMembersData] = useState<DocumentData[]>([]);
+	const [recipientPresetAnchorEl, setRecipientPresetAnchorEl] = useState<HTMLElement | null>(null);
+	const [ccPresetAnchorEl, setCcPresetAnchorEl] = useState<HTMLElement | null>(null);
+	const [smsPresetAnchorEl, setSmsPresetAnchorEl] = useState<HTMLElement | null>(null);
 
 	useTitle({ title: 'Contact Center', appear: false });
+	const { templates: emailTemplates } = useEmailTemplates();
+
+	const groupedTemplates = (emailTemplates || []).reduce<Record<string, TemplateGroup>>((acc, config) => {
+		const group = (config.group as string) || 'Canned Notifications';
+		if (!acc[group]) acc[group] = { title: group, options: [] };
+		acc[group].options.push({ name: (config.id || config.key) as string, label: config.label as string, requiredFields: config.requiredFields as TemplateOption['requiredFields'] });
+		return acc;
+	}, {});
+	const groupOrder = ['Canned Notifications', 'Reminders', 'Deadline', 'Application Status'];
+	const dynamicGroups = groupOrder.map((title) => groupedTemplates[title]).filter(Boolean);
+	const templates = dynamicGroups.length > 0 ? dynamicGroups : staticTemplateGroups;
+
 
 	// --- Data Transformers ---
 
 	const createHandler = useCallback(
-		(filter) => (data) => {
-			return data
-				.filter((u) => state.override || (filter === 'email' ? u.notifications?.email : u.notifications?.sms))
-				.map((u) => ({
-					id: u.id,
-					name: `${u.firstName} ${u.lastName}`,
-					email: u.email,
-					cell: u.cell,
-					alias: u.alias,
-				}));
-		},
+		(filter: 'email' | 'sms') =>
+			(data: DocumentData[]): ContactUser[] => {
+				return data
+					.filter((u) => {
+						if (state.override) return true;
+						const notifications = u.notifications as { email?: boolean; sms?: boolean } | undefined;
+						return filter === 'email' ? notifications?.email : notifications?.sms;
+					})
+					.map((u) => ({
+						id: u.id,
+						name: `${u.firstName} ${u.lastName}`,
+						email: u.email,
+						cell: u.cell,
+						alias: u.alias,
+					}));
+			},
 		[state.override]
 	);
 
 	// --- Effect 1: Handle Pre-filled Data (from Navigation State) ---
 	useEffect(() => {
-		const prefilledState = location.state;
+		const prefilledState = location.state as { prefilledRecipients?: ContactUser[]; prefilledSms?: ContactUser[] } | null;
 		if (prefilledState && (prefilledState.prefilledRecipients || prefilledState.prefilledSms)) {
 			dispatch({ type: 'PREFILL_DATA', payload: prefilledState });
 			// Clear state so refresh doesn't re-trigger
@@ -231,14 +314,14 @@ const ContactCenter = () => {
 
 	// --- Effect 2: Initialize "From" Senders ---
 	useEffect(() => {
-		const dynamicSenders = staticSenders.map((s) => ({ ...s, isSystem: true }));
+		const dynamicSenders: ContactUser[] = staticSenders.map((s) => ({ ...s, isSystem: true }));
 
 		// Add User's Personal Alias
 		if (member?.alias) {
 			dynamicSenders.push({
 				id: member.id,
 				name: `${member.firstName} | ${brand.organizationShortName}`,
-				email: member.alias,
+				email: member.alias as string,
 				isSystem: false,
 			});
 		}
@@ -278,10 +361,10 @@ const ContactCenter = () => {
 
 	// --- Effect 4: Segment Applicants by Type (New vs Returning) ---
 	const createApplicantUpdateHandler = useCallback(
-		(emailField, cellField) => (applicants) => {
-			const emails = applicants.filter((u) => state.override || u.notifications?.email).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`, email: u.email }));
+		(emailField: ContactListField, cellField: ContactListField) => (applicants: DocumentData[]) => {
+			const emails = applicants.filter((u) => state.override || (u.notifications as { email?: boolean } | undefined)?.email).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`, email: u.email }));
 
-			const cells = applicants.filter((u) => state.override || u.notifications?.sms).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`, cell: u.cell }));
+			const cells = applicants.filter((u) => state.override || (u.notifications as { sms?: boolean } | undefined)?.sms).map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`, cell: u.cell }));
 
 			dispatch({ type: 'SET_FIELD', field: emailField, payload: emails });
 			dispatch({ type: 'SET_FIELD', field: cellField, payload: cells });
@@ -290,15 +373,16 @@ const ContactCenter = () => {
 	);
 
 	useEffect(() => {
-		if (!config?.APPLICATION_DEADLINE) return;
+		const cycleYear = typeof config?.CYCLE_YEAR === 'number' ? config.CYCLE_YEAR : config?.APPLICATION_DEADLINE ? new Date(config.APPLICATION_DEADLINE as string).getFullYear() : null;
+		if (!cycleYear) return;
 
-		const appTypeMap = {
+		const appTypeMap: Record<string, AppTypeBucket> = {
 			[ApplicationType.newApplication]: { ids: new Set(), handler: createApplicantUpdateHandler('newApplicantEmails', 'newApplicantCells') },
 			[ApplicationType.returningGrant]: { ids: new Set(), handler: createApplicantUpdateHandler('returningApplicantEmails', 'returningApplicantCells') },
 			[ApplicationType.scholarship]: { ids: new Set(), handler: createApplicantUpdateHandler('scholarshipApplicantEmails', 'scholarshipApplicantCells') },
 		};
 
-		const unsub = getRealTimeApplicationsByWindow(config.APPLICATION_DEADLINE, true, (currentApplications) => {
+		const unsub = getRealTimeApplicationsByWindow(cycleYear, true, (currentApplications) => {
 			return processApplications(currentApplications, appTypeMap);
 		});
 		return () => unsub?.();
@@ -307,13 +391,13 @@ const ContactCenter = () => {
 	// --- Actions ---
 
 	const handleSend = useCallback(
-		async (templateKey, data = {}) => {
+		async (templateKey: string, data: Record<string, unknown> = {}) => {
 			const { recipients, smsRecipients, sender, cc } = state;
 			if (!recipients.length && !smsRecipients.length) {
 				showAlert({ message: 'Please add at least one recipient.', type: 'warning' });
 				return { success: false };
 			}
-			if (!sender?.email) {
+			if (!sender || !sender.email) {
 				showAlert({ message: 'Please select a sender.', type: 'warning' });
 				return { success: false };
 			}
@@ -334,32 +418,31 @@ const ContactCenter = () => {
 		[state, showAlert, handleError]
 	);
 
-	const handleCustomMessageSend = async (formData) => {
+	const handleCustomMessageSend = async (formData: unknown) => {
 		if (!formData) return;
 		const { recipients, sender, cc, smsRecipients } = state;
-		const { subject = '', emailBody = '', smsBody = '' } = formData;
+		const { subject = '', emailBody = '', smsBody = '' } = formData as { subject?: string; emailBody?: string; smsBody?: string };
 
 		if (!recipients.length && !smsRecipients.length) {
 			showAlert({ message: 'Please add at least one recipient.', type: 'warning' });
 			return;
 		}
-		if (!sender?.email) {
+		if (!sender || !sender.email) {
 			showAlert({ message: 'Please select a sender.', type: 'warning' });
 			return;
 		}
 
 		try {
-			const formatEmail = (name, email) => {
+			const formatEmail = (name?: string, email?: string): string | null => {
 				const cleanName = name?.trim() || '';
 				const cleanEmail = email?.trim() || '';
 				if (!cleanEmail) return null;
 				return cleanName && cleanName !== 'undefined undefined' ? `${cleanName} <${cleanEmail}>` : cleanEmail;
 			};
 
-			const ccRecipients = cc.map((c) => {
-				if (typeof c === 'string') return c;
-				return formatEmail(c.name, c.email);
-			}).filter(Boolean);
+			const ccRecipients = cc
+				.map((c) => formatEmail(c.name, c.email))
+				.filter((entry): entry is string => Boolean(entry));
 
 			const batch = writeBatch(db);
 			let emailCount = 0;
@@ -372,7 +455,7 @@ const ContactCenter = () => {
 				const text = htmlDoc.body.textContent || '';
 
 				for (const recipient of recipients) {
-					const email = {
+					const emailPayload = {
 						to: formatEmail(recipient.name, recipient.email),
 						from: formatEmail(sender.name, sender.email),
 						replyTo: config.SYSTEM_REPLY_TO,
@@ -384,6 +467,7 @@ const ContactCenter = () => {
 						},
 						createdAt: serverTimestamp(),
 					};
+					const email = isDemoEmailMode(config) ? withSimulatedDelivery(emailPayload) : emailPayload;
 					batch.set(doc(collection(db, collections.emails), uuid()), email);
 					emailCount++;
 				}
@@ -413,15 +497,15 @@ const ContactCenter = () => {
 		}
 	};
 
-	const handleOpenTemplateDialog = (template) => {
-		if (template.requiredFields?.length > 0) {
+	const handleOpenTemplateDialog = (template: TemplateOption) => {
+		if (template.requiredFields && template.requiredFields.length > 0) {
 			// If template requires variables (e.g. rejection reason), ask for them
 			showDialog({
 				id: 'templatedMessage',
 				data: { title: `Enter Required Data for ${template.label}`, inputs: template.requiredFields },
-				callback: (formData) => {
+				callback: (formData: unknown) => {
 					if (formData) {
-						handleSend(template.name, formData);
+						handleSend(template.name, formData as Record<string, unknown>);
 					}
 				},
 			});
@@ -434,8 +518,8 @@ const ContactCenter = () => {
 	// --- List Management Handlers ---
 
 	const handleListChange = useCallback(
-		(fieldName) =>
-			(event, newValue = []) => {
+		(fieldName: ContactListField) =>
+			(event: unknown, newValue: (ContactUser | string)[] = []) => {
 				const isEmailField = fieldName === 'recipients' || fieldName === 'cc';
 				const property = isEmailField ? 'email' : 'cell';
 
@@ -450,21 +534,21 @@ const ContactCenter = () => {
 	const handleCellChange = handleListChange('smsRecipients');
 
 	const removeFromList = useCallback(
-		(fieldName, itemToRemove) => {
+		(fieldName: ContactListField, itemToRemove: ContactUser) => {
 			const currentList = state[fieldName] || [];
 			const updatedList = currentList.filter((item) => item.id !== itemToRemove.id);
 			dispatch({ type: 'SET_FIELD', field: fieldName, payload: updatedList });
 		},
 		[state]
 	);
-	const removeRecipient = (item) => removeFromList('recipients', item);
-	const removeCC = (item) => removeFromList('cc', item);
-	const removeCell = (item) => removeFromList('smsRecipients', item);
+	const removeRecipient = (item: ContactUser) => removeFromList('recipients', item);
+	const removeCC = (item: ContactUser) => removeFromList('cc', item);
+	const removeCell = (item: ContactUser) => removeFromList('smsRecipients', item);
 
 	// --- Preset Handlers ---
 
 	const addPresetToList = useCallback(
-		(fieldName, presetList) => {
+		(fieldName: ContactListField, presetList: ContactUser[]) => {
 			const currentList = state[fieldName] || [];
 			const existingIds = new Set(currentList.map((item) => item.id));
 			const newItems = presetList.filter((item) => (item.email || item.cell) && !existingIds.has(item.id));
@@ -472,9 +556,9 @@ const ContactCenter = () => {
 		},
 		[state]
 	);
-	const addPresetRecipients = (list) => addPresetToList('recipients', list);
-	const addPresetCCs = (list) => addPresetToList('cc', list);
-	const addPresetCells = (list) => addPresetToList('smsRecipients', list);
+	const addPresetRecipients = (list: ContactUser[]) => addPresetToList('recipients', list);
+	const addPresetCCs = (list: ContactUser[]) => addPresetToList('cc', list);
+	const addPresetCells = (list: ContactUser[]) => addPresetToList('smsRecipients', list);
 
 	const addPresetMemberAliases = useCallback(() => {
 		const aliasRecipients = allMembersData
@@ -482,27 +566,29 @@ const ContactCenter = () => {
 			.map((m) => ({
 				id: m.id + '-alias',
 				name: `${m.firstName} ${m.lastName}`,
-				email: m.alias,
+				email: m.alias as string,
 			}));
 		addPresetToList('recipients', aliasRecipients);
 	}, [allMembersData, addPresetToList]);
 
-	const handlePresetMenuOpen = (setter) => (event) => setter(event.currentTarget);
-	const handlePresetMenuClose = (setter) => () => setter(null);
-	const handlePresetAction = (actionFn, value, menuCloser) => {
+	const handlePresetMenuOpen = (setter: (el: HTMLElement | null) => void) => (event: MouseEvent<HTMLElement>) => setter(event.currentTarget);
+	const handlePresetMenuClose = (setter: (el: HTMLElement | null) => void) => () => setter(null);
+	const handlePresetAction = (actionFn: (value: ContactUser[]) => void, value: ContactUser[], menuCloser: () => void) => {
 		actionFn(value);
 		menuCloser();
 	};
 
 	return (
-		<Box sx={{ p: 2, pb: 6 }} display='flex' flexDirection='column' gap={3}>
-			{/* Page Header */}
-			<Box borderRadius='12px' boxShadow={boxShadow} bgcolor={darkMode ? 'background.main' : 'white'} display='flex' alignItems='center' justifyContent='space-between' padding={1} paddingX={2}>
-				<Typography fontSize='24px' color={darkMode ? 'primary.main' : 'highlight.main'}>
+		<Box sx={{ p: 2, pb: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+			<Box sx={{ ...adminPageHeaderSx(boxShadow), justifyContent: 'space-between' }}>
+				<Typography color={getAdminPageTitleColor(darkMode)} sx={adminPageTitleSx}>
 					Contact Center
 				</Typography>
 				{member?.permissions?.email && (
-					<Box display='flex' gap={1}>
+					<Box sx={{ display: 'flex', gap: 1 }}>
+						<Button variant='outlined' onClick={() => showDialog({ id: 'templateManager', data: { component: TemplateManagerDialog, maxWidth: 'md' } })}>
+							Manage Templates
+						</Button>
 						<Button variant='outlined' color='info' onClick={() => showDialog({ id: 'emailLogs', data: { component: EmailLogsDialog, maxWidth: 'md' } })}>
 							View Sent Logs
 						</Button>
@@ -510,36 +596,40 @@ const ContactCenter = () => {
 				)}
 			</Box>
 
+			{isDemoEmailMode(config) && (
+				<Alert severity='info' sx={{ mx: 0 }}>
+					{DEMO_EMAIL_BANNER}
+				</Alert>
+			)}
+
 			<Grid container spacing={3}>
-				{/* 1. Configuration Panel (Recipients & Sender) */}
-				<Grid item xs={12}>
-					<Box display='flex' flexDirection='column' padding={2} gap='10px' bgcolor='background.main' color='text.primary' style={{ borderRadius: '12px', boxShadow: boxShadow }}>
-						{/* Header & Override Toggle */}
-						<Box display='flex' flexDirection='row' flexWrap='nowrap' justifyContent='space-between' alignItems='center'>
-							<Typography component='h2' variant='span' color='text.secondary'>
+				<Grid size={12}>
+					<Box sx={{ ...adminPagePanelSx(boxShadow), p: 2, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+						<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'space-between', alignItems: 'center' }}>
+							<Typography component='h2' variant='subtitle1'>
 								Headers
 							</Typography>
 							<FormControlLabel control={<Switch checked={state.override} onChange={() => dispatch({ type: 'SET_FIELD', field: 'override', payload: !state.override })} />} label='Ignore Preferences?' />
 						</Box>
 
-						{/* RECIPIENTS FIELD */}
 						<Autocomplete
 							multiple
 							freeSolo
 							options={state.allUserEmails}
 							value={state.recipients}
 							getOptionLabel={(option) => (typeof option === 'string' ? option : `${option.name} <${option.email}>`)}
-							isOptionEqualToValue={(option, value) => option.id === value.id}
-							renderTags={(value, getTagProps) =>
+							isOptionEqualToValue={(option, value) => contactId(option) === contactId(value)}
+							renderValue={(value, getItemProps) =>
 								value.map((option, index) => {
-									const { key, ...tagProps } = getTagProps({ index });
-									return <Chip key={option.id || key} label={`${option.name} <${option.email}>`} {...tagProps} onDelete={() => removeRecipient(option)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
+									const { key, ...itemProps } = getItemProps({ index });
+									const user = option as ContactUser;
+									return <Chip key={user.id || key} label={`${user.name} <${user.email}>`} {...itemProps} onDelete={() => removeRecipient(user)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
 								})
 							}
 							onChange={handleRecipientsChange}
 							renderInput={(params) => (
-								<Box display='flex' flexDirection='row' flexWrap='nowrap' alignItems='center' gap={1}>
-									<TextField {...params} label='Recipients (email@example.com)' variant='outlined' fullWidth InputProps={{ ...params.InputProps, sx: { flexWrap: 'wrap' } }} />
+								<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 1 }}>
+									<TextField {...params} label='Recipients (email@example.com)' variant='outlined' fullWidth slotProps={{ ...params.slotProps, input: { ...params.slotProps?.input, sx: { flexWrap: 'wrap' } } }} />
 									<Button variant='outlined' size='small' onClick={handlePresetMenuOpen(setRecipientPresetAnchorEl)} endIcon={<ArrowDropDownIcon />} sx={{ whiteSpace: 'nowrap', height: '56px', p: 3 }}>
 										Add Preset
 									</Button>
@@ -547,7 +637,7 @@ const ContactCenter = () => {
 										<MenuItem onClick={() => handlePresetAction(addPresetRecipients, state.memberEmails, handlePresetMenuClose(setRecipientPresetAnchorEl))}>
 											<GroupAddIcon sx={{ mr: 1 }} /> Members (Email)
 										</MenuItem>
-										<MenuItem onClick={() => handlePresetAction(addPresetMemberAliases, null, handlePresetMenuClose(setRecipientPresetAnchorEl))}>
+										<MenuItem onClick={() => handlePresetAction(addPresetMemberAliases, [], handlePresetMenuClose(setRecipientPresetAnchorEl))}>
 											<AliasIcon sx={{ mr: 1 }} /> Members (Alias)
 										</MenuItem>
 										<MenuItem onClick={() => handlePresetAction(addPresetRecipients, state.applicantEmails, handlePresetMenuClose(setRecipientPresetAnchorEl))}>
@@ -567,34 +657,44 @@ const ContactCenter = () => {
 							)}
 						/>
 
-						{/* SENDER SELECT */}
 						<FormControl fullWidth variant='outlined'>
 							<InputLabel id='sender-select-label'>Sender</InputLabel>
-							<Select labelId='sender-select-label' value={state.sender} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'sender', payload: e.target.value })} label='Sender' renderValue={(selected) => (selected ? `${selected.name} <${selected.email}>` : '')}>
+							<Select
+								labelId='sender-select-label'
+								value={state.sender ? state.sender.email || '' : ''}
+								onChange={(e: SelectChangeEvent) => {
+									const selected = state.availableSenders.find((s) => s.email === e.target.value) || '';
+									dispatch({ type: 'SET_FIELD', field: 'sender', payload: selected });
+								}}
+								label='Sender'
+								renderValue={(selectedEmail) => {
+									const selected = state.availableSenders.find((s) => s.email === selectedEmail);
+									return selected ? `${selected.name} <${selected.email}>` : '';
+								}}>
 								{state.availableSenders.map((s) => (
-									<MenuItem key={s.id || s.email} value={s}>{`${s.name} <${s.email}>`}</MenuItem>
+									<MenuItem key={s.id || s.email} value={s.email}>{`${s.name} <${s.email}>`}</MenuItem>
 								))}
 							</Select>
 						</FormControl>
 
-						{/* CC FIELD */}
 						<Autocomplete
 							multiple
 							freeSolo
 							options={state.allCC}
 							value={state.cc}
 							getOptionLabel={(option) => (typeof option === 'string' ? option : `${option.name} <${option.email}>`)}
-							isOptionEqualToValue={(option, value) => option.id === value.id}
-							renderTags={(value, getTagProps) =>
+							isOptionEqualToValue={(option, value) => contactId(option) === contactId(value)}
+							renderValue={(value, getItemProps) =>
 								value.map((option, index) => {
-									const { key, ...tagProps } = getTagProps({ index });
-									return <Chip key={option.id || key} label={`${option.name} <${option.email}>`} {...tagProps} onDelete={() => removeCC(option)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
+									const { key, ...itemProps } = getItemProps({ index });
+									const user = option as ContactUser;
+									return <Chip key={user.id || key} label={`${user.name} <${user.email}>`} {...itemProps} onDelete={() => removeCC(user)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
 								})
 							}
 							onChange={handleCCChange}
 							renderInput={(params) => (
-								<Box display='flex' flexDirection='row' flexWrap='nowrap' alignItems='center' gap={1}>
-									<TextField {...params} label='CCs (email@example.com)' variant='outlined' fullWidth InputProps={{ ...params.InputProps, sx: { flexWrap: 'wrap' } }} />
+								<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 1 }}>
+									<TextField {...params} label='CCs (email@example.com)' variant='outlined' fullWidth slotProps={{ ...params.slotProps, input: { ...params.slotProps?.input, sx: { flexWrap: 'wrap' } } }} />
 									<Button variant='outlined' size='small' onClick={handlePresetMenuOpen(setCcPresetAnchorEl)} endIcon={<ArrowDropDownIcon />} sx={{ whiteSpace: 'nowrap', height: '56px', p: 3 }}>
 										Add Preset
 									</Button>
@@ -607,24 +707,24 @@ const ContactCenter = () => {
 							)}
 						/>
 
-						{/* SMS RECIPIENTS FIELD */}
 						<Autocomplete
 							multiple
 							freeSolo
 							options={state.allUserCells}
 							value={state.smsRecipients}
 							getOptionLabel={(option) => (typeof option === 'string' ? option : `${option.name} <+1${option.cell}>`)}
-							isOptionEqualToValue={(option, value) => option.id === value.id}
-							renderTags={(value, getTagProps) =>
+							isOptionEqualToValue={(option, value) => contactId(option) === contactId(value)}
+							renderValue={(value, getItemProps) =>
 								value.map((option, index) => {
-									const { key, ...tagProps } = getTagProps({ index });
-									return <Chip key={option.id || key} label={`${option.name} <+1${option.cell}>`} {...tagProps} onDelete={() => removeCell(option)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
+									const { key, ...itemProps } = getItemProps({ index });
+									const user = option as ContactUser;
+									return <Chip key={user.id || key} label={`${user.name} <+1${user.cell}>`} {...itemProps} onDelete={() => removeCell(user)} deleteIcon={<CloseOutlined />} sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} color={'secondary'} />;
 								})
 							}
 							onChange={handleCellChange}
 							renderInput={(params) => (
-								<Box display='flex' flexDirection='row' flexWrap='nowrap' alignItems='center' gap={1}>
-									<TextField {...params} label='Cell Numbers (9781230456)' variant='outlined' fullWidth InputProps={{ ...params.InputProps, sx: { flexWrap: 'wrap' } }} />
+								<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 1 }}>
+									<TextField {...params} label='Cell Numbers (9781230456)' variant='outlined' fullWidth slotProps={{ ...params.slotProps, input: { ...params.slotProps?.input, sx: { flexWrap: 'wrap' } } }} />
 									<Button variant='outlined' size='small' onClick={handlePresetMenuOpen(setSmsPresetAnchorEl)} endIcon={<ArrowDropDownIcon />} sx={{ whiteSpace: 'nowrap', height: '56px', p: 3 }}>
 										Add Preset
 									</Button>
@@ -651,29 +751,72 @@ const ContactCenter = () => {
 					</Box>
 				</Grid>
 
-				{/* 2. Template Buttons */}
 				{templates.map((template) => (
-					<Grid item xs={12} sm={6} md={template.title === 'Application Status' ? 8 : 4} key={template.title}>
-						<Box display='flex' flexDirection='column' gap='10px' bgcolor='background.main' color={darkMode ? 'text.active' : 'secondary.main'} sx={{ padding: '20px', borderRadius: '12px', boxShadow: boxShadow, height: '310px' }}>
-							<Typography component='h2' variant='span' color='text.secondary'>
+					<Grid size={{ xs: 12, sm: 6, md: template.title === 'Application Status' ? 8 : 4 }} key={template.title} sx={{ display: 'flex' }}>
+						<Box
+							sx={{
+								...adminPagePanelSx(boxShadow),
+								p: '20px',
+								display: 'flex',
+								flexDirection: 'column',
+								gap: '10px',
+								minHeight: 310,
+								height: 'auto',
+								width: '100%',
+								minWidth: 0,
+								// Do not use overflow:hidden here — in a CSS grid/flex item it
+								// caps height at minHeight and clips template buttons.
+								overflow: 'visible',
+								boxSizing: 'border-box',
+								color: darkMode ? 'text.primary' : 'secondary.main',
+							}}>
+							<Typography component='h2' variant='subtitle1'>
 								{template.title}
 							</Typography>
-							{template.options.map((option) => (
-								<Button key={option.name} variant='contained' sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} onClick={() => handleOpenTemplateDialog(option)}>
-									{option.label}
-								</Button>
-							))}
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0, width: '100%' }}>
+								{template.options.map((option) => (
+									<Button
+										key={option.name}
+										variant='contained'
+										fullWidth
+										sx={{
+											backgroundColor: darkMode ? 'primary.main' : 'highlight.main',
+											whiteSpace: 'normal',
+											lineHeight: 1.3,
+											py: 1,
+											px: 1.5,
+											textAlign: 'center',
+											flexShrink: 0,
+											maxWidth: '100%',
+										}}
+										onClick={() => handleOpenTemplateDialog(option)}>
+										{option.label}
+									</Button>
+								))}
+							</Box>
 						</Box>
 					</Grid>
 				))}
 
-				{/* 3. Custom Message Box */}
-				<Grid item xs={12} sm={6} md={4}>
-					<Box display='flex' flexDirection='column' bgcolor='background.main' color={darkMode ? 'text.active' : 'secondary.main'} sx={{ padding: '20px', borderRadius: '12px', boxShadow: boxShadow, height: '310px' }}>
-						<Typography component='h2' variant='span' color='text.secondary'>
+				<Grid size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: 'flex' }}>
+					<Box
+						sx={{
+							...adminPagePanelSx(boxShadow),
+							p: '20px',
+							display: 'flex',
+							flexDirection: 'column',
+							minHeight: 310,
+							height: 'auto',
+							width: '100%',
+							minWidth: 0,
+							overflow: 'visible',
+							boxSizing: 'border-box',
+							color: darkMode ? 'text.primary' : 'secondary.main',
+						}}>
+						<Typography component='h2' variant='subtitle1'>
 							Send a Custom Message
 						</Typography>
-						<Box mt='auto' pt={2}>
+						<Box sx={{ mt: 'auto', pt: 2 }}>
 							<Button variant='contained' fullWidth sx={{ backgroundColor: darkMode ? 'primary.main' : 'highlight.main' }} onClick={() => showDialog({ id: 'customMessage', callback: handleCustomMessageSend })}>
 								Compose Message
 							</Button>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Reschedule Dialog
  * A modal to move an existing interview to a new time slot.
@@ -9,7 +8,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import dayjs from 'dayjs';
 import { Typography, Button, CircularProgress, TextField, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 
@@ -19,7 +17,19 @@ import { useAlert } from '../../context/AlertContext';
 // Backend
 import { rescheduleInterview } from '../../config/data/firebase';
 
-const RescheduleDialog = ({ interview, onSuccess, onCancel }) => {
+interface RescheduleInterviewData {
+	id: string;
+	startTime?: { toDate: () => Date };
+	[key: string]: unknown;
+}
+
+interface RescheduleDialogProps {
+	interview?: RescheduleInterviewData;
+	onSuccess: () => void;
+	onCancel: () => void;
+}
+
+const RescheduleDialog = ({ interview, onSuccess, onCancel }: RescheduleDialogProps) => {
 	const { handleError, showAlert } = useAlert();
 	const [newTime, setNewTime] = useState('');
 	const [loading, setLoading] = useState(false);
@@ -39,6 +49,10 @@ const RescheduleDialog = ({ interview, onSuccess, onCancel }) => {
 			return;
 		}
 
+		if (!interview) {
+			return;
+		}
+
 		setLoading(true);
 		try {
 			const newStartTime = new Date(newTime);
@@ -52,7 +66,7 @@ const RescheduleDialog = ({ interview, onSuccess, onCancel }) => {
 				sendInvite: sendInvite,
 			});
 
-			showAlert({ message: result.data.message, type: 'success' });
+			showAlert({ message: (result.data as { message: string }).message, type: 'success' });
 			onSuccess();
 		} catch (error) {
 			handleError(error, 'Failed to reschedule interview.');
@@ -69,7 +83,7 @@ const RescheduleDialog = ({ interview, onSuccess, onCancel }) => {
 			<DialogContent>
 				<Typography sx={{ mb: 2 }}>Current time: {currentTime ? dayjs(currentTime).format('MMMM D, YYYY h:mm A') : 'Not scheduled'}</Typography>
 
-				<TextField autoFocus margin='dense' id='newTime' label='New Interview Time' type='datetime-local' fullWidth value={newTime} onChange={(e) => setNewTime(e.target.value)} InputLabelProps={{ shrink: true }} />
+				<TextField autoFocus margin='dense' id='newTime' label='New Interview Time' type='datetime-local' fullWidth value={newTime} onChange={(e) => setNewTime(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
 			</DialogContent>
 
 			<DialogActions sx={{ p: '0 24px 24px' }}>
@@ -87,12 +101,6 @@ const RescheduleDialog = ({ interview, onSuccess, onCancel }) => {
 			</DialogActions>
 		</>
 	);
-};
-
-RescheduleDialog.propTypes = {
-	interview: PropTypes.object,
-	onSuccess: PropTypes.func.isRequired,
-	onCancel: PropTypes.func.isRequired,
 };
 
 export default RescheduleDialog;

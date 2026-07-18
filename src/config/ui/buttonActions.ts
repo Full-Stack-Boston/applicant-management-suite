@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ACTION BUTTON CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -20,6 +19,30 @@
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../data/firebase';
 import { paths } from '../navigation/paths';
+import type { PathParams } from '../navigation/routeUtils';
+import type { AlertContextValue } from '../../context/AlertContext';
+import type { Member } from '../../types/domain';
+
+// --- Types ---
+
+/** The asset (member/applicant/application/request) the action row is rendered for. */
+interface AssetActionTarget {
+	id?: string;
+	email?: string;
+	[key: string]: unknown;
+}
+
+export interface AssetAction {
+	label: string;
+	onClick?: (asset: AssetActionTarget) => void | Promise<void>;
+	dialogId?: string;
+	navTo?: (asset: AssetActionTarget) => { path: string; params?: PathParams };
+	hide?: boolean;
+}
+
+type ShowAlert = AlertContextValue['showAlert'];
+type HandleError = AlertContextValue['handleError'];
+type BooleanSetter = (value: boolean) => void;
 
 // --- 1. Member Actions (Admins) ---
 
@@ -32,13 +55,13 @@ import { paths } from '../navigation/paths';
  * @param {boolean} showSignature - Toggle state for the Signature image.
  * @param {Function} setShowSignature - Setter for the Signature toggle.
  */
-export const getMemberActions = (showAlert, handleError, showNotes, setShowNotes, showSignature, setShowSignature) => {
+export const getMemberActions = (showAlert: ShowAlert, handleError: HandleError, showNotes: boolean, setShowNotes: BooleanSetter, showSignature: boolean, setShowSignature: BooleanSetter): AssetAction[] => {
 	return [
 		{
 			label: 'Send Password Reset Email',
 			onClick: async (member) => {
 				try {
-					await sendPasswordResetEmail(auth, member.email);
+					await sendPasswordResetEmail(auth, member.email as string);
 					showAlert({ message: 'Reset email sent successfully.', type: 'success' });
 				} catch (err) {
 					handleError(err, 'resetPasswordEmail');
@@ -71,12 +94,12 @@ export const getMemberActions = (showAlert, handleError, showNotes, setShowNotes
 /**
  * Generates actions for the Applicant Profile view.
  */
-export const getApplicantActions = (showAlert, handleError, showNotes, setShowNotes) => [
+export const getApplicantActions = (showAlert: ShowAlert, handleError: HandleError, showNotes: boolean, setShowNotes: BooleanSetter): AssetAction[] => [
 	{
 		label: 'Send Password Reset Email',
 		onClick: async (applicant) => {
 			try {
-				await sendPasswordResetEmail(auth, applicant.email);
+				await sendPasswordResetEmail(auth, applicant.email as string);
 				showAlert({ message: 'Reset email sent successfully.', type: 'success' });
 			} catch (err) {
 				handleError(err, 'resetPasswordEmail');
@@ -105,7 +128,7 @@ export const getApplicantActions = (showAlert, handleError, showNotes, setShowNo
  * Generates actions for the Application Review view.
  * @param {Object} member - The current logged-in admin (used for permission checks).
  */
-export const getApplicationActions = (showNotes, setShowNotes, member = null) => [
+export const getApplicationActions = (showNotes: boolean, setShowNotes: BooleanSetter, member: Member | null = null): AssetAction[] => [
 	{
 		label: 'Change Status',
 		dialogId: 'changeAppStatus', // Triggers Status Change Dialog
@@ -137,7 +160,7 @@ export const getApplicationActions = (showNotes, setShowNotes, member = null) =>
 /**
  * Generates actions for the Reference Request view.
  */
-export const getRequestActions = (showNotes, setShowNotes) => [
+export const getRequestActions = (showNotes: boolean, setShowNotes: BooleanSetter): AssetAction[] => [
 	{
 		label: showNotes ? 'Hide Notes' : 'Show Notes',
 		onClick: () => setShowNotes(!showNotes),

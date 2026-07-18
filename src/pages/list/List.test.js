@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import List from './List';
 import { useMediaQuery } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
@@ -8,6 +8,10 @@ import { useMailbox } from '../../context/MailboxContext';
 import { useAlert } from '../../context/AlertContext';
 import { useRealTimeList } from '../../hooks/useRealTimeList';
 import { getRoomDetails } from '../../config/data/firebase';
+
+vi.mock('../../context/ConfigContext', () => ({
+	useConfig: jest.fn(() => ({ emailDeliveryMode: 'demo' })),
+}));
 
 // --- Mocks ---
 
@@ -57,7 +61,7 @@ vi.mock('../../config/admin/lists', () => ({
 	mobileCardConfig: {
 		users: {
 			content: ({ item }) => <div>Mobile Content: {item.id}</div>,
-			actions: [],
+			actionKeys: [],
 		},
 	},
 }));
@@ -73,7 +77,15 @@ vi.mock('../../config/data/firebase', () => ({
 	backfillSentEmailTags: jest.fn(),
 	backfillSearchableTerms: jest.fn(),
 	backfillEmailContent: jest.fn(),
+	migrateEmailTemplates: jest.fn(),
 	backfillApplicantCreationDates: jest.fn(),
+	migrateDeadlinesToCycleYear: jest.fn(),
+	backfillApplicantGradYears: jest.fn(),
+	purgeDeletedApplications: jest.fn(),
+	findUnownedRecords: jest.fn(),
+	purgeUnownedRecords: jest.fn(),
+	cleanupOrphanedStorage: jest.fn(),
+	purgeLogs: jest.fn(),
 }));
 
 // 5. Contexts & Hooks
@@ -110,6 +122,7 @@ vi.mock('../../components/datatable/Datatable', () => ({ default: (props) => (
 	</div>
 ) }));
 vi.mock('../../components/list/MobileListCard', () => ({ default: ({ children }) => <div data-testid='mobile-card'>{children}</div> }));
+vi.mock('../../components/list/MobileListEmptyState', () => ({ default: () => <div data-testid='mobile-empty'>No items</div> }));
 vi.mock('../../components/list/LegacyFinancesTable', () => ({ default: (props) => <div data-testid='legacy-table'>{props.titleIn}</div> }));
 
 describe('List Page Component', () => {
@@ -171,6 +184,16 @@ describe('List Page Component', () => {
 		const cards = screen.getAllByTestId('mobile-card');
 		expect(cards).toHaveLength(2);
 		expect(screen.getByText('Mobile Content: 1')).toBeInTheDocument();
+	});
+
+	test('renders mobile empty state when list has no items', () => {
+		useMediaQuery.mockReturnValue(true);
+		useRealTimeList.mockReturnValue({ data: [], loading: false, year: 2024 });
+
+		render(<List type='users' />);
+
+		expect(screen.getByTestId('mobile-empty')).toBeInTheDocument();
+		expect(screen.queryByTestId('mobile-card')).not.toBeInTheDocument();
 	});
 
 	test('renders LegacyFinancesTable when type is legacyFinances', () => {

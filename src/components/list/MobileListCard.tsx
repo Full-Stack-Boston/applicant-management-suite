@@ -1,24 +1,61 @@
-// @ts-nocheck
-/**
- * Mobile List Card
- * A generic container for list items when displayed on mobile devices.
- * Features:
- * - Consistent styling (shadows, rounding, colors).
- * - "Unread" indicator support (borderLeft).
- * - Flexible "Actions" area that accepts an array of components.
- */
+import React, { useMemo, useState } from 'react';
+import { Box, CardActions, CircularProgress, Divider, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 
-import React from 'react';
-import PropTypes from 'prop-types';
-import { Card, CardContent, CardActions } from '@mui/material';
+import { adminMobileCardSx } from '../../config/ui/adminPageStyles';
+import { ActionCellButton, resolveRowActionMeta, useRowActionInvoker } from '../../config/ui/tableConfig';
+import type { NavigateFunction } from 'react-router-dom';
+import type { SvgIconComponent } from '@mui/icons-material';
 
-// Context
-import { useTheme } from '../../context/ThemeContext';
+const DEFAULT_PRIMARY_COUNT = 3;
 
-const MobileListCard = ({ children, actions = [], isUnread = false, item, navigate, permittedAliases, member }) => {
-	const { boxShadow } = useTheme();
+interface MobileListCardProps {
+	children: React.ReactNode;
+	actionKeys?: string[];
+	primaryCount?: number;
+	isUnread?: boolean;
+	item: Record<string, unknown>;
+	navigate?: NavigateFunction;
+	permittedAliases?: string[];
+	member?: Record<string, unknown>;
+	boxShadow?: string;
+}
 
-	// Props to be passed down to every Action Component
+const MobileListCard = ({ children, actionKeys = [], primaryCount = DEFAULT_PRIMARY_COUNT, isUnread = false, item, navigate, permittedAliases, member, boxShadow }: MobileListCardProps) => {
+	const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+	const [loadingKey, setLoadingKey] = useState<string | null>(null);
+	const { runAction, handleError, member: authMember } = useRowActionInvoker({ permittedAliases });
+
+	const needsOverflow = actionKeys.length > primaryCount;
+	const primaryKeys = needsOverflow ? actionKeys.slice(0, primaryCount) : actionKeys;
+
+	const overflowItems = useMemo(
+		() => {
+			const keys = needsOverflow ? actionKeys.slice(primaryCount) : [];
+			return keys
+				.map((key) => {
+					const meta = resolveRowActionMeta(key, item as Record<string, unknown> & { id: string }, authMember);
+					return meta ? { actionKey: key, ...meta } : null;
+				})
+				.filter(Boolean) as Array<{ actionKey: string; label: string; IconComponent: SvgIconComponent; color?: string }>;
+		},
+		[needsOverflow, actionKeys, primaryCount, item, authMember],
+	);
+
+	const handleOverflowClick = async (event: React.MouseEvent, actionKey: string) => {
+		event.stopPropagation();
+		setMenuAnchor(null);
+		setLoadingKey(actionKey);
+		try {
+			await runAction(actionKey, item as Record<string, unknown> & { id: string });
+		} catch (error) {
+			console.error(error);
+			handleError(error, `action-${actionKey}`);
+		} finally {
+			setLoadingKey(null);
+		}
+	};
+
 	const actionProps = {
 		row: item,
 		navigate,
@@ -26,47 +63,109 @@ const MobileListCard = ({ children, actions = [], isUnread = false, item, naviga
 		member,
 	};
 
+	const hasActions = actionKeys.length > 0;
+
 	return (
-		<Card
+		<Box
 			sx={{
+				...adminMobileCardSx(boxShadow ?? ''),
 				mb: 1.5,
-				borderRadius: '12px',
-				boxShadow: boxShadow,
-				bgcolor: 'background.active',
-				width: '80vw',
 				borderLeft: isUnread ? '5px solid' : 'none',
 				borderColor: 'primary.main',
 			}}>
-			<CardContent sx={{ pb: 0, flex: 1, '&:last-child': { pb: 0 } }}>{children}</CardContent>
+			<Box sx={{ flex: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden', p: { xs: 1.5, sm: 2 }, pb: hasActions ? 0 : 2 }}>
+				{children}
+			</Box>
 
-			{actions.length > 0 && (
-				<CardActions
-					sx={{
-						display: 'flex',
-						flexWrap: 'wrap',
-						justifyContent: 'center',
-						pt: 1.5,
-						px: { xs: 1, sm: 2 },
-						pb: { xs: 1, sm: 1 },
-						gap: 0.5,
-					}}>
-					{actions.map((ActionComponent, index) => (
-						<ActionComponent key={ActionComponent.name || index} {...actionProps} />
+			{hasActions && (
+				<>
+					<Divider sx={{ mx: 1.5, borderColor: 'divider', opacity: 0.5 }} />
+					<CardActions
+						sx={{
+							display: 'flex',
+							justifyContent: 'space-evenly',
+							alignItems: 'flex-start',
+							width: '100%',
+							maxWidth: '100%',
+							minWidth: 0,
+							boxSizing: 'border-box',
+							pt: 0.5,
+							px: { xs: 0.5, sm: 1 },
+							pb: { xs: 0.5, sm: 0.75 },
+						}}>
+					{primaryKeys.map((key) => (
+						<ActionCellButton key={key} actionKey={key} variant='mobile' {...(actionProps as any)} />
 					))}
-				</CardActions>
-			)}
-		</Card>
-	);
-};
 
-MobileListCard.propTypes = {
-	children: PropTypes.node.isRequired,
-	actions: PropTypes.arrayOf(PropTypes.elementType),
-	isUnread: PropTypes.bool,
-	item: PropTypes.object.isRequired,
-	navigate: PropTypes.func,
-	permittedAliases: PropTypes.array,
-	member: PropTypes.object,
+						{needsOverflow && overflowItems.length > 0 && (
+							<>
+								<Box
+									onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); }}
+									aria-label='More actions'
+									sx={{
+										display: 'flex',
+										flexDirection: 'column',
+										alignItems: 'center',
+										justifyContent: 'center',
+										gap: '2px',
+										cursor: 'pointer',
+										borderRadius: '8px',
+										py: 0.75,
+										px: 0.5,
+										transition: 'background-color 0.15s',
+										'&:hover': { bgcolor: 'action.hover' },
+										'&:active': { bgcolor: 'action.selected' },
+										opacity: loadingKey ? 0.5 : 1,
+									}}>
+									<Box sx={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										width: 36,
+										height: 36,
+										borderRadius: '10px',
+										bgcolor: 'action.hover',
+									}}>
+										{loadingKey ? (
+											<CircularProgress size={18} color='inherit' />
+										) : (
+											<MoreHorizIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+										)}
+									</Box>
+									<Typography variant='caption' sx={{
+										fontSize: '10px',
+										fontWeight: 500,
+										color: 'text.secondary',
+										lineHeight: 1.2,
+									}}>
+										More
+									</Typography>
+								</Box>
+								<Menu
+									anchorEl={menuAnchor}
+									open={Boolean(menuAnchor)}
+									onClose={() => setMenuAnchor(null)}
+									onClick={(e: React.MouseEvent) => e.stopPropagation()}
+									slotProps={{ paper: { sx: { minWidth: 180 } } }}>
+									{overflowItems.map(({ actionKey, label, IconComponent, color }) => (
+										<MenuItem
+											key={actionKey}
+											onClick={(e: React.MouseEvent) => handleOverflowClick(e, actionKey)}
+											disabled={loadingKey === actionKey}>
+											<ListItemIcon>
+												<IconComponent fontSize='small' sx={{ color }} />
+											</ListItemIcon>
+											<ListItemText>{label}</ListItemText>
+										</MenuItem>
+									))}
+								</Menu>
+							</>
+						)}
+					</CardActions>
+				</>
+			)}
+		</Box>
+	);
 };
 
 export default MobileListCard;

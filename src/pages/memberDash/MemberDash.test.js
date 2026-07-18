@@ -2,8 +2,15 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 
+// 4. IMPORTS
+import MemberDash from './MemberDash';
+import { memberDashContent } from '../../config/admin';
+import { useConfig } from '../../context/ConfigContext';
+import { useAlert } from '../../context/AlertContext';
+import { useTheme } from '../../context/ThemeContext';
+
 // 1. MOCK ADMIN CONFIG WITH EXPOSED SPIES
-vi.mock('../../config/admin/dashboard', () => {
+vi.mock('../../config/admin', () => {
 	// Create distinct spies for each widget to prevent callback overwrites
 	const statusFetcher = jest.fn();
 	const eligibleFetcher = jest.fn();
@@ -17,7 +24,7 @@ vi.mock('../../config/admin/dashboard', () => {
 		memberDashContent: {
 			widgets: [
 				{
-					id: 'New Application',
+					id: 'New Applicant',
 					title: 'Status Widget',
 					category: 'status',
 					fetcher: statusFetcher, // Distinct fetcher
@@ -87,20 +94,12 @@ vi.mock('../../components/widget/Widget', () => ({ default: (props) => (
 	</div>
 ) }));
 
-// 4. IMPORTS
-import MemberDash from './MemberDash';
-import { memberDashContent } from '../../config/admin/dashboard';
-import { useConfig } from '../../context/ConfigContext';
-import { useAlert } from '../../context/AlertContext';
-import { useTheme } from '../../context/ThemeContext';
-
 // Extract the mocks we exposed in step 1
 const { statusFetcher, eligibleFetcher, comparisonFetcher, customFetcher } = memberDashContent._testMocks;
 
 describe('MemberDash Component', () => {
 	// Variables to capture the callbacks passed to our mocks
 	let statusCallback;
-	let eligibleCallback;
 	let comparisonCallback;
 	let customCallback;
 
@@ -115,7 +114,6 @@ describe('MemberDash Component', () => {
 
 		// Reset captured callbacks
 		statusCallback = null;
-		eligibleCallback = null;
 		comparisonCallback = null;
 		customCallback = null;
 
@@ -131,10 +129,7 @@ describe('MemberDash Component', () => {
 			return statusUnsubSpy;
 		});
 
-		eligibleFetcher.mockImplementation((cb) => {
-			eligibleCallback = cb;
-			return eligibleUnsubSpy;
-		});
+		eligibleFetcher.mockImplementation(() => eligibleUnsubSpy);
 
 		comparisonFetcher.mockImplementation((date, cb) => {
 			comparisonCallback = cb;

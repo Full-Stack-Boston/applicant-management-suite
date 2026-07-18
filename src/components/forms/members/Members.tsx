@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Member Admin Form
  * used to Add or Edit internal team members.
@@ -9,7 +8,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { v4 as uuid } from 'uuid';
 
 // Context & Hooks
@@ -24,6 +22,16 @@ import { memberFormConfig } from '../../../config/ui/formConfig';
 // Components
 import Loader from '../../loader/Loader';
 import GenericAdminForm from '../GenericAdminForm';
+
+import type { ApplicationRecord } from '../types';
+
+interface MemberFormData {
+	id: string;
+	email?: string;
+	picture?: Record<string, unknown> | string;
+	permissions?: Record<string, unknown>;
+	[key: string]: unknown;
+}
 
 const defaultPermissions = {
 	admin: false,
@@ -40,9 +48,9 @@ const defaultPermissions = {
 	interviews: { canHost: false, canAccess: false, canSchedule: false },
 };
 
-export const MemberForm = ({ member }) => {
+export const MemberForm = ({ member }: { member?: Record<string, unknown> | null }) => {
 	// Initial state setup with default permissions structure
-	const [initialData, setInitialData] = useState({
+	const [initialData, setInitialData] = useState<MemberFormData>({
 		id: uuid(),
 		picture: {},
 		permissions: defaultPermissions,
@@ -55,7 +63,7 @@ export const MemberForm = ({ member }) => {
 	// Initialization Effect: Merged logic for data setup and picture normalization
 	useEffect(() => {
 		if (member) {
-			let normalizedPicture = member.picture;
+			let normalizedPicture = member.picture as MemberFormData['picture'];
 
 			// Handle legacy data where picture might be a simple string URL
 			if (typeof member.picture === 'string') {
@@ -68,14 +76,15 @@ export const MemberForm = ({ member }) => {
 
 			setInitialData({
 				...member,
-				id: member.id || uuid(),
+				id: (member.id as string) || uuid(),
 				picture: normalizedPicture || {},
-				permissions: member.permissions || defaultPermissions,
+				permissions: (member.permissions as Record<string, unknown> | undefined) || defaultPermissions,
 			});
 		}
 	}, [member]);
 
-	const handleFileUpload = async (action, fieldPath, file) => {
+	const handleFileUpload = async (action: string, fieldPath: string, fileIn: unknown) => {
+		const file = fileIn as File | undefined;
 		if (action !== 'upload' || !file) return;
 
 		setUploading(true);
@@ -101,9 +110,9 @@ export const MemberForm = ({ member }) => {
 		}
 	};
 
-	const handleSubmit = async (formData) => {
+	const handleSubmit = async (formData: ApplicationRecord) => {
 		try {
-			const dataToSave = { ...initialData, ...formData };
+			const dataToSave: MemberFormData = { ...initialData, ...formData, id: initialData.id };
 
 			if (member) {
 				// Update Existing Member
@@ -112,7 +121,7 @@ export const MemberForm = ({ member }) => {
 			} else {
 				// Create New Member (Auth + Firestore)
 				// Note: 'registerUser' creates the Auth record. We use that UID for the Firestore doc.
-				const result = await registerUser(dataToSave.email, 'DefaultPassword123!');
+				const result = await registerUser(String(dataToSave.email ?? ''), 'DefaultPassword123!');
 				const authID = result.user.uid;
 
 				await saveCollectionData(collections.members, authID, {
@@ -130,8 +139,4 @@ export const MemberForm = ({ member }) => {
 	if (uploading) return <Loader />;
 
 	return <GenericAdminForm formConfig={{ ...memberFormConfig, name: 'member' }} initialData={initialData} onSubmit={handleSubmit} onFileUpload={handleFileUpload} permissions={currentUser?.permissions} />;
-};
-
-MemberForm.propTypes = {
-	member: PropTypes.object,
 };

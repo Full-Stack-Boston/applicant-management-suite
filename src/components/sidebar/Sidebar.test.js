@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import Sidebar from './Sidebar';
 import { useSidebar } from '../../context/SidebarContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -39,13 +39,14 @@ describe('Sidebar', () => {
 		expect(screen.getByText('Dashboard')).toBeInTheDocument();
 	});
 
-	test('renders in collapsed mode (hides text)', () => {
+	test('renders in collapsed mode (fades text for animation)', () => {
 		useSidebar.mockReturnValue({ collapsed: true, setCollapsed: mockSetCollapsed });
 		render(<Sidebar />);
 
-		// In collapsed mode, text shouldn't be visible (or should be null/empty in DOM)
-		// The component conditionally renders ListItemText primary prop.
-		expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+		// Labels stay mounted so width/opacity can animate; they are clipped/faded when collapsed.
+		const label = screen.getByText('Dashboard');
+		expect(label).toBeInTheDocument();
+		expect(label.closest('.MuiListItemText-root')).toHaveStyle({ opacity: '0' });
 	});
 
 	test('bottom controls trigger actions', () => {

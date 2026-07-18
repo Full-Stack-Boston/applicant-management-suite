@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MAILBOX & INTERNAL EMAIL CONTEXT
  * ---------------------------------------------------------------------------
@@ -15,21 +14,41 @@
  * const { emails, unreadCount, selectedFolderId } = useMailbox();
  */
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useState, useEffect, useMemo, type Dispatch, type SetStateAction, type ReactNode } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 
 // Backend & Auth
 import { db } from '../config/data/firebase';
 import { useAuth } from './AuthContext';
 
-const MailboxContext = createContext();
+export interface MailboxEmailRecord {
+	id: string;
+	isRead?: boolean;
+	[key: string]: unknown;
+}
 
-export const MailboxProvider = ({ children }) => {
+export interface MailboxContextValue {
+	emails: MailboxEmailRecord[];
+	loading: boolean;
+	permittedFolders: string[];
+	permittedAliases: string[];
+	selectedFolderId: string;
+	setSelectedFolderId: Dispatch<SetStateAction<string>>;
+	selectedAliasFilter: string;
+	setSelectedAliasFilter: Dispatch<SetStateAction<string>>;
+	member: ReturnType<typeof useAuth>['member'];
+	unreadCount: number;
+	/** The mail cache listener is real-time; kept for callers that request an explicit refresh. */
+	refreshMailbox: () => void;
+}
+
+const MailboxContext = createContext<MailboxContextValue | undefined>(undefined);
+
+export const MailboxProvider = ({ children }: { children: ReactNode }) => {
 	// --- State ---
-	const [emails, setEmails] = useState([]); // List of email objects
-	const [permittedFolders, setPermittedFolders] = useState([]); // Folders user can see
-	const [permittedAliases, setPermittedAliases] = useState([]); // Aliases user acts as
+	const [emails, setEmails] = useState<MailboxEmailRecord[]>([]); // List of email objects
+	const [permittedFolders, setPermittedFolders] = useState<string[]>([]); // Folders user can see
+	const [permittedAliases, setPermittedAliases] = useState<string[]>([]); // Aliases user acts as
 
 	// UI State
 	const [selectedFolderId, setSelectedFolderId] = useState('inbox');
@@ -43,13 +62,14 @@ export const MailboxProvider = ({ children }) => {
 	useEffect(() => {
 		if (member?.permissions?.email) {
 			// Extract allowed folders (e.g. ['inbox', 'sent'])
-			const folders = Object.keys(member.permissions.emails?.folders || {}).filter((f) => member.permissions.emails.folders[f]);
+			const folders = Object.keys(member.permissions.emails?.folders || {}).filter((f) => member.permissions.emails?.folders?.[f]);
 
 			// Extract allowed aliases (e.g. ['admin', 'webmaster'])
-			const groupAliases = Object.keys(member.permissions.emails?.aliases || {}).filter((a) => member.permissions.emails.aliases[a]);
+			const groupAliases = Object.keys(member.permissions.emails?.aliases || {}).filter((a) => member.permissions.emails?.aliases?.[a]);
 
 			// Add user's personal alias (if they have one)
-			const personalAlias = member.alias ? member.alias.split('@')[0].toLowerCase() : null;
+			const memberAlias = member.alias as string | undefined;
+			const personalAlias = memberAlias ? memberAlias.split('@')[0].toLowerCase() : null;
 
 			const allAliases = [...groupAliases];
 			if (personalAlias && !allAliases.includes(personalAlias)) {
@@ -57,7 +77,7 @@ export const MailboxProvider = ({ children }) => {
 			}
 
 			// Sort alphabetically for the UI dropdown
-			const sortedAliases = allAliases.toSorted((a, b) => a.localeCompare(b));
+			const sortedAliases = [...allAliases].sort((a, b) => a.localeCompare(b));
 
 			setPermittedFolders((current) => (JSON.stringify(current) === JSON.stringify(folders) ? current : folders));
 			setPermittedAliases((current) => (JSON.stringify(current) === JSON.stringify(sortedAliases) ? current : sortedAliases));
@@ -95,9 +115,9 @@ export const MailboxProvider = ({ children }) => {
 		const unsubscribe = onSnapshot(
 			q,
 			(querySnapshot) => {
-				const emailsData = [];
+				const emailsData: MailboxEmailRecord[] = [];
 				for (const doc of querySnapshot.docs) {
-					emailsData.push(doc.data());
+					emailsData.push(doc.data() as MailboxEmailRecord);
 				}
 				setEmails(emailsData);
 				setLoading(false);
@@ -111,7 +131,7 @@ export const MailboxProvider = ({ children }) => {
 		return () => unsubscribe();
 	}, [member, permittedAliases, selectedFolderId]);
 
-	const value = useMemo(
+	const value = useMemo<MailboxContextValue>(
 		() => ({
 			emails,
 			loading,
@@ -123,6 +143,7 @@ export const MailboxProvider = ({ children }) => {
 			setSelectedAliasFilter,
 			member,
 			unreadCount: emails.filter((e) => !e.isRead).length,
+			refreshMailbox: () => {},
 		}),
 		[emails, loading, permittedFolders, permittedAliases, selectedFolderId, selectedAliasFilter, member]
 	);
@@ -130,11 +151,13 @@ export const MailboxProvider = ({ children }) => {
 	return <MailboxContext.Provider value={value}>{children}</MailboxContext.Provider>;
 };
 
-MailboxProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 /**
  * Hook to access Mailbox state.
  */
-export const useMailbox = () => useContext(MailboxContext);
+export const useMailbox = (): MailboxContextValue => {
+	const context = useContext(MailboxContext);
+	if (context === undefined) {
+		throw new Error('useMailbox must be used within a MailboxProvider');
+	}
+	return context;
+};

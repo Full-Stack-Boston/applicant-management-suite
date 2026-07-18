@@ -1,9 +1,7 @@
 import { send, sendRequest, pushNotice, templates, ContactTemplate } from './push';
-import { db, getConfigFromDb } from '../data/firebase';
+import { getConfigFromDb } from '../data/firebase';
 import { doc, setDoc, collection } from 'firebase/firestore';
-import { brand, emailHeader, emailFooter, unsubscribeLink, staticEmailFooter, LettersOfRecommendation } from '../Constants';
-import { collections } from '../data/collections';
-import { emailTemplates } from './emailTemplates';
+import { emailFooter, unsubscribeLink } from '../Constants';
 
 // Mock all dependencies
 vi.mock('../data/firebase', () => ({
@@ -92,7 +90,7 @@ describe('push.js', () => {
 			await send(ContactTemplate.welcome, to, from, cc, [], data);
 
 			expect(getConfigFromDb).toHaveBeenCalled();
-			expect(unsubscribeLink).toHaveBeenCalledWith('1', mockConfig);
+			expect(unsubscribeLink).toHaveBeenCalledWith('1');
 			expect(emailFooter).toHaveBeenCalledWith('http://unsub.link');
 			expect(mockBatchSet).toHaveBeenCalledWith(
 				'mockDocRef',
@@ -187,7 +185,7 @@ describe('push.js', () => {
 			await pushNotice(ContactTemplate.appApproved, user, data);
 
 			expect(getConfigFromDb).toHaveBeenCalled();
-			expect(unsubscribeLink).toHaveBeenCalledWith('user-1', mockConfig);
+			expect(unsubscribeLink).toHaveBeenCalledWith('user-1');
 			expect(setDoc).toHaveBeenCalledWith(
 				'mockDocRef',
 				expect.objectContaining({

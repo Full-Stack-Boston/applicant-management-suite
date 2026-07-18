@@ -3,9 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import AutoScheduler from './AutoScheduler';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
-import { httpsCallable } from 'firebase/functions';
-import { functions, autoScheduleInterviews } from '../../config/data/firebase';
-import { v4 as uuid } from 'uuid';
+import { autoScheduleInterviews } from '../../config/data/firebase';
 
 // Mock Dependencies
 vi.mock('../../context/AlertContext', () => ({
@@ -34,7 +32,6 @@ describe('AutoScheduler Component', () => {
 	const mockHandleError = jest.fn();
 	const mockOnSuccess = jest.fn();
 	const mockOnClose = jest.fn();
-	const mockApiCall = jest.fn();
 
 	beforeEach(() => {
 		mockIdCounter = 0; // Reset counter for each test

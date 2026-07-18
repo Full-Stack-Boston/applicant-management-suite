@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Contact Dialog
  * A modal hub that presents different messaging options to the user.
@@ -7,17 +6,21 @@
  * - Custom Message Trigger (Opens the 'ComposeEmailDialog').
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
 import { Box, DialogTitle, DialogContent, DialogActions, Button, Grid } from '@mui/material';
 
 // Context
 import { useTheme } from '../../context/ThemeContext';
 
 // Components
-import { TemplatedOptions, CustomMessageTrigger } from './MessageOptions';
+import { TemplatedOptions, CustomMessageTrigger, type MessageRecipient } from './MessageOptions';
 
-const ContactDialog = ({ recipients, onClose, title }) => {
+interface ContactDialogProps {
+	recipients: MessageRecipient[];
+	onClose: () => void;
+	title?: string;
+}
+
+const ContactDialog = ({ recipients, onClose, title }: ContactDialogProps) => {
 	const { darkMode } = useTheme();
 
 	const getDialogTitle = () => {
@@ -32,7 +35,7 @@ const ContactDialog = ({ recipients, onClose, title }) => {
 			<DialogTitle>{getDialogTitle()}</DialogTitle>
 
 			<DialogContent>
-				<Box p={1}>
+				<Box sx={{ p: 1 }}>
 					<Grid container spacing={2}>
 						{/* Option 1: System Templates */}
 						<TemplatedOptions darkMode={darkMode} recipients={recipients} onClose={onClose} />
@@ -48,12 +51,6 @@ const ContactDialog = ({ recipients, onClose, title }) => {
 			</DialogActions>
 		</>
 	);
-};
-
-ContactDialog.propTypes = {
-	recipients: PropTypes.array.isRequired,
-	onClose: PropTypes.func.isRequired,
-	title: PropTypes.string,
 };
 
 export default ContactDialog;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Generic Admin Form Wrapper
  * Renders a form based on a configuration object, specifically designed for
@@ -6,7 +5,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { Button, Grid, Box } from '@mui/material';
 
@@ -14,23 +12,25 @@ import DynamicField from './DynamicField';
 import PermissionGroup from './PermissionGroup';
 import { useAlert } from '../../context/AlertContext';
 
-const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onFieldChange, permissions }) => {
+import type { GenericAdminFormProps } from './types';
+
+const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onFieldChange, permissions }: GenericAdminFormProps) => {
 	const navigate = useNavigate();
 	const { showAlert } = useAlert();
-	const [formData, setFormData] = useState(initialData);
-	const [fieldErrors, setFieldErrors] = useState({});
+	const [formData, setFormData] = useState<GenericAdminFormProps['initialData']>(initialData);
+	const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
 
 	useEffect(() => {
 		setFormData(initialData);
 	}, [initialData]);
 
-	const handleFieldUpdate = (path, value) => {
+	const handleFieldUpdate = (path: string, value: unknown) => {
 		// Special handling for permissions to ensure deep nesting is preserved
 		if (path.startsWith('permissions.')) {
 			const parts = path.split('.');
 
 			setFormData((prev) => {
-				const newPermissions = { ...prev.permissions };
+				const newPermissions = { ...((prev.permissions ?? {}) as Record<string, unknown>) };
 
 				if (parts.length === 2) {
 					// e.g. permissions.admin
@@ -40,7 +40,7 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 					const group = parts[1];
 					const key = parts[2];
 					newPermissions[group] = {
-						...newPermissions[group],
+						...((newPermissions[group] ?? {}) as Record<string, unknown>),
 						[key]: value,
 					};
 				}
@@ -49,7 +49,7 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 			});
 		} else {
 			// Standard Top-Level Field
-			const fieldName = path.split('.').pop();
+			const fieldName = path.split('.').pop() ?? path;
 			setFormData((prev) => ({ ...prev, [fieldName]: value }));
 		}
 
@@ -57,11 +57,11 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 		if (onFieldChange) onFieldChange(path, value);
 	};
 
-	const handleErrorUpdate = (field, hasError) => {
+	const handleErrorUpdate = (field: string, hasError: boolean) => {
 		setFieldErrors((prev) => ({ ...prev, [field]: hasError }));
 	};
 
-	const handleSubmit = (e) => {
+	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const hasErrors = Object.values(fieldErrors).some(Boolean);
 		if (hasErrors) {
@@ -72,7 +72,7 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 	};
 
 	// Helper to determine Grid column span
-	const getGridSize = (field) => {
+	const getGridSize = (field: { width?: string }) => {
 		if (field.width === 'half') return { xs: 12, sm: 6 };
 		if (field.width === 'third') return { xs: 12, sm: 4 };
 		return { xs: 12 };
@@ -86,9 +86,9 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 					const isDisabled = fieldConfig.disableOn ? fieldConfig.disableOn(permissions) : false;
 
 					return (
-						<Grid item {...gridSize} key={fieldConfig.name}>
+						<Grid size={gridSize} key={fieldConfig.name}>
 							{fieldConfig.type === 'permissionGroup' ? (
-								<PermissionGroup formData={formData} onUpdate={setFormData} groups={fieldConfig.groups} disabled={isDisabled || !permissions?.admin} />
+								<PermissionGroup formData={formData} onUpdate={setFormData} groups={fieldConfig.groups ?? {}} disabled={isDisabled || !permissions?.admin} />
 							) : (
 								<DynamicField
 									fieldConfig={{ ...fieldConfig, disabled: fieldConfig.disabled || isDisabled }}
@@ -105,7 +105,7 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 					);
 				})}
 
-				<Box display='flex' width='100%' flexDirection='row' gap={2} mt={4} mb={2} alignItems='center' justifyContent='flex-end'>
+				<Box sx={{ display: 'flex', width: '100%', flexDirection: 'row', gap: 2, mt: 4, mb: 2, alignItems: 'center', justifyContent: 'flex-end' }}>
 					<Button variant='outlined' onClick={() => navigate(-1)}>
 						Cancel
 					</Button>
@@ -116,18 +116,6 @@ const GenericAdminForm = ({ formConfig, initialData, onSubmit, onFileUpload, onF
 			</Grid>
 		</form>
 	);
-};
-
-GenericAdminForm.propTypes = {
-	formConfig: PropTypes.shape({
-		name: PropTypes.string,
-		fields: PropTypes.array.isRequired,
-	}).isRequired,
-	initialData: PropTypes.object.isRequired,
-	onSubmit: PropTypes.func.isRequired,
-	onFileUpload: PropTypes.func,
-	onFieldChange: PropTypes.func,
-	permissions: PropTypes.object,
 };
 
 export default GenericAdminForm;

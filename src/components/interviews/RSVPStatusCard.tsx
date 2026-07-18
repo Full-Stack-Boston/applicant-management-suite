@@ -1,72 +1,141 @@
-// @ts-nocheck
-/**
- * RSVP Status Card
- * Applicant-facing component to manage interview invitations.
- * Features:
- * - Displays upcoming interviews.
- * - Handles RSVP actions (Confirm/Unavailable).
- * - "Add to Calendar" functionality (ICS generation).
- * - Gateway buttons to Waiting Room and Interview Room.
- */
-
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Box, Typography, Button, Chip, Menu, MenuItem } from '@mui/material';
-import dayjs from 'dayjs';
-
-// Firebase & Config
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, type DocumentData, type UpdateData } from 'firebase/firestore';
 import { db, generateICSDownloadURL, getRealTimeMeetings } from '../../config/data/firebase';
-import { InterviewStatus } from '../../config/data/collections';
-
-// Context
+import { Box, Typography, Button, Menu, MenuItem, Paper, Stack } from '@mui/material';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
+import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { InterviewStatus } from '../../config/data/collections';
+import dayjs from 'dayjs';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
+import { useNavigate } from 'react-router-dom';
+import { buildInterviewRsvpUpdate } from '../../utils/interviewUtils';
+import { getRsvpCapsuleSx } from '../../config/ui/statusCapsuleStyles';
+import { StatusCapsule } from '../list/StatusCapsule';
+import {
+	homeApplicantCardSx,
+	homeApplicantCardListSx,
+	homeApplicantSectionTitleSx,
+	homeAuthSecondaryButtonSx,
+	homeAuthSubmitButtonSx,
+} from '../home/homePageStyles';
+import InterviewHistoryRow from './InterviewHistoryRow';
+import { splitApplicantInterviews, type DashboardInterview } from './interviewDashboardUtils';
 
-const headerMessages = {
+interface InterviewItem extends DashboardInterview {
+	rsvpStatus: 'yes' | 'no' | 'unknown';
+}
+
+const headerMessages: Record<string, string> = {
 	unknown: 'Your interview is scheduled. Please confirm your attendance.',
 	yes: 'Your interview is scheduled and confirmed.',
 	no: 'Interviews are required. Accept the time if you can; contact us only if rescheduling is essential and we will do our best.',
 };
 
+const interviewTimeNotes = ['Start time is approximate.', 'Typical duration is about 15 minutes.'] as const;
+
+const rsvpLabels: Record<string, string> = {
+	yes: 'RSVP: Confirmed',
+	no: 'RSVP: Unavailable',
+};
+
+const detailIconSx = {
+	fontSize: 20,
+	mt: 0.15,
+	flexShrink: 0,
+	color: (theme: { palette: { contentAccent?: { main: string }; primary: { main: string } } }) =>
+		theme.palette.contentAccent?.main ?? theme.palette.primary.main,
+} as const;
+
+const detailRowSx = {
+	display: 'flex',
+	alignItems: 'flex-start',
+	gap: 1.25,
+	minWidth: 0,
+} as const;
+
+const detailLabelSx = {
+	display: 'block',
+	letterSpacing: '0.08em',
+	fontWeight: 700,
+	fontSize: '0.62rem',
+	textTransform: 'uppercase',
+	color: 'text.secondary',
+	mb: 0.35,
+} as const;
+
+interface DetailRowProps {
+	icon: ReactNode;
+	label: string;
+	children: ReactNode;
+}
+
+const DetailRow = ({ icon, label, children }: DetailRowProps) => (
+	<Box sx={detailRowSx}>
+		{icon}
+		<Box sx={{ minWidth: 0, flex: 1 }}>
+			<Typography component='span' sx={detailLabelSx}>
+				{label}
+			</Typography>
+			{children}
+		</Box>
+	</Box>
+);
+
+const cardRowSx = {
+	display: 'flex',
+	justifyContent: 'space-between',
+	alignItems: 'flex-start',
+	gap: 2,
+	width: '100%',
+} as const;
+
+const InterviewScheduleNotes = () => (
+	<Box sx={{ textAlign: { xs: 'left', sm: 'right' }, maxWidth: { xs: '100%', sm: 220 }, flexShrink: 0 }}>
+		<Typography component='span' sx={{ ...detailLabelSx, display: 'block' }}>
+			Notes
+		</Typography>
+		<Box component='span' sx={{ color: 'text.secondary', lineHeight: 1.45 }}>
+			{interviewTimeNotes.map((note) => (
+				<Typography key={note} variant='caption' component='span' sx={{ display: 'block' }}>
+					{note}
+				</Typography>
+			))}
+		</Box>
+	</Box>
+);
+
 const RSVPStatusCard = () => {
-	const navigate = useNavigate();
-	const { user } = useAuth();
-	const { boxShadow } = useTheme();
-	const { showAlert, handleError } = useAlert();
-
-	const [interviews, setInterviews] = useState([]);
+	const [interviews, setInterviews] = useState<InterviewItem[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [anchorEls, setAnchorEls] = useState({});
+	const { user } = useAuth();
+	const { darkMode, primaryColor } = useTheme();
+	const { showAlert, handleError } = useAlert();
+	const [anchorEls, setAnchorEls] = useState<Record<string, HTMLElement | null>>({});
+	const navigate = useNavigate();
 
-	// Fetch interviews for the current user
 	useEffect(() => {
 		if (!user) return;
 		setLoading(true);
-
-		const unsubscribe = getRealTimeMeetings(user.uid, false, (updatedInterviews) => {
-			setInterviews(updatedInterviews);
+		const unsubscribe = getRealTimeMeetings(user.uid, false, (updatedInterviews: unknown) => {
+			const next = updatedInterviews as InterviewItem[];
+			setInterviews(next);
 			setLoading(false);
 		});
 
 		return () => unsubscribe();
 	}, [user]);
 
-	const handleRSVP = async (interviewId, response) => {
+	const handleRSVP = async (interviewId: string, response: 'yes' | 'no') => {
 		try {
 			const interviewRef = doc(db, 'interviews', interviewId);
-			const dataToUpdate = {
-				rsvpStatus: response,
-				rsvpTimestamp: new Date(),
-				status: response === 'yes' ? InterviewStatus.confirmed : InterviewStatus.invited,
-			};
+			const dataToUpdate = buildInterviewRsvpUpdate(response);
 
-			await updateDoc(interviewRef, dataToUpdate);
+			await updateDoc(interviewRef, dataToUpdate as UpdateData<DocumentData>);
 
-			// Optimistic update for UI responsiveness
 			setInterviews((prev) => prev.map((iv) => (iv.id === interviewId ? { ...iv, ...dataToUpdate } : iv)));
-
 			handleMenuClose(interviewId);
 			showAlert({ message: 'RSVP updated successfully.', type: 'success' });
 		} catch (error) {
@@ -74,104 +143,154 @@ const RSVPStatusCard = () => {
 		}
 	};
 
-	const handleMenuOpen = (event, id) => {
-		setAnchorEls((prev) => ({ ...prev, [id]: event.currentTarget }));
-	};
+	const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, id: string) => setAnchorEls((prev) => ({ ...prev, [id]: event.currentTarget }));
+	const handleMenuClose = (id: string) => setAnchorEls((prev) => ({ ...prev, [id]: null }));
 
-	const handleMenuClose = (id) => {
-		setAnchorEls((prev) => ({ ...prev, [id]: null }));
-	};
+	if (loading) return null;
 
-	if (loading || interviews.length === 0) return null;
+	const { active: activeInterviews, history: historyInterviews } = splitApplicantInterviews(interviews);
+
+	if (activeInterviews.length === 0 && historyInterviews.length === 0) return null;
 
 	return (
-		<Box display='flex' flexDirection='column' gap={3} width='90%' mb={2}>
-			<Typography mb={1} variant='h6' fontWeight='bold' color='primary'>
+		<Box sx={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
+			<Typography component='h2' sx={homeApplicantSectionTitleSx}>
 				Interview Invites
 			</Typography>
+			<Box sx={homeApplicantCardListSx}>
+				{activeInterviews.map((interview) => {
+					const { rsvpStatus, status, startTime } = interview;
+					const headerText = headerMessages[rsvpStatus] || 'Your interview is scheduled.';
+					const anchorEl = anchorEls[interview.id] || null;
+					const isInProgress = status === InterviewStatus.inProgress;
+					const hasRsvpResponse = rsvpStatus === 'yes' || rsvpStatus === 'no';
 
-			{interviews.map((interview) => {
-				const { rsvpStatus, status, startTime } = interview;
-				const headerText = headerMessages[rsvpStatus] || 'Your interview is scheduled.';
-				const anchorEl = anchorEls[interview.id] || null;
-
-				return (
-					<Box key={interview.id} alignSelf='center' p={2} border={1} borderRadius={2} borderColor='grey.300' boxShadow={boxShadow} maxWidth='450px' width='100%'>
-						<Typography variant='h6' gutterBottom>
-							{headerText}
-						</Typography>
-
-						<Box mt={1}>
-							<Typography variant='body2'>
-								<strong>Status:</strong> {status}
-							</Typography>
-							{startTime?.toDate && (
-								<Typography variant='body2'>
-									<strong>Date:</strong> {dayjs(startTime.toDate()).format('dddd, MMMM D, YYYY')}
+					return (
+						<Paper key={interview.id} variant='outlined' sx={homeApplicantCardSx(darkMode)}>
+							<Stack spacing={2.5} sx={{ width: '100%' }}>
+								<Typography variant='subtitle2' sx={{ fontWeight: 600, textAlign: 'center' }}>
+									{headerText}
 								</Typography>
-							)}
-							{startTime?.toDate && (
-								<Typography variant='body2'>
-									<strong>Time:</strong> {dayjs(startTime.toDate()).format('h:mm A')}
-								</Typography>
-							)}
-						</Box>
 
-						{/* RSVP Controls */}
-						<Box display='flex' gap={1} alignItems='center' justifyContent='center' mt={2}>
-							{rsvpStatus === 'yes' && <Chip label='RSVP: Confirmed' color='success' onClick={(e) => handleMenuOpen(e, interview.id)} sx={{ cursor: 'pointer' }} />}
-							{rsvpStatus === 'no' && <Chip label='RSVP: Unavailable' color='warning' onClick={(e) => handleMenuOpen(e, interview.id)} sx={{ cursor: 'pointer' }} />}
-							{rsvpStatus === 'unknown' && (
-								<>
-									<Button variant='contained' onClick={() => handleRSVP(interview.id, 'yes')}>
-										Confirm
-									</Button>
-									<Button variant='outlined' onClick={() => handleRSVP(interview.id, 'no')}>
-										Unavailable
-									</Button>
-								</>
-							)}
+								<Box sx={cardRowSx}>
+									<DetailRow icon={<EventAvailableOutlinedIcon sx={detailIconSx} />} label='Interview status'>
+										<StatusCapsule status={status} />
+									</DetailRow>
 
-							<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => handleMenuClose(interview.id)}>
-								{rsvpStatus === 'yes' && <MenuItem onClick={() => handleRSVP(interview.id, 'no')}>Change to Unavailable</MenuItem>}
-								{rsvpStatus === 'no' && <MenuItem onClick={() => handleRSVP(interview.id, 'yes')}>Change to Confirmed</MenuItem>}
-							</Menu>
-						</Box>
+									{!isInProgress && (
+										<Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+											{hasRsvpResponse && (
+												<>
+													<Typography component='span' sx={{ ...detailLabelSx, display: 'block' }}>
+														Your RSVP
+													</Typography>
+													<Typography
+														variant='body2'
+														component='span'
+														onClick={(event) => handleMenuOpen(event, interview.id)}
+														sx={{
+															...getRsvpCapsuleSx(rsvpStatus),
+															cursor: 'pointer',
+															fontSize: '0.85rem',
+															px: 2,
+															textAlign: 'center',
+														}}>
+														{rsvpLabels[rsvpStatus]}
+													</Typography>
+												</>
+											)}
+											{rsvpStatus === 'unknown' && (
+												<Stack spacing={1} sx={{ minWidth: { sm: 132 } }}>
+													<Typography component='span' sx={detailLabelSx}>
+														Your RSVP
+													</Typography>
+													<Button
+														size='small'
+														variant='contained'
+														onClick={() => handleRSVP(interview.id, 'yes')}
+														sx={homeAuthSubmitButtonSx(primaryColor)}>
+														Confirm
+													</Button>
+													<Button
+														size='small'
+														variant='outlined'
+														onClick={() => handleRSVP(interview.id, 'no')}
+														sx={homeAuthSecondaryButtonSx}>
+														Unavailable
+													</Button>
+												</Stack>
+											)}
+											<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => handleMenuClose(interview.id)}>
+												{rsvpStatus === 'yes' && <MenuItem onClick={() => handleRSVP(interview.id, 'no')}>Change to Unavailable</MenuItem>}
+												{rsvpStatus === 'no' && <MenuItem onClick={() => handleRSVP(interview.id, 'yes')}>Change to Confirmed</MenuItem>}
+											</Menu>
+										</Box>
+									)}
+								</Box>
 
-						{/* Action Buttons */}
-						<Box display='flex' flexDirection='column' mt={2} gap={2}>
-							{status === InterviewStatus.confirmed && (
-								<Button fullWidth variant='outlined' onClick={() => navigate(`/interviews/waiting-room/${interview.id}`)}>
-									Go to Waiting Room
-								</Button>
-							)}
+								{startTime?.toDate && (
+									<Box sx={{ ...cardRowSx, alignItems: 'center' }}>
+										<Stack spacing={1.25}>
+											<DetailRow icon={<CalendarTodayOutlinedIcon sx={detailIconSx} />} label='Date'>
+												<Typography variant='body2' color='text.primary' sx={{ fontWeight: 500 }}>
+													{dayjs(startTime.toDate()).format('dddd, MMMM D, YYYY')}
+												</Typography>
+											</DetailRow>
+											<DetailRow icon={<ScheduleOutlinedIcon sx={detailIconSx} />} label='Time'>
+												<Typography variant='body2' color='text.primary' sx={{ fontWeight: 500 }}>
+													{dayjs(startTime.toDate()).format('h:mm A')}
+												</Typography>
+											</DetailRow>
+										</Stack>
+										<InterviewScheduleNotes />
+									</Box>
+								)}
 
-							{status === InterviewStatus.inProgress && (
-								<Button fullWidth variant='contained' color='success' onClick={() => navigate(`/interviews/interview-room/${interview.id}`)}>
-									Join Interview Now
-								</Button>
-							)}
-
-							{[InterviewStatus.scheduled, InterviewStatus.invited, InterviewStatus.confirmed].includes(status) && (
-								<Button
-									fullWidth
-									variant='outlined'
-									onClick={async () => {
-										try {
-											const url = await generateICSDownloadURL(interview);
-											window.open(url, '_blank');
-										} catch (error) {
-											showAlert({ message: 'Could not fetch calendar invite. Try again later.', type: 'error' });
-											console.error('ICS fetch error', error);
-										}
-									}}>
-									Add to Calendar (Apple, Google, Outlook)
-								</Button>
-							)}
-						</Box>
-					</Box>
-				);
-			})}
+								<Stack spacing={1.5} sx={{ pt: 0.5 }}>
+									{status === InterviewStatus.confirmed && (
+										<Button
+											fullWidth
+											variant='contained'
+											onClick={() => navigate(`/interviews/waiting-room/${interview.id}`)}
+											sx={homeAuthSubmitButtonSx(primaryColor)}>
+											Go to Waiting Room
+										</Button>
+									)}
+									{status === InterviewStatus.inProgress && (
+										<Button
+											fullWidth
+											variant='contained'
+											onClick={() => navigate(`/interviews/interview-room/${interview.id}`)}
+											sx={homeAuthSubmitButtonSx(primaryColor)}>
+											Join Interview Now
+										</Button>
+									)}
+									{([InterviewStatus.scheduled, InterviewStatus.invited, InterviewStatus.confirmed] as string[]).includes(status) && (
+										<Button
+											fullWidth
+											variant='outlined'
+											sx={homeAuthSecondaryButtonSx}
+											onClick={async () => {
+												try {
+													const url = await generateICSDownloadURL(interview);
+													window.open(url, '_blank');
+												} catch (error) {
+													showAlert({ message: 'Could not fetch calendar invite. Try again later.', type: 'error' });
+													console.error('ICS fetch error', error);
+												}
+											}}>
+											Add to Calendar (Apple, Google, Outlook)
+										</Button>
+									)}
+								</Stack>
+							</Stack>
+						</Paper>
+					);
+				})}
+				{historyInterviews.map((interview) => (
+					<InterviewHistoryRow key={interview.id} interview={interview} darkMode={darkMode} />
+				))}
+			</Box>
 		</Box>
 	);
 };

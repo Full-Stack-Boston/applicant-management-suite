@@ -15,7 +15,7 @@ describe('LegacyFinancesTable', () => {
 			year: 2023,
 			total_allotted_disbursement: 5000,
 			prior_year_clawback: 0,
-			renewable_scholarships: [{ scout_name: 'Scout A', grade: 12, total_disbursement: 1000 }],
+			renewable_scholarships: [{ recipient_name: 'Applicant A', grade: 12, total_disbursement: 1000 }],
 			non_renewable_grants: [],
 			non_sg_items: [],
 			financial_summary: {
@@ -45,7 +45,7 @@ describe('LegacyFinancesTable', () => {
 
 		// Check for content inside the collapsible area
 		expect(screen.getByText('Renewable Scholarships')).toBeInTheDocument();
-		expect(screen.getByText('Scout A')).toBeInTheDocument();
+		expect(screen.getByText('Applicant A')).toBeInTheDocument();
 	});
 
 	test('renders provided title if prop passed', () => {

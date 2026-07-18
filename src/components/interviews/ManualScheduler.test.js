@@ -1,8 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import ManualScheduler from './ManualScheduler';
-import { functions, getAllApplicantsSimple, getApplicationsForApplicant, scheduleSingleInterview } from '../../config/data/firebase';
+import { getAllApplicantsSimple, getApplicationsForApplicant, scheduleSingleInterview } from '../../config/data/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { useAlert } from '../../context/AlertContext';
 

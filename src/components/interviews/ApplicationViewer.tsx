@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Application Viewer Drawer
  * A sliding side panel that displays a tabular view of applications.
@@ -7,7 +6,6 @@
  */
 
 import React from 'react';
-import PropTypes from 'prop-types';
 import { Drawer, Box, Typography, IconButton, Divider, useTheme } from '@mui/material';
 import { Close } from '@mui/icons-material';
 
@@ -16,7 +14,13 @@ import CollapsableTable from '../table/Table';
 
 const drawerWidth = 1100;
 
-export default function ApplicationViewer({ open, onClose, applications = [] }) {
+interface ApplicationViewerProps {
+	open: boolean;
+	onClose: () => void;
+	applications?: string[];
+}
+
+export default function ApplicationViewer({ open, onClose, applications = [] }: ApplicationViewerProps) {
 	const theme = useTheme();
 
 	// Semi-transparent background for focus
@@ -61,9 +65,3 @@ export default function ApplicationViewer({ open, onClose, applications = [] }) 
 		</Drawer>
 	);
 }
-
-ApplicationViewer.propTypes = {
-	open: PropTypes.bool.isRequired,
-	onClose: PropTypes.func.isRequired,
-	applications: PropTypes.array,
-};

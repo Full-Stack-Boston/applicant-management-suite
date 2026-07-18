@@ -166,7 +166,7 @@ describe('Application Card Component', () => {
 		completedBy: 'applicant1',
 		family: 'fam1',
 		education: 'edu1',
-		experience: 'scout1',
+		experience: 'exp1',
 		incomes: 'inc1',
 		expenses: 'exp1',
 		projections: 'proj1',
@@ -180,7 +180,7 @@ describe('Application Card Component', () => {
 	const mockFamily = { familyMembers: [{ fullName: 'Mom', relation: 'Mother', age: 50, occupation: 'Engineer' }] };
 	const mockEducation = { schoolName: 'Test High', currentGPA: 4.0 };
 	const mockExperience = {
-		experienceRecordID: 'scout1',
+		experienceRecordID: 'exp1',
 		currentOrganization: '0',
 		positions: [
 			{ type: 'Non-Profit', organization: 'Example Org', location: 'City', role: 'Volunteer' },
@@ -439,6 +439,6 @@ describe('PDFApplication (Print View)', () => {
 		await act(async () => {
 			render(<PDFApplication />);
 		});
-		await waitFor(() => expect(screen.getByText('Not Found Page')).toBeInTheDocument());
+		await screen.findByText('Not Found Page');
 	});
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Applicant Admin Form
  * Allows administrators to edit an Applicant's profile (photo, contact info, school)
@@ -6,7 +5,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { v4 as uuid } from 'uuid';
 import { Box, Divider, Typography } from '@mui/material';
 
@@ -21,8 +19,18 @@ import Loader from '../../loader/Loader';
 import GenericAdminForm from '../GenericAdminForm';
 import Application from '../../widget/Application';
 
-export const ApplicantForm = ({ applicant }) => {
-	const [initialData, setInitialData] = useState({ id: uuid() });
+import type { ApplicationRecord } from '../types';
+
+interface ApplicantFormData {
+	id: string;
+	gradYear?: string | number;
+	picture?: { displayName?: string; home?: string; refLoc?: string };
+	applications?: Array<string | { id?: string }>;
+	[key: string]: unknown;
+}
+
+export const ApplicantForm = ({ applicant }: { applicant?: Record<string, unknown> | null }) => {
+	const [initialData, setInitialData] = useState<ApplicantFormData>({ id: uuid() });
 	const [uploading, setUploading] = useState(false);
 	const { showAlert, handleError } = useAlert();
 
@@ -30,12 +38,13 @@ export const ApplicantForm = ({ applicant }) => {
 		if (applicant) {
 			setInitialData({
 				...applicant,
-				id: applicant.id || uuid(),
+				id: (applicant.id as string) || uuid(),
 			});
 		}
 	}, [applicant]);
 
-	const handleFileUpload = async (action, fieldPath, file) => {
+	const handleFileUpload = async (action: string, fieldPath: string, fileIn: unknown) => {
+		const file = fileIn as File | undefined;
 		if (action !== 'upload' || !file) return;
 
 		setUploading(true);
@@ -57,11 +66,11 @@ export const ApplicantForm = ({ applicant }) => {
 		}
 	};
 
-	const handleSubmit = async (formData) => {
-		const updatedApplicant = { ...initialData, ...formData };
+	const handleSubmit = async (formData: ApplicationRecord) => {
+		const updatedApplicant: ApplicantFormData = { ...initialData, ...formData, id: initialData.id };
 
 		// Validate Graduation Year (Must be 4 digits)
-		if (updatedApplicant.gradYear && !/^\d{4}$/.test(updatedApplicant.gradYear)) {
+		if (updatedApplicant.gradYear && !/^\d{4}$/.test(String(updatedApplicant.gradYear))) {
 			showAlert({ message: 'Please enter a valid 4-digit graduation year.', type: 'error' });
 			return;
 		}
@@ -88,12 +97,13 @@ export const ApplicantForm = ({ applicant }) => {
             <Typography variant='h5' component='h3' gutterBottom color='text.active'>
 				Associated Applications
 			</Typography>
-            <Box display='flex' flexDirection='row' flexWrap='wrap' gap={2}>
-				{initialData.applications?.length > 0 ? (
-					initialData.applications.map((app) => (
+            <Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
+				{initialData.applications && initialData.applications.length > 0 ? (
+					initialData.applications.map((app) => {
 						// Handle both full objects or ID strings
-						(<Application key={app.id || app} id={app.id || app} />)
-					))
+						const appId = typeof app === 'string' ? app : (app.id ?? '');
+						return <Application key={appId} id={appId} />;
+					})
 				) : (
 					<Typography color='text.secondary' sx={{ fontStyle: 'italic' }}>
 						No application history found.
@@ -102,8 +112,4 @@ export const ApplicantForm = ({ applicant }) => {
 			</Box>
         </>
     );
-};
-
-ApplicantForm.propTypes = {
-	applicant: PropTypes.object,
 };

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Auto Scheduler Component
  * A dialog interface for administrators to define interview availability blocks.
@@ -6,7 +5,6 @@
  */
 
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
 import { v4 as uuid } from 'uuid';
 import { Button, TextField, Typography, Grid, IconButton, DialogContent, DialogActions, DialogTitle } from '@mui/material';
 import { Add, Delete } from '@mui/icons-material';
@@ -18,16 +16,32 @@ import { useConfig } from '../../context/ConfigContext';
 // Backend
 import { autoScheduleInterviews } from '../../config/data/firebase';
 
-const AutoScheduler = ({ onSuccess, onClose }) => {
+interface AvailabilityBlock {
+	id: string;
+	start: string;
+	end: string;
+}
+
+interface AutoScheduleResult {
+	scheduledCount: number;
+	skippedApplicants?: unknown[];
+}
+
+interface AutoSchedulerProps {
+	onSuccess: () => void;
+	onClose: () => void;
+}
+
+const AutoScheduler = ({ onSuccess, onClose }: AutoSchedulerProps) => {
 	const { showAlert, handleError } = useAlert();
 	const config = useConfig();
 	const deadline = config.APPLICATION_DEADLINE;
 
 	const [loading, setLoading] = useState(false);
 	// Initialize with one empty block
-	const [availability, setAvailability] = useState([{ id: uuid(), start: '', end: '' }]);
+	const [availability, setAvailability] = useState<AvailabilityBlock[]>([{ id: uuid(), start: '', end: '' }]);
 
-	const handleChange = (index, field, value) => {
+	const handleChange = (index: number, field: 'start' | 'end', value: string) => {
 		const updated = [...availability];
 		updated[index][field] = value;
 		setAvailability(updated);
@@ -37,7 +51,7 @@ const AutoScheduler = ({ onSuccess, onClose }) => {
 		setAvailability([...availability, { id: uuid(), start: '', end: '' }]);
 	};
 
-	const removeBlock = (id) => {
+	const removeBlock = (id: string) => {
 		setAvailability(availability.filter((block) => block.id !== id));
 	};
 
@@ -70,7 +84,7 @@ const AutoScheduler = ({ onSuccess, onClose }) => {
 			const res = await autoScheduleInterviews({ deadline, availability: timeBlocks });
 
 			// The cloud function returns an object with results
-			const { scheduledCount, skippedApplicants } = res.data;
+			const { scheduledCount, skippedApplicants } = res.data as AutoScheduleResult;
 
 			showAlert({
 				message: `Scheduled ${scheduledCount} interviews! Skipped ${skippedApplicants?.length || 0}.`,
@@ -94,14 +108,14 @@ const AutoScheduler = ({ onSuccess, onClose }) => {
 				</Typography>
 
 				{availability.map((block, i) => (
-					<Grid container spacing={2} key={block.id} alignItems='center' sx={{ mb: 1 }}>
-						<Grid item xs={5}>
-							<TextField label='Start' type='datetime-local' fullWidth value={block.start} onChange={(e) => handleChange(i, 'start', e.target.value)} InputLabelProps={{ shrink: true }} />
+					<Grid container spacing={2} key={block.id} sx={{ mb: 1, alignItems: 'center' }}>
+						<Grid size={5}>
+							<TextField label='Start' type='datetime-local' fullWidth value={block.start} onChange={(e) => handleChange(i, 'start', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
 						</Grid>
-						<Grid item xs={5}>
-							<TextField label='End' type='datetime-local' fullWidth value={block.end} onChange={(e) => handleChange(i, 'end', e.target.value)} InputLabelProps={{ shrink: true }} />
+						<Grid size={5}>
+							<TextField label='End' type='datetime-local' fullWidth value={block.end} onChange={(e) => handleChange(i, 'end', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
 						</Grid>
-						<Grid item xs={2}>
+						<Grid size={2}>
 							<IconButton onClick={() => removeBlock(block.id)} color='error'>
 								<Delete />
 							</IconButton>
@@ -124,11 +138,6 @@ const AutoScheduler = ({ onSuccess, onClose }) => {
 			</DialogActions>
 		</>
 	);
-};
-
-AutoScheduler.propTypes = {
-	onSuccess: PropTypes.func.isRequired,
-	onClose: PropTypes.func.isRequired,
 };
 
 export default AutoScheduler;

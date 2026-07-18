@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UNIVERSAL LIST VIEW (Admin Tables)
  * ---------------------------------------------------------------------------
@@ -15,10 +14,11 @@
  * - Mobile: Renders a list of <MobileListCard /> components.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import { useState, useEffect, useMemo, type ComponentProps, type ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, useMediaQuery, useTheme as useMuiTheme, Typography } from '@mui/material';
+import { Box, useMediaQuery, useTheme as useMuiTheme, Typography, Alert } from '@mui/material';
+import type { DocumentData } from 'firebase/firestore';
+import type { GridRenderCellParams } from '@mui/x-data-grid';
 
 // Contexts & Hooks
 import { useTitle } from '../../context/HelmetContext';
@@ -26,21 +26,25 @@ import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
+import { useConfig } from '../../context/ConfigContext';
 import { useRealTimeList } from '../../hooks/useRealTimeList';
 
 // Config & Data
 import { adminLists as listConfig, mobileCardConfig } from '../../config/admin';
 import { RecipientSubjectCell } from '../../config/ui/tableConfig';
 import { getRoomDetails } from '../../config/data/firebase';
+import { DEMO_EMAIL_BANNER, isDemoEmailMode } from '../../config/content/emailDelivery';
 
 // Components
 import Loader from '../../components/loader/Loader';
 import Datatable from '../../components/datatable/Datatable';
 import MobileListCard from '../../components/list/MobileListCard';
+import MobileListEmptyState from '../../components/list/MobileListEmptyState';
 import LegacyFinancesTable from '../../components/list/LegacyFinancesTable';
+import { adminListMobileLayoutSx, adminListPageSx, adminPageHeaderSx, adminPageTitleSx, getAdminPageTitleColor } from '../../config/ui/adminPageStyles';
 
 // --- Fallback Component ---
-const DefaultCard = ({ item, type }) => (
+const DefaultCard = ({ item, type }: { item: DocumentData; type?: string }) => (
 	<Box key={item.id} sx={{ p: 2, mb: 1, borderRadius: '12px', boxShadow: 3, bgcolor: 'background.paper' }}>
 		<Typography variant='body1'>
 			Card for {type}: {item.id}
@@ -51,30 +55,28 @@ const DefaultCard = ({ item, type }) => (
 	</Box>
 );
 
-DefaultCard.propTypes = {
-	item: PropTypes.shape({ id: PropTypes.string.isRequired }).isRequired,
-	type: PropTypes.string.isRequired,
-};
-
 // =============================================================================
 //  MAIN COMPONENT
 // =============================================================================
 
-const List = ({ type }) => {
+const List = ({ type }: { type: string }) => {
 	// --- Hooks & Contexts ---
 	const navigate = useNavigate();
 	const { darkMode, boxShadow } = useTheme();
 	const { member } = useAuth();
 	const { handleError } = useAlert();
+	const config = useConfig();
 
-	// Responsive Check (Mobile vs Desktop)
 	const muiTheme = useMuiTheme();
+	// Keep the desktop grid until md; toolbar stays nowrap/right-pinned and
+	// only yields to mobile cards below this width.
 	const isSmallScreen = useMediaQuery(muiTheme.breakpoints.down('md'));
 
 	// --- 1. Identify List Type ---
 	const isInbox = type === 'inbox';
 	const isLegacyFinances = type === 'legacyFinances';
 	const currentConfig = listConfig[type];
+	const showDemoMailBanner = isInbox && isDemoEmailMode(config);
 
 	// --- 2. Data Fetching (Hybrid Strategy) ---
 
@@ -100,7 +102,10 @@ const List = ({ type }) => {
 			if (selectedAliasFilter === 'all' || !selectedAliasFilter) {
 				return rawData;
 			}
-			return rawData.filter((email) => email.tags?.some((tag) => tag.toLowerCase() === selectedAliasFilter.toLowerCase()));
+			return rawData.filter((email) => {
+				const tags = (email as { tags?: string[] }).tags;
+				return tags?.some((tag) => tag.toLowerCase() === selectedAliasFilter.toLowerCase());
+			});
 		}
 		return rawData;
 	}, [isInbox, rawData, selectedAliasFilter]);
@@ -108,7 +113,7 @@ const List = ({ type }) => {
 	// Construct Page Title (Dynamic based on Year if needed)
 	const pageTitle = useMemo(() => {
 		if (!currentConfig) return '';
-		return typeof currentConfig.title === 'function' ? currentConfig.title(year) : currentConfig.title;
+		return typeof currentConfig.title === 'function' ? currentConfig.title(Number(year)) : currentConfig.title;
 	}, [currentConfig, year]);
 
 	useTitle({ title: pageTitle, appear: false });
@@ -124,8 +129,8 @@ const List = ({ type }) => {
 					return {
 						...col,
 						headerName: 'Recipient / Subject',
-						valueGetter: (_value, row) => `${row.to || ''} ${row.subject || ''}`,
-						renderCell: (params) => <RecipientSubjectCell {...params} />,
+						valueGetter: (_value: unknown, row: DocumentData) => `${row.to || ''} ${row.subject || ''}`,
+						renderCell: (params: GridRenderCellParams) => <RecipientSubjectCell {...params} />,
 					};
 				} else if (col.field === 'tags') {
 					return { ...col, headerName: 'Sent By' };
@@ -141,7 +146,7 @@ const List = ({ type }) => {
 	// Toolbar Actions (Top of Table: "Create New", "Export")
 	const toolbarActions = useMemo(() => {
 		if (typeof currentConfig?.getToolbarActions === 'function') {
-			const helpers = { navigate, deliberationRoomExists, member, permittedAliases };
+			const helpers = { navigate, deliberationRoomExists, member: member ?? undefined, permittedAliases };
 			return currentConfig.getToolbarActions(helpers);
 		}
 		return [];
@@ -151,7 +156,9 @@ const List = ({ type }) => {
 	const actions = useMemo(() => {
 		if (!currentConfig) return [];
 		if (typeof currentConfig?.getActions === 'function') {
-			return currentConfig.getActions({ navigate, permittedAliases, member });
+			// Config action factories may also read navigate/member at runtime.
+			const actionHelpers = { navigate, permittedAliases, member };
+			return currentConfig.getActions(actionHelpers);
 		}
 		return currentConfig.actions || [];
 	}, [currentConfig, navigate, member, permittedAliases]);
@@ -166,7 +173,7 @@ const List = ({ type }) => {
 				try {
 					const result = await getRoomDetails({ roomName: 'deliberation-room' });
 					if (!signal.aborted) {
-						setDeliberationRoomExists(result.data?.success);
+						setDeliberationRoomExists(Boolean((result.data as { success?: boolean } | undefined)?.success));
 					}
 				} catch (error) {
 					if (!signal.aborted) {
@@ -191,8 +198,9 @@ const List = ({ type }) => {
 				rows={data}
 				columns={columns}
 				actions={actions}
-				type={type}
-				toolbarActions={toolbarActions}
+				// tableConfig's ToolbarAction narrows row ids to string[]; the Datatable
+				// invokes it with string document ids, so the shapes agree at runtime.
+				toolbarActions={toolbarActions as unknown as ComponentProps<typeof Datatable>['toolbarActions']}
 				loading={loading}
 				// Inbox Specific Props
 				permittedFolders={isInbox ? permittedFolders : undefined}
@@ -206,51 +214,62 @@ const List = ({ type }) => {
 	};
 
 	const renderLayout = () => {
-		// Mobile View
 		if (isSmallScreen) {
 			return (
-				<Box display='flex' flexDirection='column' gap={0.5} sx={{ p: { xs: 1, sm: 2 } }}>
-					<Box borderRadius='12px' boxShadow={boxShadow} bgcolor={darkMode ? 'background.main' : 'white'} display='flex' alignItems='center' justifyContent='left' padding={1} paddingX={2} marginBottom={2}>
-						<Typography fontSize='24px' color={darkMode ? 'primary.main' : 'highlight.main'}>
+				<Box sx={adminListMobileLayoutSx}>
+					<Box sx={{ ...adminPageHeaderSx(boxShadow), mb: 2 }}>
+						<Typography color={getAdminPageTitleColor(darkMode)} sx={adminPageTitleSx}>
 							{pageTitle}
 						</Typography>
 					</Box>
-					{data.map((item) => {
-						const config = mobileCardConfig[type];
-						const CardContentComponent = config?.content || DefaultCard;
-						const customProps = config?.getProps ? config.getProps(item) : {};
+					{data.length === 0 ? (
+						<MobileListEmptyState boxShadow={boxShadow} />
+					) : (
+						data.map((item) => {
+							const config = mobileCardConfig[type];
+							const CardContentComponent = (config?.content || DefaultCard) as ComponentType<{ item: DocumentData; type?: string }>;
+							const customProps = config?.getProps ? config.getProps(item) : {};
 
-						return (
-							<MobileListCard key={item.id} item={item} actions={config?.actions || []} {...customProps} navigate={navigate} permittedAliases={permittedAliases} member={member}>
-								<CardContentComponent item={item} type={type} />
-							</MobileListCard>
-						);
-					})}
+							return (
+								<MobileListCard
+									key={String(item.id)}
+									item={item}
+									actionKeys={config?.actionKeys || []}
+									primaryCount={config?.primaryCount}
+									boxShadow={boxShadow}
+									{...customProps}
+									navigate={navigate}
+									permittedAliases={permittedAliases}
+									member={member ?? undefined}>
+									<CardContentComponent item={item} type={type} />
+								</MobileListCard>
+							);
+						})
+					)}
 				</Box>
 			);
 		}
 
-		// Legacy View (Hardcoded table for old finance data)
 		if (isLegacyFinances) {
-			return <LegacyFinancesTable data={data} titleIn={pageTitle} />;
+			return <LegacyFinancesTable data={data as unknown as ComponentProps<typeof LegacyFinancesTable>['data']} titleIn={pageTitle} />;
 		}
 
-		// Desktop View
 		return renderDatatable();
 	};
 
-	if (!currentConfig) return <Box p={3}>Error: Invalid list type specified ('{type}'). Check admin/lists.js</Box>;
+	if (!currentConfig) return <Box sx={{ p: 3 }}>Error: Invalid list type specified ('{type}'). Check admin/lists.js</Box>;
 	if (loading && data.length === 0) return <Loader />;
 
 	return (
-		<Box display='flex' width='100%'>
+		<Box sx={adminListPageSx}>
+			{showDemoMailBanner && (
+				<Alert severity='info' sx={{ mb: 2 }}>
+					{DEMO_EMAIL_BANNER}
+				</Alert>
+			)}
 			{renderLayout()}
 		</Box>
 	);
-};
-
-List.propTypes = {
-	type: PropTypes.string.isRequired,
 };
 
 export default List;

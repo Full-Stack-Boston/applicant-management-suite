@@ -1,103 +1,98 @@
-// @ts-nocheck
 /**
  * Member Detail Card
  * Administrative view for internal team members.
- * Displays profile info, account functions, personal signature, and permissions.
  */
 
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { Box, Typography, Divider } from '@mui/material';
+import { Box, Typography } from '@mui/material';
+import {
+	PersonOutlined as PersonIcon,
+	EmailOutlined as EmailIcon,
+	BadgeOutlined as AliasIcon,
+	PhoneIphoneOutlined as CellIcon,
+	WorkOutlineOutlined as PositionIcon,
+	EventOutlined as SinceIcon,
+} from '@mui/icons-material';
 
-// Context & Hooks
-import { useTheme } from '../../context/ThemeContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useAlert } from '../../context/AlertContext';
 import { useAssetActionHandler } from '../../hooks/useAssetActionHandler';
-
-// Config
 import { generatePath } from '../../config/navigation/routeUtils';
 import { paths } from '../../config/navigation/paths';
 import { getMemberActions } from '../../config/ui/buttonActions';
-import { UserLastLogin } from '../../config/ui/tableConfig';
 import { memberFormConfig } from '../../config/ui/formConfig';
+import { assetViewCardContentSx, singleAssetStackSx } from '../../config/ui/adminPageStyles';
 
-// Components
 import SingleAssetPage, { AssetCard } from '../layout/SingleAssetPage';
-import DynamicActionGroup from '../dynamicButtons/DynamicButtons';
-import Header from '../assets/Header';
-import InfoTable from '../assets/InfoTable';
+import AssetProfileSection from '../assets/AssetProfileSection';
+import AssetSectionHeader from '../assets/AssetSectionHeader';
+import UserActivityFooter from '../assets/UserActivityFooter';
 import MyNotes from '../notes/MyNotes';
 import PermissionGroup from '../forms/PermissionGroup';
 
-export const Member = ({ member }) => {
-	const { darkMode } = useTheme();
+import type { AssetRecord, DynamicAction } from '../assets/types';
+import type { MemberRecord } from './types';
+
+export const Member = ({ member }: { member: MemberRecord }) => {
 	const { showAlert, handleError } = useAlert();
 	const config = useConfig();
 	const [showNotes, setShowNotes] = useState(false);
 	const [showSignature, setShowSignature] = useState(false);
 
 	const handleAction = useAssetActionHandler('updateLoginEmail');
-
 	const actions = useMemo(() => getMemberActions(showAlert, handleError, showNotes, setShowNotes, showSignature, setShowSignature), [showAlert, handleError, showNotes, showSignature]);
 
-	const memberInfo = [
-		{ label: 'Full Name', value: `${member?.firstName} ${member?.lastName}` },
-		{ label: 'Email', value: member?.email },
-		{ label: 'Alias', value: member?.alias },
-		{ label: 'Phone', value: member?.cell },
-		{ label: 'Position', value: member?.position },
-		{ label: 'Member Since', value: member?.since },
-	];
+	const memberDetails = useMemo(
+		() => [
+			{ label: 'Name', value: `${member?.firstName ?? ''} ${member?.lastName ?? ''}`.trim(), icon: PersonIcon },
+			{ label: 'Email', value: member?.email, icon: EmailIcon },
+			{ label: 'Alias', value: member?.alias, icon: AliasIcon },
+			{ label: 'Phone', value: member?.cell, icon: CellIcon },
+			{ label: 'Position', value: member?.position, icon: PositionIcon },
+			{ label: 'Since', value: member?.since, icon: SinceIcon },
+		],
+		[member],
+	);
 
 	const permissionGroups = memberFormConfig.fields.find((field) => field.name === 'permissions')?.groups || {};
 
 	return (
 		<SingleAssetPage>
-			<Box display='flex' padding='20px' gap='20px'>
-				<AssetCard flex='1'>
-					<Header image={member?.picture?.home} title={member?.displayName || member?.firstName} editPath={generatePath(paths.editMember, { id: member?.id })} config={config}>
-						<InfoTable data={memberInfo} />
-						<Box mb='10px' fontSize='14px'>
-							<Typography component='span' fontWeight='bold' color='text.secondary' mr='5px'>
-								Last Login:
-							</Typography>
-							<Typography component='span' fontWeight='300'>
-								<UserLastLogin userId={member?.id} />
-							</Typography>
-						</Box>
-					</Header>
-				</AssetCard>
-
-				<AssetCard flex='1.25' sx={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-					<Typography component='span' fontSize='16px' color={darkMode ? 'secondary.main' : 'text.highlight'} mt={1}>
-						Functions
-					</Typography>
-					<DynamicActionGroup asset={member} actions={actions} onAction={handleAction} />
+			<Box sx={singleAssetStackSx}>
+				<AssetCard contentSx={assetViewCardContentSx}>
+					<AssetProfileSection
+						image={member?.picture?.home}
+						displayName={member?.displayName || member?.firstName}
+						config={config}
+						details={memberDetails}
+						editPath={generatePath(paths.editMember, { id: member?.id })}
+						actions={actions as DynamicAction[]}
+						asset={member as AssetRecord}
+						onAction={handleAction}
+						footerMeta={<UserActivityFooter userId={member?.id} />}
+					/>
 				</AssetCard>
 			</Box>
 
 			{showSignature && (
-				<Box margin='0px 20px 20px'>
-					<AssetCard sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-						<Typography component='span' fontSize='16px' color={darkMode ? 'secondary.main' : 'text.highlight'}>
-							Personal Signature
-						</Typography>
-						<Divider />
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
+						<AssetSectionHeader title='Personal Signature' />
 						<Box
 							sx={{
-								border: `2px solid`,
+								border: '2px solid',
 								borderColor: 'primary.main',
 								borderRadius: '4px',
 								padding: '10px 15px',
 								minHeight: '60px',
-								bgcolor: 'background.main',
-								color: 'text.active',
+								bgcolor: 'background.paper',
+								color: 'text.primary',
 							}}>
 							{member.personalSignature ? (
 								<div dangerouslySetInnerHTML={{ __html: member.personalSignature }} />
 							) : (
-								<Typography variant='body2' color='text.secondary' sx={{ fontStyle: 'italic' }}>
+								<Typography variant='body2' sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
 									No personal signature set.
 								</Typography>
 							)}
@@ -107,18 +102,16 @@ export const Member = ({ member }) => {
 			)}
 
 			{showNotes && (
-				<Box margin='0px 20px 20px'>
-					<AssetCard>
+				<Box sx={singleAssetStackSx}>
+					<AssetCard contentSx={assetViewCardContentSx}>
 						<MyNotes id={member.id} />
 					</AssetCard>
 				</Box>
 			)}
 
-			<Box margin='0px 20px 20px'>
-				<AssetCard sx={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-					<Typography component='span' fontSize='16px' color={darkMode ? 'secondary.main' : 'text.highlight'}>
-						Permissions
-					</Typography>
+			<Box sx={singleAssetStackSx}>
+				<AssetCard contentSx={assetViewCardContentSx}>
+					<AssetSectionHeader title='Permissions' />
 					<PermissionGroup formData={member} onUpdate={() => {}} groups={permissionGroups} disabled={true} />
 				</AssetCard>
 			</Box>
@@ -139,25 +132,8 @@ Member.propTypes = {
 		since: PropTypes.string,
 		picture: PropTypes.object,
 		personalSignature: PropTypes.string,
-		permissions: PropTypes.shape({
-			admin: PropTypes.bool,
-			email: PropTypes.bool,
-			push: PropTypes.bool,
-			message: PropTypes.bool,
-			site: PropTypes.bool,
-			finances: PropTypes.bool,
-			applications: PropTypes.bool,
-			members: PropTypes.bool,
-			audit: PropTypes.bool,
-			archives: PropTypes.bool,
-			login: PropTypes.bool,
-			interviews: PropTypes.shape({
-				canHost: PropTypes.bool,
-				canAccess: PropTypes.bool,
-				canSchedule: PropTypes.bool,
-				canDeliberate: PropTypes.bool,
-			}),
-			emails: PropTypes.object,
-		}),
+		permissions: PropTypes.object,
 	}).isRequired,
 };
+
+export default Member;

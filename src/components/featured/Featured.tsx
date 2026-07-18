@@ -1,7 +1,6 @@
-// @ts-nocheck
 /**
  * Featured Dashboard Widget
- * Displays key metrics: Countdown timer, Progress vs Last Year's Benchmarks, and 3-Year Trends.
+ * Displays key metrics: Countdown timer, Progress vs Benchmarks, and 3-Year Award Trends.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -9,22 +8,23 @@ import { Box, Typography, LinearProgress } from '@mui/material';
 
 // Config & Context
 import { ApplicationType } from '../../config/data/collections';
-import { getCurrentlyEligibleApplicationsCountByType, getBenchmarkedAwardCounts, getAverageApplicationsPerYearByType } from '../../config/data/firebase';
+import { getDashboardBenchmarkData } from '../../config/data/firebase';
 import { useConfig } from '../../context/ConfigContext';
+import { dashboardModuleSurfaceSx, dashboardSectionTitleSx } from '../../config/ui/adminPageStyles';
 
 // Components
 import Timer from '../timer/Timer';
 
 // --- Helpers ---
 
-const getAlertLevel = (daysLeft, percent) => {
+const getAlertLevel = (daysLeft: number, percent: number): string => {
 	if (percent >= 100) return 'success';
 	if (daysLeft <= 5 && percent < 50) return 'error';
 	if (daysLeft <= 10 && percent < 75) return 'warning';
 	return 'neutral';
 };
 
-const progressColor = (daysLeft, percent) => {
+const progressColor = (daysLeft: number, percent: number): string => {
 	const level = getAlertLevel(daysLeft, percent);
 	switch (level) {
 		case 'success':
@@ -38,14 +38,75 @@ const progressColor = (daysLeft, percent) => {
 	}
 };
 
+const formatDaysRemaining = (days: number): string => {
+	if (days > 0) return `${days} day${days === 1 ? '' : 's'} left`;
+	if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago`;
+	return 'today';
+};
 
-const Featured = () => {
+const TREND_STACK_HEIGHT = 72;
+const TREND_SEGMENT_MIN = 20;
+
+const trendSegmentHeight = (count: number, maxCount: number): number => {
+	if (count === 0) return TREND_SEGMENT_MIN;
+	if (maxCount <= 0) return TREND_SEGMENT_MIN;
+	return Math.max((count / maxCount) * TREND_STACK_HEIGHT, TREND_SEGMENT_MIN);
+};
+
+interface TrendSegmentProps {
+	count: number;
+	maxCount: number;
+	bgcolor: string;
+	textColor: string;
+	label: string;
+}
+
+const TrendSegment = ({ count, maxCount, bgcolor, textColor, label }: TrendSegmentProps) => (
+	<Box
+		title={`${label}: ${count}`}
+		sx={{
+			width: 26,
+			height: trendSegmentHeight(count, maxCount),
+			bgcolor,
+			borderRadius: 1,
+			display: 'flex',
+			alignItems: 'center',
+			justifyContent: 'center',
+			flexShrink: 0,
+			border: 1,
+			borderColor: 'divider',
+		}}>
+		<Typography
+			variant='caption'
+			sx={{
+				fontSize: '0.7rem',
+				fontWeight: 700,
+				lineHeight: 1,
+				color: textColor,
+			}}>
+			{count}
+		</Typography>
+	</Box>
+);
+
+interface AwardTrendYear {
+	year: number;
+	New: number;
+	Returning: number;
+	Scholarship: number;
+}
+
+interface FeaturedProps {
+	variant?: 'default' | 'dashboard';
+}
+
+const Featured = ({ variant = 'default' }: FeaturedProps) => {
 	const config = useConfig();
-	const [currentCounts, setCurrentCounts] = useState({});
-	const [benchmarks, setBenchmarks] = useState({});
-	const [historyData, setHistoryData] = useState({});
-	const [deadlineDate, setDeadlineDate] = useState(null);
-	const [daysLeft, setDaysLeft] = useState(0);
+	const [currentCounts, setCurrentCounts] = useState<Record<string, number>>({});
+	const [benchmarks, setBenchmarks] = useState<Record<string, number>>({});
+	const [deadlineDate, setDeadlineDate] = useState<Date | null>(null);
+	const [daysLeft, setDaysLeft] = useState<number>(0);
+	const [awardTrends, setAwardTrends] = useState<AwardTrendYear[]>([]);
 
 	useEffect(() => {
 		const controller = new AbortController();
@@ -54,69 +115,28 @@ const Featured = () => {
 		const fetchData = async () => {
 			if (!config.APPLICATION_DEADLINE) return;
 
-			const deadline = new Date(config.APPLICATION_DEADLINE);
+			const rawDeadline = config.APPLICATION_DEADLINE;
+			const deadline =
+				rawDeadline && typeof rawDeadline === 'object' && 'toDate' in rawDeadline
+					? (rawDeadline as { toDate: () => Date }).toDate()
+					: new Date(rawDeadline as string);
+
+			const cycleYear = typeof config.CYCLE_YEAR === 'number' ? config.CYCLE_YEAR : deadline.getFullYear();
 
 			if (!signal.aborted) {
 				setDeadlineDate(deadline);
 				const now = new Date();
-				const daysDiff = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+				const daysDiff = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 				setDaysLeft(daysDiff);
 			}
 
 			try {
-				// Fetch current year counts in parallel
-				const [newCount, grantCount, scholarshipCount] = await Promise.all([getCurrentlyEligibleApplicationsCountByType(ApplicationType.newApplication), getCurrentlyEligibleApplicationsCountByType(ApplicationType.returningGrant), getCurrentlyEligibleApplicationsCountByType(ApplicationType.scholarship)]);
+				const data = await getDashboardBenchmarkData(cycleYear);
 
 				if (!signal.aborted) {
-					setCurrentCounts({
-						[ApplicationType.newApplication]: newCount,
-						[ApplicationType.returningGrant]: grantCount,
-						[ApplicationType.scholarship]: scholarshipCount,
-					});
-				}
-
-				// Fetch prior year benchmarks and history
-				const thisYear = new Date(deadline).getFullYear();
-
-				const historyPromises = [3, 2, 1].map(yearsBack => {
-					const date = new Date(deadline);
-					date.setFullYear(thisYear - yearsBack);
-					return getBenchmarkedAwardCounts(date.toLocaleString());
-				});
-
-				const averagePromises = [
-					getAverageApplicationsPerYearByType(ApplicationType.newApplication, thisYear, 3),
-					getAverageApplicationsPerYearByType(ApplicationType.returningGrant, thisYear, 3),
-					getAverageApplicationsPerYearByType(ApplicationType.scholarship, thisYear, 3),
-				];
-
-				const [hist3, hist2, hist1] = await Promise.all(historyPromises);
-				const [avgNew, avgReturning, avgScholarship] = await Promise.all(averagePromises);
-
-				if (!signal.aborted) {
-					setBenchmarks({
-						[ApplicationType.newApplication]: avgNew || 0,
-						[ApplicationType.returningGrant]: avgReturning || 0,
-						[ApplicationType.scholarship]: avgScholarship || 0,
-					});
-
-					setHistoryData({
-						[thisYear - 3]: {
-							New: hist3?.[ApplicationType.newApplication] || 0,
-							Returning: hist3?.[ApplicationType.returningGrant] || 0,
-							Scholarship: hist3?.[ApplicationType.scholarship] || 0,
-						},
-						[thisYear - 2]: {
-							New: hist2?.[ApplicationType.newApplication] || 0,
-							Returning: hist2?.[ApplicationType.returningGrant] || 0,
-							Scholarship: hist2?.[ApplicationType.scholarship] || 0,
-						},
-						[thisYear - 1]: {
-							New: hist1?.[ApplicationType.newApplication] || 0,
-							Returning: hist1?.[ApplicationType.returningGrant] || 0,
-							Scholarship: hist1?.[ApplicationType.scholarship] || 0,
-						}
-					});
+					setCurrentCounts(data.currentCounts);
+					setBenchmarks(data.benchmarkTargets);
+					setAwardTrends(data.awardTrends);
 				}
 			} catch (error) {
 				if (!signal.aborted) {
@@ -128,7 +148,7 @@ const Featured = () => {
 		fetchData();
 
 		return () => controller.abort();
-	}, [config.APPLICATION_DEADLINE]);
+	}, [config.APPLICATION_DEADLINE, config.CYCLE_YEAR]);
 
 	const types = [
 		{ key: ApplicationType.newApplication, label: 'New Applicants' },
@@ -138,30 +158,39 @@ const Featured = () => {
 
 	return (
 		<Box
-			display='flex'
-			flexDirection='column'
-			width='100%'
-			height='100%'
 			sx={{
+				...(variant === 'dashboard' ? dashboardModuleSurfaceSx : { px: 2, py: 1.5 }),
+				display: 'flex',
+				flexDirection: 'column',
+				width: '100%',
+				height: variant === 'dashboard' ? '100%' : 'auto',
 				bgcolor: 'background.paper',
-				paddingX: 3,
-				paddingY: 2,
-				minHeight: 280,
+				minHeight: variant === 'dashboard' ? 0 : 280,
+				overflow: variant === 'dashboard' ? 'auto' : 'visible',
 			}}>
-			<Typography fontWeight='bold' fontSize='15px' color='text.secondary' mb={2}>
-				BENCHMARK PROGRESS
-			</Typography>
-
-			<Typography variant='subtitle2' color='text.active' gutterBottom alignSelf='center'>
+			<Typography sx={dashboardSectionTitleSx}>BENCHMARK PROGRESS</Typography>
+			<Typography
+				variant='subtitle2'
+				gutterBottom
+				sx={{
+					color: 'text.active',
+					alignSelf: 'center',
+				}}>
 				<Timer />
 			</Typography>
-
 			{deadlineDate && (
-				<Typography variant='caption' align='center' width='100%' display='block' color='text.primary' mb={2}>
-					Deadline: {deadlineDate.toLocaleDateString()} ({daysLeft} days left)
+				<Typography
+					variant='caption'
+					align='center'
+					sx={{
+						width: '100%',
+						display: 'block',
+						color: 'text.primary',
+						mb: 1.25,
+					}}>
+					Deadline: {deadlineDate.toLocaleDateString()} ({formatDaysRemaining(daysLeft)})
 				</Typography>
 			)}
-
 			{types.map(({ key, label }) => {
 				const actual = currentCounts[key] || 0;
 				const goal = typeof benchmarks[key] === 'number' ? benchmarks[key] : 0;
@@ -169,16 +198,21 @@ const Featured = () => {
 				const percent = Math.min(Math.round(rawPercent), 100);
 
 				return (
-					<Box key={key} mb={2} width='100%'>
-						<Typography variant='subtitle2' color='text.primary'>
-							{label}: {actual} / {goal} ({percent}%)
+					<Box
+						key={key}
+						sx={{
+							mb: 1.25,
+							width: '100%',
+						}}>
+						<Typography variant='body2' sx={{ color: 'text.primary', mb: 0.35 }}>
+							{label}: {actual} / {goal} ({goal > 0 ? `${percent}%` : '—'})
 						</Typography>
 						<LinearProgress
 							variant='determinate'
-							value={percent}
+							value={goal > 0 ? percent : 0}
 							sx={{
 								width: '100%',
-								height: 10,
+								height: 8,
 								borderRadius: 5,
 								backgroundColor: 'grey.300',
 								'& .MuiLinearProgress-bar': {
@@ -189,59 +223,53 @@ const Featured = () => {
 					</Box>
 				);
 			})}
+			{awardTrends.length > 0 && (() => {
+				const maxSegment = Math.max(
+					...awardTrends.flatMap((entry) => [entry.New, entry.Returning, entry.Scholarship]),
+					1
+				);
 
-			{/* 3-Year Trend Visualization */}
-			<Box display='flex' flexDirection='column' justifyContent='center' alignItems='center' mt={2} alignSelf='center'>
-				<Typography variant='subtitle2' gutterBottom color='text.primary'>
-					3-Year Avg Award Trends
-				</Typography>
-				<Box display='flex' gap={4} alignItems='flex-end' justifyContent='center' height={120}>
-					{(() => {
-						const MAX_HEIGHT = 80;
-						let overallMax = 0;
-
-						// Find the absolute maximum average award across all categories and years
-						Object.values(historyData).forEach(values => {
-							const maxInYear = Math.max(values.New, values.Returning, values.Scholarship);
-							if (maxInYear > overallMax) overallMax = maxInYear;
-						});
-
-						// Safety check to prevent division by zero
-						if (overallMax === 0) overallMax = 1;
-
-						return Object.entries(historyData).map(([year, values]) => {
-							// Calculate heights based on the ratio against the overall maximum
-							const heightNew = (values.New / overallMax) * MAX_HEIGHT;
-							const heightRet = (values.Returning / overallMax) * MAX_HEIGHT;
-							const heightSch = (values.Scholarship / overallMax) * MAX_HEIGHT;
-
-							return (
-								<Box key={year} display='flex' flexDirection='column' alignItems='center' justifyContent='flex-end' width={32}>
-									<Box display='flex' flexDirection='column' alignItems='center' justifyContent='flex-end' gap={0.5} height={80}>
-										<Box width={24} height={heightNew} bgcolor='primary.light' borderRadius={1} title={`New Avg: $${Math.round(values.New)}`} />
-										<Box width={24} height={heightRet} bgcolor='secondary.light' borderRadius={1} title={`Returning Avg: $${Math.round(values.Returning)}`} />
-										<Box width={24} height={heightSch} bgcolor='custom.green' borderRadius={1} title={`Scholarship Avg: $${Math.round(values.Scholarship)}`} />
+				return (
+					<Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', mt: 1, alignSelf: 'center' }}>
+						<Typography variant='body2' sx={{ color: 'text.primary', mb: 0.75, fontWeight: 600 }}>
+							3-Year Award Trends
+						</Typography>
+						<Box sx={{ display: 'flex', gap: 2.5, alignItems: 'flex-end', justifyContent: 'center', minHeight: TREND_STACK_HEIGHT + 20 }}>
+							{awardTrends.map((entry) => (
+								<Box key={entry.year} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', width: 34 }}>
+									<Box
+										sx={{
+											display: 'flex',
+											flexDirection: 'column',
+											alignItems: 'center',
+											justifyContent: 'flex-end',
+											gap: 0.4,
+											minHeight: TREND_STACK_HEIGHT,
+										}}>
+										<TrendSegment count={entry.New} maxCount={maxSegment} bgcolor='primary.main' textColor='primary.contrastText' label='New' />
+										<TrendSegment count={entry.Returning} maxCount={maxSegment} bgcolor='grey.700' textColor='common.white' label='Returning' />
+										<TrendSegment count={entry.Scholarship} maxCount={maxSegment} bgcolor='success.main' textColor='common.white' label='Scholarship' />
 									</Box>
-									<Typography variant='caption' mt={0.5} color='text.primary'>
-										{year}
+									<Typography variant='caption' sx={{ mt: 0.5, color: 'text.primary', fontSize: '0.65rem' }}>
+										{entry.year}
 									</Typography>
 								</Box>
-							);
-						});
-					})()}
-				</Box>
-				<Box display='flex' justifyContent='center' gap={3} mt={1}>
-					<Typography variant='caption' sx={{ color: 'primary.light' }}>
-						⬤ New
-					</Typography>
-					<Typography variant='caption' sx={{ color: 'secondary.light' }}>
-						⬤ Returning
-					</Typography>
-					<Typography variant='caption' sx={{ color: 'custom.green' }}>
-						⬤ Scholarship
-					</Typography>
-				</Box>
-			</Box>
+							))}
+						</Box>
+						<Box sx={{ display: 'flex', justifyContent: 'center', gap: 2.5, mt: 0.75 }}>
+							<Typography variant='caption' sx={{ color: 'primary.main' }}>
+								⬤ New
+							</Typography>
+							<Typography variant='caption' sx={{ color: 'grey.700' }}>
+								⬤ Returning
+							</Typography>
+							<Typography variant='caption' sx={{ color: 'success.main' }}>
+								⬤ Scholarship
+							</Typography>
+						</Box>
+					</Box>
+				);
+			})()}
 		</Box>
 	);
 };

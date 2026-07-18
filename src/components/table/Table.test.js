@@ -31,8 +31,8 @@ const mockAppData = {
 		profile: 'prof1',
 		family: 'fam1',
 		education: 'edu1',
-		experience: 'scout1',
-		expenses: 'exp1',
+		experience: 'exp1',
+		expenses: 'expenses1',
 		incomes: 'inc1',
 		contributions: 'contrib1',
 		projections: 'proj1',
@@ -53,7 +53,7 @@ const mockAppData = {
 	// Using '2025-06-01' ensures new Date() parses it as local time in 2025,
 	// preventing the timezone bug where new Date('2025') becomes 2024.
 	education: { schoolName: 'Test University', major: 'CS', expectedGraduationDate: '2025-06-01', currentGPA: '4.0', previousSchools: ['Test High'] },
-	experience: { currentUnit: 0, collegeReservesFlag: false, experiences: [{ type: 'Troop', number: '123', location: 'Anytown, USA', highestRank: 'Eagle' }] },
+	experience: { currentUnit: 0, collegeReservesFlag: false, experiences: [{ type: 'Club', number: '123', location: 'Anytown, USA', highestRank: 'Lead' }] },
 	expenses: { tuitionCost: '1000', roomAndBoardCost: '500', bookCost: '100', commutingCost: '50', otherExpenses: [] },
 	incomes: { summerEarnings: '100', fallEarnings: '100', winterEarnings: '100', springEarnings: '100', earningsAppliedToEducation: '10', savingsAppliedToEducation: '10', collegeAward: '10', loansAmount: '10', otherIncomeSources: [] },
 	contributions: { p1ExpectedAnnualIncome: '1000', p2ExpectedAnnualIncome: '1000', parentInvestmentIncome: '10', parentsOwnOrRentHome: 'Own', parentsMaritalStatus: 'Married', anyExtraordinaryExpenses: 'None', siblingSchools: [] },
@@ -83,9 +83,9 @@ describe('CollapsableTable', () => {
 					return Promise.resolve(mockAppData.family);
 				case 'edu1':
 					return Promise.resolve(mockAppData.education);
-				case 'scout1':
-					return Promise.resolve(mockAppData.experience);
 				case 'exp1':
+					return Promise.resolve(mockAppData.experience);
+				case 'expenses1':
 					return Promise.resolve(mockAppData.expenses);
 				case 'inc1':
 					return Promise.resolve(mockAppData.incomes);

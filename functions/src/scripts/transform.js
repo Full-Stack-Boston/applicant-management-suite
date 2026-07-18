@@ -12,7 +12,7 @@ const DEFAULT_FINANCIAL_ITEM = {
 };
 
 const DEFAULT_RENEWABLE_SCHOLARSHIP = {
-	scout_name: null,
+	recipient_name: null,
 	grade: null,
 	years_remaining: null,
 	committed_renewal: null,
@@ -22,7 +22,7 @@ const DEFAULT_RENEWABLE_SCHOLARSHIP = {
 };
 
 const DEFAULT_NON_RENEWABLE_GRANT = {
-	scout_name: null,
+	recipient_name: null,
 	grade: null,
 	grant_amount: null,
 	notes: null,
@@ -122,7 +122,7 @@ async function main() {
 		// Normalize Renewable Scholarships
 		for (const item of yearObj.renewable_scholarships || []) {
 			const newItem = { ...DEFAULT_RENEWABLE_SCHOLARSHIP, ...item };
-			newItem.scout_name = cleanString(newItem.scout_name, true);
+			newItem.recipient_name = cleanString(newItem.recipient_name, true);
 			newItem.grade = cleanGrade(newItem.grade);
 			newItem.years_remaining = toSafeInt(newItem.years_remaining);
 			newItem.committed_renewal = toSafeFloat(newItem.committed_renewal);
@@ -135,7 +135,7 @@ async function main() {
 		// Normalize Non-Renewable Grants
 		for (const item of yearObj.non_renewable_grants || []) {
 			const newItem = { ...DEFAULT_NON_RENEWABLE_GRANT, ...item };
-			newItem.scout_name = cleanString(newItem.scout_name, true);
+			newItem.recipient_name = cleanString(newItem.recipient_name, true);
 			newItem.grade = cleanGrade(newItem.grade);
 			newItem.grant_amount = toSafeFloat(newItem.grant_amount);
 			newItem.notes = cleanString(newItem.notes);

@@ -11,6 +11,10 @@ import { useTheme } from '../../../context/ThemeContext';
 import * as firebaseConfig from '../../../config/data/firebase';
 import { paths } from '../../../config/navigation/paths';
 import { generatePath } from '../../../config/navigation/routeUtils';
+import { pushNotice } from '../../../config/content/push';
+
+// FIX: Import the component *after* all mocks are defined
+import ApplicationController from './ApplicationController';
 
 // --- Critical Fix: Define matchMedia immediately ---
 Object.defineProperty(window, 'matchMedia', {
@@ -67,6 +71,12 @@ vi.mock('../../../config/data/collections', () => ({
 		completed: 'completed',
 		incomplete: 'incomplete',
 	},
+	InterviewStatus: {
+		confirmed: 'confirmed',
+		inProgress: 'in-progress',
+		completed: 'completed',
+		missed: 'missed',
+	},
 	ApplicationType: { scholarship: 'Scholarship' },
 	UploadType: { applicationAttachment: 'applicationAttachment' },
 }));
@@ -80,13 +90,14 @@ vi.mock('../../../config/content/push', () => ({
 	},
 	pushNotice: jest.fn(),
 }));
-import { pushNotice } from '../../../config/content/push';
 const mockPushNotice = pushNotice;
 
 // Mock Constants
 vi.mock('../../../config/Constants', () => ({
 	__esModule: true,
 	attachmentFields: [{ key: 'testDoc', label: 'Test Doc', requiredBy: ['Scholarship'] }],
+	Assets: { logo: 'mock-logo', logoLM: 'mock-logo-lm', logoDM: 'mock-logo-dm' },
+	brand: { theOrganizationName: 'AMS', organizationName: 'AMS', shortName: 'AMS' },
 }));
 
 // Mock Paths for navigation
@@ -165,19 +176,38 @@ vi.mock('../../../config/ui/applicationConfig', () => ({
 
 // Mock Child Components
 vi.mock('../../loader/Loader', () => ({ default: () => <div>Loading...</div> }));
+vi.mock('../../home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+}));
+
+vi.mock('../../auth/AuthFormCard', () => ({
+	__esModule: true,
+	default: ({ children, title, intro }) => (
+		<div data-testid='auth-form-card'>
+			{title && <h1>{title}</h1>}
+			{intro}
+			{children}
+		</div>
+	),
+}));
+
+vi.mock('../../home/PublicPageLayout', () => ({
+	__esModule: true,
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+
 vi.mock('../../layout/NotFound', () => ({ default: () => <div>Not Found</div> }));
 vi.mock('../../footer/CopyrightFooter', () => ({ default: () => <div>Footer</div> }));
 vi.mock('../../breadcrumbs/Breadcrumbs', () => ({ default: () => <div>Crumbs</div> }));
 
 // Mock Form Page
-let onValidationSuccessCallback;
 let onValidationFailureCallback;
 
 vi.mock('../../forms/GenericFormPage', async () => {
 	return {
 		default: (props) => {
 		const { onValidationSuccess, onValidationFailure, setApplication } = props;
-		onValidationSuccessCallback = onValidationSuccess;
 		onValidationFailureCallback = onValidationFailure;
 
 		return (
@@ -199,9 +229,6 @@ vi.mock('../../forms/GenericFormPage', async () => {
 		},
 	};
 });
-
-// FIX: Import the component *after* all mocks are defined
-import ApplicationController from './ApplicationController';
 
 describe('ApplicationController', () => {
 	const mockSetAllowEditing = jest.fn();
@@ -240,7 +267,7 @@ describe('ApplicationController', () => {
 		useAuth.mockReturnValue({ user: mockUser });
 		useAlert.mockReturnValue(mockAlert);
 		useConfig.mockReturnValue({ APPLICATION_DEADLINE: '2025-01-01', VALIDATION_OVERRIDE: false });
-		useTheme.mockReturnValue({ boxShadow: 'none' });
+		useTheme.mockReturnValue({ boxShadow: 'none', primaryColor: '#0288D1', darkMode: false });
 	});
 
 	const renderController = () => {
@@ -266,7 +293,7 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		const nextBtn = screen.getByText('Simulate Next');
 		await act(async () => {
@@ -283,7 +310,7 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Fill Form'));
@@ -293,13 +320,13 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 
 		// FIX: Advance to step 3 (last step)
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 3'));
+		await screen.findByText('Step 3');
 
 		const submitBtn = await screen.findByText('Confirm & Submit');
 		await act(async () => {
@@ -324,19 +351,19 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		// Advance to step 2
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 
 		// FIX: Advance to step 3 (last step)
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 3'));
+		await screen.findByText('Step 3');
 
 		const submitBtn = await screen.findByText('Confirm & Submit');
 		await act(async () => {
@@ -361,19 +388,19 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		// Advance to step 2
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 
 		// FIX: Advance to step 3 (last step)
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 3'));
+		await screen.findByText('Step 3');
 
 		const submitError = new Error('Submit Failed');
 		// Mock the *next* call to saveCollectionData (which is the submit button)
@@ -394,7 +421,7 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		const continueBtn = screen.getByText('Save & Continue');
 		await act(async () => {
@@ -416,13 +443,13 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByText('Step 1'));
+		await screen.findByText('Step 1');
 
 		// Go next to Step 2
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 
 		// "Back" button should now be present and enabled
 		const backBtn = screen.getByText('Back');
@@ -441,7 +468,7 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByTestId('generic-form-page'));
+		await screen.findByTestId('generic-form-page');
 
 		const exitBtn = screen.getByText('Save & Exit');
 		await act(async () => {
@@ -457,19 +484,19 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			renderController();
 		});
-		await waitFor(() => screen.getByText('Step 1'));
+		await screen.findByText('Step 1');
 
 		// Go to step 2
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 
 		// Go to step 3 (last step)
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 3'));
+		await screen.findByText('Step 3');
 
 		// Test Reset
 		const resetBtn = screen.getByText('Clear & Start Over');
@@ -484,11 +511,11 @@ describe('ApplicationController', () => {
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 2'));
+		await screen.findByText('Step 2');
 		await act(async () => {
 			fireEvent.click(screen.getByText('Simulate Next'));
 		});
-		await waitFor(() => screen.getByText('Step 3'));
+		await screen.findByText('Step 3');
 
 		// Test Logout
 		const logoutBtn = screen.getByText('Return to Applicant Portal');

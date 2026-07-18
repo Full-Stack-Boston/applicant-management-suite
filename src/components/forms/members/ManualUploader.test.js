@@ -7,6 +7,8 @@ import * as firebaseConfig from '../../../config/data/firebase';
 import { useTitle } from '../../../context/HelmetContext';
 
 const mockNavigate = jest.fn();
+const mockShowAlert = jest.fn();
+const mockHandleError = jest.fn();
 
 vi.mock('react-router-dom', () => ({
 	useNavigate: () => mockNavigate,
@@ -24,23 +26,12 @@ vi.mock('../../../config/data/firebase', () => ({
 	saveFile: jest.fn(),
 	getDownloadLinkForFile: jest.fn(),
 	saveCollectionData: jest.fn(),
+	resolveApplicationCycleYear: jest.fn((app) => app.cycleYear ?? null),
 }));
 
-vi.mock('../GenericAdminForm', () => ({ default: ({ onSubmit }) => (
-	<div data-testid='admin-form'>
-		<button
-			onClick={() =>
-				onSubmit({
-					applicantId: 'app1',
-					applicationId: 'appl1',
-					attachmentType: 'transcript',
-					file: { name: 'test.pdf' },
-				})
-			}>
-			Submit Mock
-		</button>
-	</div>
-) }));
+vi.mock('../../../config/data/applicationAttachments', () => ({
+	maybePromoteApplicationToCompleted: jest.fn(),
+}));
 
 vi.mock('../../loader/Loader', () => ({ default: () => <div>Loading...</div> }));
 
@@ -48,10 +39,10 @@ describe('ManualUploader Component', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
-		useAlert.mockReturnValue({ showAlert: jest.fn(), handleError: jest.fn() });
+		useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: mockHandleError });
 		useTitle.mockImplementation(() => {});
 
-		firebaseConfig.getRealTimeCollection.mockImplementation((col, callback) => {
+		firebaseConfig.getRealTimeCollection.mockImplementation((_col, callback) => {
 			callback([{ id: 'app1', firstName: 'John', lastName: 'Doe' }]);
 			return jest.fn();
 		});
@@ -59,36 +50,31 @@ describe('ManualUploader Component', () => {
 
 	test('renders loader initially then form', async () => {
 		render(<ManualUploader />);
-		expect(screen.getByTestId('admin-form')).toBeInTheDocument();
-		expect(screen.getByText('Upload Attachment')).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Manual Attachment Uploader' })).toBeInTheDocument();
+		expect(screen.getByRole('combobox', { name: 'Applicant' })).toBeInTheDocument();
+		expect(screen.getByRole('combobox', { name: 'Application' })).toBeInTheDocument();
+		expect(screen.getByText('Attachment type')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /select file/i })).toBeInTheDocument();
 	});
 
 	test('navigates back on close', () => {
 		render(<ManualUploader />);
 
-		// FIX: Find the button that contains the ArrowBackIcon
-		const backIcon = screen.getByTestId('ArrowBackIcon');
-		const backBtn = backIcon.closest('button');
-
+		const backBtn = screen.getByLabelText('Go back');
 		fireEvent.click(backBtn);
 		expect(mockNavigate).toHaveBeenCalledWith(-1);
 	});
 
-	test('submits form data successfully', async () => {
-		firebaseConfig.getCollectionData.mockResolvedValue({
-			id: 'appl1',
-			type: 'Scholarship',
-			attachments: 'att1',
-		});
-
+	test('requires all fields before upload', async () => {
 		render(<ManualUploader />);
 
-		const submitBtn = screen.getByText('Submit Mock');
-		fireEvent.click(submitBtn);
+		fireEvent.click(screen.getByRole('button', { name: /upload attachment/i }));
 
 		await waitFor(() => {
-			expect(firebaseConfig.saveFile).toHaveBeenCalled();
-			expect(firebaseConfig.saveCollectionData).toHaveBeenCalledWith(expect.anything(), 'att1', expect.objectContaining({ transcript: expect.anything() }));
+			expect(mockShowAlert).toHaveBeenCalledWith({
+				message: 'Please complete every field before uploading.',
+				type: 'error',
+			});
 		});
 	});
 });

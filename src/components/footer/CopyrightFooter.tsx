@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Copyright Footer Component
  * Displays the standardized copyright notice with a link to the organization's home page.

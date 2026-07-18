@@ -1,6 +1,6 @@
 import React from 'react';
 import { act } from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Review from './Review';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
@@ -9,13 +9,17 @@ import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useParams } from 'react-router-dom';
 
-import { getApplication, getCollectionData, saveFile, getDownloadLinkForFile, deleteFile, invalidateRequest, saveCollectionData, updateApplicationStatus } from '../../config/data/firebase';
+import { getApplication, getCollectionData, saveFile, getDownloadLinkForFile, deleteFile, saveCollectionData, updateApplicationStatus } from '../../config/data/firebase';
 import { sendRequest } from '../../config/content/push';
 
 vi.mock('react-router-dom', () => ({
 	useParams: jest.fn(),
 	useNavigate: jest.fn(),
-	Link: ({ children }) => <div>{children}</div>,
+	Link: ({ children, to, ...props }) => (
+		<a href={to} {...props}>
+			{children}
+		</a>
+	),
 }));
 
 vi.mock('../../context/AuthContext', () => ({ useAuth: jest.fn() }));
@@ -24,6 +28,29 @@ vi.mock('../../context/DialogContext', () => ({ useDialog: jest.fn() }));
 vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn() }));
 vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
 vi.mock('../../context/HelmetContext', () => ({ useTitle: jest.fn() }));
+
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	default: ({ children, title, intro, headerActions }) => (
+		<div data-testid='auth-form-card'>
+			<div>{title}</div>
+			{headerActions}
+			{intro}
+			{children}
+		</div>
+	),
+}));
+vi.mock('../../components/list/StatusCapsule', () => ({
+	StatusCapsule: ({ status }) => <div data-testid='status-capsule'>{status}</div>,
+}));
+vi.mock('../../config/navigation/paths', () => ({
+	paths: { apply: '/apply' },
+}));
+vi.mock('../../config/navigation/routeUtils', () => ({
+	generatePath: (path) => path,
+}));
 
 vi.mock('../../config/data/firebase', () => ({
 	getApplication: jest.fn(),
@@ -40,7 +67,7 @@ vi.mock('../../config/content/push', () => ({
 	sendRequest: jest.fn(),
 }));
 
-vi.mock('uuid', () => ({ v4: () => 'mock-uuid'  }));
+vi.mock('uuid', () => ({ v4: () => 'mock-uuid' }));
 
 vi.mock('../../config/data/collections', () => ({
 	UploadType: { applicationAttachment: 'app-attachments' },
@@ -75,17 +102,26 @@ vi.mock('../../config/Constants', () => ({
 
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
 vi.mock('../../components/layout/NotFound', () => ({ default: () => <div data-testid='not-found'>Not Found</div> }));
-vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div>Copyright</div> }));
-vi.mock('../../components/breadcrumbs/Breadcrumbs', () => ({ default: () => <div>Breadcrumbs</div> }));
 
-vi.mock('../../components/table/Table', () => ({
-	FamilyDetails: () => <div data-testid='section-family'>Family Details</div>,
-	EducationDetails: () => <div data-testid='section-education'>Education Details</div>,
-	ExperienceDetails: () => <div data-testid='section-experience'>Experience Details</div>,
-	ExpensesDetails: () => <div data-testid='section-expenses'>Expenses Details</div>,
-	IncomesDetails: () => <div data-testid='section-incomes'>Incomes Details</div>,
-	ContributionsDetails: () => <div data-testid='section-contributions'>Contributions Details</div>,
-	ProjectionsDetails: () => <div data-testid='section-projections'>Projections Details</div>,
+vi.mock('../../components/review/ReviewMobileDetails', () => ({
+	ReviewProfileMobile: ({ data }) => (
+		<div data-testid='profile-mobile'>
+			{data.applicantFirstName} {data.applicantLastName} — {data.applicantMailingAddress?.description}
+		</div>
+	),
+	ReviewFamilySection: () => <div data-testid='section-family'>Family Details</div>,
+	ReviewEducationSection: () => <div data-testid='section-education'>Education Details</div>,
+	ReviewExperienceSection: () => <div data-testid='section-experience'>Experience Details</div>,
+	ReviewExpensesSection: () => <div data-testid='section-expenses'>Expenses Details</div>,
+	ReviewIncomesSection: () => <div data-testid='section-incomes'>Incomes Details</div>,
+	ReviewContributionsSection: () => <div data-testid='section-contributions'>Contributions Details</div>,
+	ReviewProjectionsSection: () => <div data-testid='section-projections'>Projections Details</div>,
+	ReviewMobileAttachmentCard: ({ label, children }) => (
+		<div data-testid={`attachment-card-${label}`}>
+			<span>{label}</span>
+			{children}
+		</div>
+	),
 }));
 
 vi.mock('../../components/visuallyHiddenInput/VisuallyHiddenInput', () => ({
@@ -174,7 +210,7 @@ describe('Review Component', () => {
 	test('renders Not Found if application does not exist', async () => {
 		getApplication.mockResolvedValue(null);
 		render(<Review />);
-		await waitFor(() => expect(screen.getByTestId('not-found')).toBeInTheDocument());
+		await screen.findByTestId('not-found');
 	});
 
 	test('renders application details successfully', async () => {
@@ -183,8 +219,8 @@ describe('Review Component', () => {
 		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
 
 		expect(screen.getByText(/Your Test App Application/i)).toBeInTheDocument();
-		expect(screen.getAllByText(/John/i)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(/123 Main St/i)[0]).toBeInTheDocument();
+		expect(screen.getByTestId('profile-mobile')).toHaveTextContent(/John/);
+		expect(screen.getByTestId('profile-mobile')).toHaveTextContent(/123 Main St/);
 		expect(screen.getByTestId('section-family')).toBeInTheDocument();
 		expect(screen.getByTestId('section-education')).toBeInTheDocument();
 		expect(screen.getAllByText('Test Document')[0]).toBeInTheDocument();
@@ -218,9 +254,13 @@ describe('Review Component', () => {
 		expect(mockShowDialog).toHaveBeenCalled();
 
 		const dialogCall = mockShowDialog.mock.calls[0][0];
+		expect(dialogCall.data).toEqual(
+			expect.objectContaining({
+				attachmentType: 'recLetter',
+			})
+		);
 		const mockRequestData = { name: 'Teacher', email: 'teach@school.com' };
 
-		// FIX: Wrap state-updating callback in act()
 		await act(async () => {
 			await dialogCall.callback(mockRequestData);
 		});
@@ -230,6 +270,28 @@ describe('Review Component', () => {
 			expect(sendRequest).toHaveBeenCalled();
 			expect(mockShowAlert).toHaveBeenCalledWith('request', 'sent');
 		});
+	});
+
+	test('handles simulate upload with demo PDF', async () => {
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		const simulateBtns = screen.getAllByText('Simulate upload');
+		expect(simulateBtns.length).toBeGreaterThan(0);
+
+		await act(async () => {
+			fireEvent.click(simulateBtns[0]);
+		});
+
+		await waitFor(() => {
+			expect(saveFile).toHaveBeenCalled();
+		});
+
+		const [, , key, file] = saveFile.mock.calls[0];
+		expect(key).toBe('testDoc');
+		expect(file).toBeInstanceOf(File);
+		expect(file.name).toBe('testDoc.pdf');
+		expect(file.type).toBe('application/pdf');
 	});
 
 	test('handles deleting an attachment', async () => {
@@ -249,12 +311,7 @@ describe('Review Component', () => {
 		const chips = screen.getAllByText('my-file.pdf');
 		expect(chips.length).toBeGreaterThan(0);
 
-		// Now that we fixed the component, this chip should have a delete icon.
-		// We use 'within' to find the SVG icon inside the chip.
-		// MUI Chips often use 'CancelIcon' which might not have a role of button, but we can find it by its default testId or tag
 		const chip = chips[0].closest('.MuiChip-root');
-
-		// In MUI, the delete icon usually has the class 'MuiChip-deleteIcon'
 		const deleteIcon = chip.querySelector('.MuiChip-deleteIcon');
 
 		fireEvent.click(deleteIcon);

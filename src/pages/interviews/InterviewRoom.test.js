@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import InterviewRoom from './InterviewRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useMeeting } from '../../context/MeetingContext';
@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useTitle } from '../../context/HelmetContext';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { getDoc, onSnapshot } from 'firebase/firestore';
 
 // NEW: Import generateJoinToken for mocking
 import { generateJoinToken } from '../../config/data/firebase';
@@ -31,6 +31,7 @@ vi.mock('firebase/firestore', () => ({
 	doc: jest.fn(),
 	getDoc: jest.fn(),
 	onSnapshot: jest.fn(),
+	updateDoc: jest.fn(() => Promise.resolve()),
 }));
 
 // UPDATED: Include generateJoinToken in mock
@@ -82,6 +83,17 @@ vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-test
 vi.mock('../../components/interviews/AdminDrawer', () => ({ default: () => <div data-testid='admin-drawer'>Admin Drawer</div> }));
 vi.mock('../../components/interviews/ApplicationViewer', () => ({ default: () => <div data-testid='app-viewer'>App Viewer</div> }));
 vi.mock('../../components/interviews/CallInterface', () => ({ default: () => <div data-testid='call-ui'>Call UI</div> }));
+vi.mock('../../components/interviews/VideoRoomUnavailable', () => ({
+	default: ({ title, message, onLeave, leaveLabel }) => (
+		<div data-testid='video-unavailable'>
+			<h1>{title}</h1>
+			<p>{message}</p>
+			<button type='button' onClick={onLeave}>
+				{leaveLabel}
+			</button>
+		</div>
+	),
+}));
 
 describe('InterviewRoom Component', () => {
 	const mockNavigate = jest.fn();
@@ -294,7 +306,7 @@ describe('InterviewRoom Component', () => {
 		render(<InterviewRoom />);
 
 		await waitFor(() => {
-			expect(screen.getByText(/Could not join meeting/i)).toBeInTheDocument();
+			expect(screen.getByText(/Interview Room Unavailable/i)).toBeInTheDocument();
 		});
 		expect(screen.getByText(/Token Gen Failed/i)).toBeInTheDocument();
 	});

@@ -1,178 +1,222 @@
-// @ts-nocheck
 /**
  * EXTERNAL UPLOAD PORTAL
  * ---------------------------------------------------------------------------
- * This page allows third parties (recommenders) to upload documents securely.
+ * Third parties (recommenders) upload documents via a tokenized link + PIN.
  *
- * * SECURITY MODEL:
- * 1. URL Token: A unique UUID generated when the request was created.
- * - Validates the session against the 'requests' collection.
- * 2. PIN Code: A 6-digit code sent to the uploader.
- * - Validated manually during the upload step to prevent unauthorized access.
- * 3. Rate Limiting: Max 5 upload attempts allowed per request ID.
- * 4. Expiry: Links become invalid after the global application deadline.
- *
- * * WORKFLOW:
- * 1. Validate Token & Expiry on mount.
- * 2. Prompt user for PIN (if valid).
- * 3. Upload file to Storage -> Update Firestore 'attachments' -> Mark Request 'completed'.
+ * Security: URL token (requests collection), PIN validation, max 5 attempts,
+ * and expiry. On success, attachments/requests update and the application may
+ * be promoted to Completed when all required files are present.
  */
 
-import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-
-// UI Components
-import { Box, Typography, Button, Avatar, Divider, TextField } from '@mui/material';
-import { Upload as UploadIcon } from '@mui/icons-material';
-
-// Custom Components
-import Loader from '../../components/loader/Loader';
-import CopyrightFooter from '../../components/footer/CopyrightFooter';
+import { Box, Typography, Button, TextField, Stack, CircularProgress } from '@mui/material';
+import { UploadOutlined, LinkOffOutlined, CheckCircleOutlined, HelpOutlined } from '@mui/icons-material';
 import { VisuallyHiddenInput } from '../../components/visuallyHiddenInput/VisuallyHiddenInput';
-
-// Contexts & Config
-import { useTheme } from '../../context/ThemeContext';
-import { useAlert } from '../../context/AlertContext';
-import { generatePath } from '../../config/navigation/routeUtils';
-import { paths } from '../../config/navigation/paths';
-import { validateRequest, validatePin, LettersOfRecommendation } from '../../config/Constants';
+import { validateRequest, validatePin, LettersOfRecommendation, brand } from '../../config/Constants';
 import { saveFile, getRequestData, saveCollectionData, getDownloadLinkForFile, getApplication } from '../../config/data/firebase';
 import { UploadType, collections } from '../../config/data/collections';
+import { maybePromoteApplicationToCompleted } from '../../config/data/applicationAttachments';
+import { useTheme } from '../../context/ThemeContext';
+import { useAlert } from '../../context/AlertContext';
+import { useTitle } from '../../context/HelmetContext';
+import { generatePath } from '../../config/navigation/routeUtils';
+import { paths } from '../../config/navigation/paths';
+import PublicPageLayout from '../../components/home/PublicPageLayout';
+import PublicStatusPage from '../../components/home/PublicStatusPage';
+import AuthFormCard from '../../components/auth/AuthFormCard';
+import { homeAuthSecondaryButtonSx, homeAuthSubmitButtonSx, homeDashboardIntroBodySx } from '../../components/home/homePageStyles';
 
-// =============================================================================
-//  SUB-COMPONENT: Content Switcher
-// =============================================================================
+interface AttachmentInfo {
+	name: string;
+	purpose: string;
+	[key: string]: unknown;
+}
 
-const UploadCenterContent = ({ validToken, uploadComplete, request, attachmentInfo, givenPin, setGivenPin, uploading, handleUpload, handleNavigateHome, handleClosePage }) => {
-	// State 1: Invalid or Expired Token
+interface RequestData {
+	id: string;
+	applicationID: string;
+	attachmentType: string;
+	attachmentsID: string;
+	attempts: number;
+	completed: boolean;
+	expiryDate: string;
+	fromName: string;
+	[key: string]: unknown;
+}
+
+interface UploadCenterContentProps {
+	validToken: boolean | null;
+	uploadComplete: boolean;
+	request: RequestData | null;
+	attachmentInfo: AttachmentInfo | null;
+	givenPin: string;
+	setGivenPin: (pin: string) => void;
+	uploading: boolean;
+	primaryColor: string;
+	handleUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+	handleNavigateHome: () => void;
+	handleClosePage: () => void;
+}
+
+const invalidLinkSubtitle =
+	'This upload link may be expired, already used, or entered incorrectly. If an applicant asked you to submit a recommendation, contact them for a fresh link. If you believe this is an error, the review board can help.';
+
+const uploadRequirementsCopy =
+	'Upload one PDF file (25 MB maximum). You may try up to five times. Use the pin from the email that brought you here.';
+
+const UploadCenterContent = ({
+	validToken,
+	uploadComplete,
+	request,
+	attachmentInfo,
+	givenPin,
+	setGivenPin,
+	uploading,
+	primaryColor,
+	handleUpload,
+	handleNavigateHome,
+	handleClosePage,
+}: UploadCenterContentProps) => {
 	if (!validToken) {
 		return (
-			<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', textAlign: 'center', mt: 2 }}>
-				<Typography variant='h6' color='error'>
-					You've either attempted to upload too many times or have an invalid or expired link. Please contact the applicant or the board for further action.
-				</Typography>
-			</Box>
+			<PublicStatusPage eyebrow='Upload Center' title='This Link Is Not Valid' icon={<LinkOffOutlined />} subtitle={invalidLinkSubtitle} cardSize='wide' fitViewport>
+				<Stack spacing={1.5} sx={{ mt: { xs: 2.5, sm: 4 } }}>
+					<Button variant='contained' fullWidth onClick={handleNavigateHome} sx={homeAuthSubmitButtonSx(primaryColor)}>
+						Return home
+					</Button>
+					<Button
+						variant='outlined'
+						fullWidth
+						startIcon={<HelpOutlined sx={{ fontSize: 18 }} />}
+						href={`mailto:${brand?.helpEmail}?subject=${encodeURIComponent('Upload link help')}`}
+						sx={{
+							...homeAuthSecondaryButtonSx,
+							display: 'inline-flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							minHeight: 36.5,
+							py: 0.75,
+							lineHeight: 1.75,
+							'& .MuiButton-startIcon': {
+								display: 'inline-flex',
+								alignItems: 'center',
+								justifyContent: 'center',
+								marginTop: 0,
+								marginBottom: 0,
+								marginRight: 1,
+								'& > *:nth-of-type(1)': {
+									fontSize: 18,
+								},
+							},
+						}}>
+						Contact the board
+					</Button>
+				</Stack>
+			</PublicStatusPage>
 		);
 	}
 
-	// State 2: Success
 	if (uploadComplete || request?.completed) {
 		return (
-			<Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '100%', textAlign: 'center', mt: 2 }}>
-				<Typography variant='h5' textAlign='center' mt={2}>
-					Thank you for uploading the {attachmentInfo?.name}.
-				</Typography>
-				<Typography variant='body1' textAlign='center' mt={2} mb={3}>
-					Your upload has been successfully completed. You can now either close this page or navigate back to the home page.
-				</Typography>
-				<Box mt={3} display='flex' flexDirection='row' gap={2} width='100%'>
-					<Button variant='contained' color='primary' onClick={handleNavigateHome} fullWidth>
-						Home Page
+			<PublicStatusPage
+				eyebrow='Upload Center'
+				title='Upload Complete'
+				icon={<CheckCircleOutlined />}
+				subtitle={`Thank you. We received your ${attachmentInfo?.name?.toLowerCase() ?? 'file'}, and the applicant's record has been updated.`}
+				cardSize='wide'
+				fitViewport>
+				<Stack spacing={1.5}>
+					<Button variant='contained' fullWidth onClick={handleNavigateHome} sx={homeAuthSubmitButtonSx(primaryColor)}>
+						Return home
 					</Button>
-					<Button variant='outlined' color='secondary' onClick={handleClosePage} fullWidth>
-						Leave
+					<Button variant='outlined' fullWidth onClick={handleClosePage} sx={homeAuthSecondaryButtonSx}>
+						Close this page
 					</Button>
-				</Box>
-			</Box>
+				</Stack>
+			</PublicStatusPage>
 		);
 	}
 
-	// State 3: Upload Form
+	const uploadLabel = attachmentInfo?.name ?? 'Recommendation Letter';
+
 	return (
-		<>
-			<Typography variant='h5' textAlign='center' mt={2}>
-				Upload {attachmentInfo?.name} for {request.fromName}
-			</Typography>
-
-			<Box mt={2} display='flex' flexDirection='column' alignItems='center' width='85%' justifyContent='space-between' height='100%'>
-				{/* PIN Input */}
-				<TextField label='Enter Pin' type='text' placeholder='123456' required value={givenPin} onChange={(e) => setGivenPin(e.target.value)} sx={{ marginTop: 2, marginBottom: 1 }} helperText='This pin was given to you in the request.' fullWidth />
-
-				{/* Instructions */}
-				<Typography variant='body1' marginTop={2} marginBottom={1}>
-					The purpose of this upload is to {attachmentInfo.purpose}.
-				</Typography>
-				<Typography variant='body2' marginY={1} color='text.secondary'>
-					When ready to upload a recommendation letter, please ensure it is saved as a PDF (max 25MB). You have 5 attempts to enter the correct PIN.
-				</Typography>
-				<Typography variant='body1' marginTop={1} marginBottom={2}>
-					Thank you for your time and support on behalf of the applicant and the board.
-				</Typography>
-
-				{/* Upload Button */}
-				<Button variant='contained' color='primary' component='label' disabled={uploading} sx={{ width: '100%', marginTop: 2 }}>
-					{uploading ? 'Uploading...' : 'Upload Recommendation Letter'}
-					<VisuallyHiddenInput type='file' onChange={handleUpload} />
-				</Button>
-			</Box>
-		</>
+		<PublicPageLayout maxWidth='sm' compact>
+			<AuthFormCard
+				title={`Upload ${uploadLabel} for ${request!.fromName}`}
+				icon={<UploadOutlined />}
+				eyebrow='Upload Center'
+				subtitle={`${brand.theOrganizationName} has asked you to submit a letter on behalf of this applicant. Your letter should ${attachmentInfo!.purpose}.`}
+				size='wide'
+				compact>
+				<Stack spacing={2.5} sx={{ width: '100%' }}>
+					<TextField
+						label='Enter pin'
+						type='text'
+						placeholder='123456'
+						required
+						value={givenPin}
+						onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGivenPin(e.target.value)}
+						helperText="Enter the pin from the applicant's request email."
+						fullWidth
+					/>
+					<Typography variant='body2' color='text.secondary' sx={homeDashboardIntroBodySx}>
+						{uploadRequirementsCopy}
+					</Typography>
+					<Typography variant='body2' color='text.secondary' sx={homeDashboardIntroBodySx}>
+						Thank you for supporting this applicant and {brand.theOrganizationName}.
+					</Typography>
+					<Button variant='contained' component='label' disabled={uploading} fullWidth sx={homeAuthSubmitButtonSx(primaryColor)}>
+						{uploading ? 'Uploading…' : `Upload ${uploadLabel}`}
+						<VisuallyHiddenInput type='file' accept='application/pdf,.pdf' onChange={handleUpload} />
+					</Button>
+				</Stack>
+			</AuthFormCard>
+		</PublicPageLayout>
 	);
 };
 
-UploadCenterContent.propTypes = {
-	validToken: PropTypes.bool,
-	uploadComplete: PropTypes.bool.isRequired,
-	request: PropTypes.object,
-	attachmentInfo: PropTypes.object,
-	givenPin: PropTypes.string.isRequired,
-	setGivenPin: PropTypes.func.isRequired,
-	uploading: PropTypes.bool.isRequired,
-	handleUpload: PropTypes.func.isRequired,
-	handleNavigateHome: PropTypes.func.isRequired,
-	handleClosePage: PropTypes.func.isRequired,
-};
-
-// =============================================================================
-//  MAIN COMPONENT
-// =============================================================================
-
 const UploadCenter = () => {
-	// --- Hooks & State ---
-	const { token } = useParams();
-	const navigate = useNavigate();
-	const { boxShadow } = useTheme();
+	useTitle({ title: 'Upload Center', appear: false });
+	const { token } = useParams<{ token: string }>();
+	const [request, setRequest] = useState<RequestData | null>(null);
+	const [givenPin, setGivenPin] = useState<string>('');
+	const [validToken, setValidToken] = useState<boolean | null>(null);
+	const [loading, setLoading] = useState<boolean>(true);
+	const [uploading, setUploading] = useState<boolean>(false);
+	const [uploadComplete, setUploadComplete] = useState<boolean>(false);
+	const { primaryColor } = useTheme();
 	const { showAlert } = useAlert();
+	const navigate = useNavigate();
 
-	const [request, setRequest] = useState(null);
-	const [givenPin, setGivenPin] = useState('');
-	const [validToken, setValidToken] = useState(null);
-	const [loading, setLoading] = useState(true);
-	const [uploading, setUploading] = useState(false);
-	const [uploadComplete, setUploadComplete] = useState(false);
-
-	// --- Effect: Validate Token on Mount ---
 	useEffect(() => {
 		const validateToken = async () => {
 			try {
 				setLoading(true);
-
-				// 1. Check if token exists in Firestore
-				const isValid = await validateRequest(token);
+				const isValid = await validateRequest(token!);
 
 				if (isValid.result) {
-					const fetchedRequest = await getRequestData(isValid.id);
-
-					// 2. Check Rate Limit & Expiry
-					if (fetchedRequest && fetchedRequest.attempts < 5) {
-						setRequest(fetchedRequest);
-
+					const fetchedRequest = (await getRequestData(isValid.id!)) as RequestData;
+					const attempts = typeof fetchedRequest?.attempts === 'number' ? fetchedRequest.attempts : Number(fetchedRequest?.attempts) || 0;
+					if (fetchedRequest && attempts < 5) {
+						setRequest({ ...fetchedRequest, attempts });
 						if (new Date(fetchedRequest.expiryDate) > new Date()) {
 							setValidToken(true);
 							if (fetchedRequest.completed) {
 								setUploadComplete(true);
 							}
 						} else {
-							setValidToken(false); // Expired
+							setValidToken(false);
 						}
 					} else {
-						setValidToken(false); // Too many attempts
+						setValidToken(false);
 					}
 				} else {
-					setValidToken(false); // Invalid ID
+					setValidToken(false);
 				}
 			} catch (error) {
-				console.error(error.message);
+				console.error((error as Error).message);
+				setValidToken(false);
 			} finally {
 				setLoading(false);
 			}
@@ -181,41 +225,44 @@ const UploadCenter = () => {
 		validateToken();
 	}, [token]);
 
-	// --- Action: Handle File Upload ---
-	const handleUpload = async (event) => {
+	const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
 		event.preventDefault();
-		let file = event.target.files[0];
+		const file = event.target.files?.[0];
 
-		// 1. PIN Validation
-		if (!givenPin) {
+		if (!file) return;
+
+		const pin = givenPin.trim();
+		if (!pin) {
 			showAlert({ message: 'Please enter the 6-digit PIN.', type: 'warning' });
 			return;
 		}
 
-		const isPin = await validatePin(givenPin);
+		const isPin = await validatePin(pin);
 		if (!isPin) {
 			showAlert({ message: 'Invalid PIN. Please check your email/request for the correct code.', type: 'error' });
 			return;
 		}
 
-		if (!file) return;
-
-		// 2. File Validation
 		if (!file.type.match('application/pdf')) {
 			showAlert({ message: 'Please select a PDF file.', type: 'warning' });
 			return;
 		}
 
-		const maxSizeInBytes = 25 * 1024 * 1024; // 25MB
+		const maxSizeInBytes = 25 * 1024 * 1024;
 		if (file.size > maxSizeInBytes) {
 			showAlert({ message: 'File size exceeds the limit. Please select a file smaller than 25MB.', type: 'warning' });
 			return;
 		}
 
-		// 3. Consistency Check
+		if (!request!.attachmentsID) {
+			showAlert({ message: 'This request is missing attachment information. Ask the applicant to send a new request.', type: 'error' });
+			return;
+		}
+
 		try {
-			const appData = await getApplication(null, request.applicationID);
-			if (appData.attachments !== request.attachmentsID) {
+			// getApplication ignores userID and looks up by applicationID directly.
+			const appData = await getApplication('', request!.applicationID);
+			if (!appData || appData.attachments !== request!.attachmentsID) {
 				showAlert({ message: 'Attachment ID mismatch. Please contact support.', type: 'error' });
 				return;
 			}
@@ -227,36 +274,25 @@ const UploadCenter = () => {
 		setUploading(true);
 
 		try {
-			// 4. Increment Security Counter (Rate Limiting)
-			const newAttempts = request.attempts + 1;
-			await saveCollectionData(collections.requests, request.id, { attempts: newAttempts });
-			setRequest((prev) => ({ ...prev, attempts: newAttempts }));
+			const newAttempts = (request!.attempts ?? 0) + 1;
+			await saveCollectionData(collections.requests, request!.id, { attempts: newAttempts });
+			setRequest((prev) => (prev ? { ...prev, attempts: newAttempts } : prev));
 
-			// 5. Upload to Storage
-			const savedFilePath = await saveFile(UploadType.applicationAttachment, request.applicationID, request.attachmentType, file);
+			const savedFilePath = await saveFile(UploadType.applicationAttachment, request!.applicationID, request!.attachmentType, file);
 			const fileLink = await getDownloadLinkForFile(savedFilePath);
-
 			if (savedFilePath) {
-				// 6. Update Application Attachments
-				await saveCollectionData(collections.attachments, request.attachmentsID, {
-					[request.attachmentType]: {
-						displayName: file.name,
-						home: fileLink,
-						refLoc: savedFilePath,
-						uploadedBy: 'request',
-					},
+				await saveCollectionData(collections.attachments, request!.attachmentsID, {
+					[request!.attachmentType]: { displayName: file.name, home: fileLink, refLoc: savedFilePath, uploadedBy: 'request' },
 				});
-
-				// 7. Mark Request as Completed
-				await saveCollectionData(collections.requests, request.id, { completed: true, uploadedAt: new Date() });
-
-				setRequest((prev) => ({ ...prev, completed: true }));
+				await saveCollectionData(collections.requests, request!.id, { completed: true, uploadedAt: new Date() });
+				await maybePromoteApplicationToCompleted(request!.applicationID);
+				setRequest((prev) => (prev ? { ...prev, completed: true } : prev));
 				setUploadComplete(true);
 			} else {
 				showAlert({ message: 'Failed to upload the file. Please try again.', type: 'error' });
 			}
 		} catch (error) {
-			console.error('Upload Error:', error.message);
+			console.error('Upload Error:', (error as Error).message);
 			showAlert({ message: 'An unexpected error occurred during upload.', type: 'error' });
 		} finally {
 			setUploading(false);
@@ -271,29 +307,36 @@ const UploadCenter = () => {
 		window.close();
 	};
 
-	if (loading) return <Loader />;
+	const attachmentInfo: AttachmentInfo | null = request
+		? ((LettersOfRecommendation as unknown as Record<string, AttachmentInfo>)[request.attachmentType] ?? null)
+		: null;
 
-	// Validate if the requested attachment type is still valid in config
-	const attachmentInfo = request && LettersOfRecommendation[request.attachmentType];
-	if (!attachmentInfo && validToken) {
-		setValidToken(false);
+	const resolvedValidToken = validToken === true && !attachmentInfo ? false : validToken;
+
+	if (loading) {
+		return (
+			<PublicStatusPage eyebrow='Upload Center' title='Verifying Your Link' subtitle='Please wait while we confirm your upload request.' cardSize='wide' fitViewport>
+				<Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+					<CircularProgress />
+				</Box>
+			</PublicStatusPage>
+		);
 	}
 
 	return (
-		<Box display='flex' flexDirection='column' justifyContent='center' alignItems='center' bgcolor='background.main' color='secondary.main' sx={{ height: '100vh' }}>
-			<Box width='35rem' height='auto' padding={3} bgcolor='background.main' color='secondary.main' sx={{ borderRadius: 4, boxShadow: boxShadow }}>
-				<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 'calc(100vh - 200px)' }}>
-					<Avatar sx={{ m: 1, bgcolor: 'secondary' }}>
-						<UploadIcon />
-					</Avatar>
-
-					<UploadCenterContent validToken={validToken} uploadComplete={uploadComplete} request={request} attachmentInfo={attachmentInfo} givenPin={givenPin} setGivenPin={setGivenPin} uploading={uploading} handleUpload={handleUpload} handleNavigateHome={handleNavigateHome} handleClosePage={handleClosePage} />
-
-					<Divider sx={{ my: 3 }} />
-				</Box>
-				<CopyrightFooter sx={{ mt: 4, mb: 4 }} />
-			</Box>
-		</Box>
+		<UploadCenterContent
+			validToken={resolvedValidToken}
+			uploadComplete={uploadComplete}
+			request={request}
+			attachmentInfo={attachmentInfo}
+			givenPin={givenPin}
+			setGivenPin={setGivenPin}
+			uploading={uploading}
+			primaryColor={primaryColor}
+			handleUpload={handleUpload}
+			handleNavigateHome={handleNavigateHome}
+			handleClosePage={handleClosePage}
+		/>
 	);
 };
 

@@ -1,7 +1,7 @@
 // src/context/AuthContext.test.js
 import React from 'react';
 // FIX: Import 'act' from 'react' to fix the ReactDOMTestUtils warning
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { onAuthStateChanged } from 'firebase/auth';
 import { getRealTimeDocument, logoutUser } from '../config/data/firebase';
@@ -12,6 +12,8 @@ vi.mock('../config/data/firebase', () => ({
 	auth: {},
 	getRealTimeDocument: jest.fn(),
 	logoutUser: jest.fn(),
+	touchUserPresence: jest.fn(() => Promise.resolve()),
+	clearUserPresence: jest.fn(() => Promise.resolve()),
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -134,6 +136,34 @@ describe('AuthContext', () => {
 		expect(screen.getByTestId('user-role')).toHaveTextContent(UserType.member);
 	});
 
+	test('keeps the app tree mounted across a later sign-in (no bootstrap remount)', async () => {
+		getRealTimeDocument.mockImplementation((collection, uid, callback) => {
+			if (collection === 'applicants') callback({ id: 'a1' });
+			if (collection === 'members') callback(null);
+			return jest.fn();
+		});
+
+		render(
+			<AuthProvider>
+				<TestConsumer />
+			</AuthProvider>
+		);
+
+		await act(async () => {
+			mockAuthStateCallback(null);
+		});
+		expect(screen.getByTestId('user-email')).toHaveTextContent('No User');
+		expect(screen.queryByTestId('auth-loader')).not.toBeInTheDocument();
+
+		await act(async () => {
+			mockAuthStateCallback({ uid: '123', email: 'later@test.com' });
+		});
+
+		expect(screen.queryByTestId('auth-loader')).not.toBeInTheDocument();
+		expect(screen.getByTestId('user-email')).toHaveTextContent('later@test.com');
+		expect(screen.getByTestId('user-role')).toHaveTextContent(UserType.applicant);
+	});
+
 	test('logout calls firebase logout and clears state', async () => {
 		render(
 			<AuthProvider>
@@ -141,23 +171,18 @@ describe('AuthContext', () => {
 			</AuthProvider>
 		);
 
-		// FIX: 1. Wait for the initial login to finish
 		await act(async () => {
-			mockAuthStateCallback({ uid: '123' }); // logged in initially
+			mockAuthStateCallback({ uid: '123', email: 'out@test.com' });
 		});
 
-		// Ensure we are logged in
 		expect(screen.getByTestId('user-email')).not.toHaveTextContent('No User');
 
 		const logoutBtn = screen.getByText('Logout');
-
-		// FIX: 2. Wrap the click event (which causes state updates) in act()
 		await act(async () => {
 			logoutBtn.click();
 		});
 
 		expect(logoutUser).toHaveBeenCalled();
-		// The component re-renders with "No User" after logout
 		expect(screen.getByTestId('user-email')).toHaveTextContent('No User');
 	});
 });

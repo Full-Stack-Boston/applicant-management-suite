@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GLOBAL CONTEXT COMPOSER
  * ---------------------------------------------------------------------------
@@ -20,8 +19,7 @@
  * They are "Scoped Contexts" applied only to specific routes to improve performance.
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
+import { type ReactNode } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -34,8 +32,9 @@ import { AlertProvider } from './AlertContext';
 import { DialogProvider } from './DialogContext';
 import { MailboxProvider } from './MailboxContext';
 import { PageTitleProvider } from './HelmetContext';
+import { EmailTemplateProvider } from './EmailTemplateContext';
 
-export const Providers = ({ children }) => {
+export const Providers = ({ children }: { children: ReactNode }) => {
 	return (
         // 1. Data Layer (Settings & Identity)
         <ConfigProvider>
@@ -48,12 +47,14 @@ export const Providers = ({ children }) => {
 							<DialogProvider>
 								{/* 4. Feature Layer (Messaging & SEO) */}
 								<MailboxProvider>
+									<EmailTemplateProvider>
 									<HelmetProvider>
 										<PageTitleProvider>
 											{/* 5. Routing Layer */}
 											<BrowserRouter>{children}</BrowserRouter>
 										</PageTitleProvider>
 									</HelmetProvider>
+									</EmailTemplateProvider>
 								</MailboxProvider>
 							</DialogProvider>
 						</AlertProvider>
@@ -62,8 +63,4 @@ export const Providers = ({ children }) => {
 			</AuthProvider>
         </ConfigProvider>
     );
-};
-
-Providers.propTypes = {
-	children: PropTypes.node.isRequired,
 };

@@ -46,7 +46,6 @@ describe('Breadcrumbs Component', () => {
 		render(<Crumbs />);
 		// Dark Mode icon button (since darkMode is false, it shows DarkModeIcon)
 		// We find it by the SVG icon or just the button role
-		const buttons = screen.getAllByRole('button');
 		// The theme toggle is one of the icon buttons.
 		// Since we don't have strict aria-labels, we rely on firing the event on the button that isn't Home/Logout.
 		// A better way in MUI tests is usually testid, but let's try finding by index logic or adding testid if possible.

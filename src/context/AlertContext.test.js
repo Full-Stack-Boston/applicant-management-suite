@@ -1,7 +1,6 @@
 // src/context/AlertContext.test.js
 import React, { useEffect } from 'react';
-import { render, screen, act, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import { AlertProvider, useAlert } from './AlertContext';
 import { logEvent } from '../config/data/firebase';
 
@@ -123,5 +122,29 @@ describe('AlertContext', () => {
 		// Find alert. Note: If duplicates were allowed, this might behave differently,
 		// but visually we just check if it renders without crashing loop.
 		expect(await screen.findByText('Duplicate')).toBeInTheDocument();
+	});
+
+	test('keeps showAlert identity stable across toast display', async () => {
+		const identities = [];
+
+		const IdentityProbe = () => {
+			const { showAlert } = useAlert();
+			useEffect(() => {
+				identities.push(showAlert);
+				if (identities.length === 1) {
+					showAlert({ message: 'Stable probe', type: 'info' });
+				}
+			}, [showAlert]);
+			return null;
+		};
+
+		render(
+			<AlertProvider>
+				<IdentityProbe />
+			</AlertProvider>
+		);
+
+		expect(await screen.findByText('Stable probe')).toBeInTheDocument();
+		expect(new Set(identities).size).toBe(1);
 	});
 });

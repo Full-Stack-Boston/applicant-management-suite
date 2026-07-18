@@ -1,11 +1,16 @@
-// @ts-nocheck
 import React from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button } from '@mui/material';
 import { useTheme } from '../../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
-const SimpleApplicantsTable = ({ data }) => {
+import type { SimpleApplicantRow } from './types';
+
+interface SimpleApplicantsTableProps {
+	data?: SimpleApplicantRow[];
+}
+
+const SimpleApplicantsTable = ({ data }: SimpleApplicantsTableProps) => {
 	const navigate = useNavigate();
 	const { darkMode } = useTheme();
 	const tableHeaderCellStyles = {

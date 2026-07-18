@@ -1,5 +1,4 @@
-// @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
 	DialogTitle,
 	DialogContent,
@@ -16,27 +15,48 @@ import {
 import { ExpandMore as ExpandMoreIcon, ErrorOutlined, CheckCircleOutlined, HourglassEmpty } from '@mui/icons-material';
 import { getEmailLogs } from '../../config/data/firebase';
 
-const EmailLogsDialog = ({ onClose }) => {
-	const [logs, setLogs] = useState([]);
+interface EmailDelivery {
+	state?: string;
+	error?: string;
+}
+
+interface EmailLog {
+	id: string;
+	to?: string;
+	from?: string;
+	cc?: string[];
+	replyTo?: string;
+	message?: { subject?: string };
+	delivery?: EmailDelivery;
+	createdAt?: { toDate: () => Date };
+	[key: string]: unknown;
+}
+
+interface EmailLogsDialogProps {
+	onClose?: () => void;
+}
+
+const EmailLogsDialog = ({ onClose }: EmailLogsDialogProps) => {
+	const [logs, setLogs] = useState<EmailLog[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
 		const fetchLogs = async () => {
 			const data = await getEmailLogs(50);
-			setLogs(data);
+			setLogs((data as EmailLog[]) || []);
 			setLoading(false);
 		};
 		fetchLogs();
 	}, []);
 
-	const getStatusIcon = (delivery) => {
+	const getStatusIcon = (delivery?: EmailDelivery) => {
 		if (!delivery) return <HourglassEmpty color="warning" />;
 		if (delivery.state === 'SUCCESS') return <CheckCircleOutlined color="success" />;
 		if (delivery.state === 'ERROR') return <ErrorOutlined color="error" />;
 		return <HourglassEmpty color="info" />;
 	};
 
-	const getStatusLabel = (delivery) => {
+	const getStatusLabel = (delivery?: EmailDelivery): string => {
 		if (!delivery) return 'QUEUED';
 		return delivery.state || 'PROCESSING';
 	};
@@ -46,23 +66,23 @@ const EmailLogsDialog = ({ onClose }) => {
 			<DialogTitle>Email Delivery Logs (Last 50)</DialogTitle>
 			<DialogContent>
 				{loading ? (
-					<Box display="flex" justifyContent="center" p={4}>
+					<Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
 						<CircularProgress />
 					</Box>
 				) : logs.length === 0 ? (
-					<Typography p={2}>No email logs found.</Typography>
+					<Typography sx={{ p: 2 }}>No email logs found.</Typography>
 				) : (
-					<Box display="flex" flexDirection="column" gap={1} mt={1}>
+					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
 						{logs.map((log) => (
 							<Accordion key={log.id} variant="outlined" sx={{ bgcolor: 'background.paper' }}>
 								<AccordionSummary expandIcon={<ExpandMoreIcon />}>
-									<Box display="flex" alignItems="center" gap={2} width="100%">
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
 										{getStatusIcon(log.delivery)}
-										<Box flex={1}>
-											<Typography variant="subtitle2" color="text.active">
+										<Box sx={{ flex: 1 }}>
+											<Typography variant="subtitle2" sx={{ color: 'text.active' }}>
 												{log.message?.subject || '(No Subject)'}
 											</Typography>
-											<Typography variant="caption" color="text.secondary">
+											<Typography variant="caption" sx={{ color: 'text.secondary' }}>
 												To: {log.to} {log.createdAt && ` | ${log.createdAt.toDate().toLocaleString()}`}
 											</Typography>
 										</Box>
@@ -74,7 +94,7 @@ const EmailLogsDialog = ({ onClose }) => {
 									</Box>
 								</AccordionSummary>
 								<AccordionDetails>
-									<Box display="flex" flexDirection="column" gap={1}>
+									<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
 										<Typography variant="body2"><strong>From:</strong> {log.from}</Typography>
 										{log.cc && log.cc.length > 0 && (
 											<Typography variant="body2"><strong>CC:</strong> {log.cc.join(', ')}</Typography>
@@ -82,7 +102,7 @@ const EmailLogsDialog = ({ onClose }) => {
 										<Typography variant="body2"><strong>Reply-To:</strong> {log.replyTo || 'None'}</Typography>
 										
 										{log.delivery?.error && (
-											<Box mt={1} p={1} bgcolor="error.main" sx={{ opacity: 0.1, borderRadius: 1 }}>
+											<Box sx={{ mt: 1, p: 1, bgcolor: 'error.main', opacity: 0.1, borderRadius: 1 }}>
 												<Typography variant="caption" color="error" sx={{ fontWeight: 'bold' }}>
 													Error Details:
 												</Typography>
@@ -92,8 +112,8 @@ const EmailLogsDialog = ({ onClose }) => {
 											</Box>
 										)}
 										
-										<Box mt={1}>
-											<Typography variant="caption" color="text.secondary">
+										<Box sx={{ mt: 1 }}>
+											<Typography variant="caption" sx={{ color: 'text.secondary' }}>
 												Document ID: {log.id}
 											</Typography>
 										</Box>

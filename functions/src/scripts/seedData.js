@@ -4,16 +4,20 @@ const path = require('path');
 
 // --- Configuration ---
 // Go up two levels to find the key in project root
-const SERVICE_ACCOUNT_PATH = path.join(__dirname, '../../serviceAccountKey.json');
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, '../../../serviceAccountKey.json');
 const PROJECT_ID = 'ams-fsb';
 
 try {
 	const serviceAccount = require(SERVICE_ACCOUNT_PATH);
+	if (serviceAccount.project_id !== PROJECT_ID) {
+		console.error(`REFUSING: service account project_id=${serviceAccount.project_id}, expected ${PROJECT_ID}`);
+		process.exit(2);
+	}
 	admin.initializeApp({
 		credential: admin.credential.cert(serviceAccount),
 		projectId: PROJECT_ID,
 	});
-	console.log('Firebase Admin initialized.');
+	console.log(`Firebase Admin initialized for ${PROJECT_ID} only.`);
 } catch (e) {
 	console.error('Initialization Error:', e.message);
 	process.exit(1);
@@ -23,14 +27,133 @@ const db = admin.firestore();
 
 // --- Data Generators ---
 const firstNames = ['James', 'Mary', 'Robert', 'Patricia', 'John', 'Jennifer', 'Michael', 'Linda', 'David', 'Elizabeth', 'William', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica', 'Thomas', 'Sarah', 'Charles', 'Karen', 'Christopher', 'Nancy', 'Daniel', 'Lisa', 'Matthew', 'Betty', 'Anthony', 'Margaret', 'Mark', 'Sandra', 'Donald', 'Ashley', 'Steven', 'Kimberly', 'Paul', 'Emily', 'Andrew', 'Donna', 'Joshua', 'Michelle', 'Kenneth', 'Dorothy', 'Kevin', 'Carol', 'Brian', 'Amanda', 'George', 'Melissa', 'Edward', 'Deborah', 'Ronald', 'Stephanie', 'Timothy', 'Rebecca', 'Jason', 'Sharon', 'Jeffrey', 'Laura', 'Ryan', 'Cynthia', 'Jacob', 'Kathleen', 'Gary', 'Amy', 'Nicholas', 'Shirley', 'Eric', 'Angela', 'Jonathan', 'Helen', 'Stephen', 'Anna', 'Larry', 'Brenda', 'Justin', 'Pamela', 'Scott', 'Nicole', 'Brandon', 'Emma'];
-const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell', 'Carter', 'Roberts', 'Gomez', 'Phillips', 'Evans', 'Turner', 'Diaz', 'Parker', 'Cruz', 'Edwards', 'Collins', 'Reyes', 'Stewart', 'Morris', 'Morales', 'Murphy', 'Cook', 'Rogers', 'Gutierrez', 'Ortiz', 'Morgan', 'Cooper'];
-const organizations = ['Code for America', 'Habitat for Humanity', 'Local Food Bank', 'Red Cross', 'Boys & Girls Club', 'City Animal Shelter', 'Big Brothers Big Sisters', 'YMCA', 'United Way', 'Meals on Wheels', 'Sierra Club', 'Doctors Without Borders', 'Special Olympics', 'Make-A-Wish Foundation', 'World Wildlife Fund', 'Salvation Army', 'Goodwill Industries', 'Feeding America', 'Teach For America', 'AmeriCorps', 'Rotary Club', 'Lions Club', 'Key Club', 'National Honor Society', 'Student Government Assoc.', 'Local Library Volunteers', 'Community Garden Initiative', 'Tech for Good', 'Youth Mentoring Program', 'Historical Society'];
-const roles = ['Team Lead', 'Volunteer Coordinator', 'Senior Developer', 'Mentor', 'Project Manager', 'Outreach Specialist', 'Tutor', 'Fundraiser', 'Event Planner', 'Social Media Manager', 'Research Assistant', 'Board Member', 'Camp Counselor', 'Administrative Assistant', 'Data Analyst', 'Content Creator', 'Grant Writer', 'Community Liaison', 'Site Supervisor', 'Program Director', 'Shift Leader', 'Peer Advisor'];
-const cities = ['Boston, MA', 'Salem, MA', 'Worcester, MA', 'Cambridge, MA', 'Lowell, MA', 'Springfield, MA', 'Quincy, MA', 'Newton, MA', 'Somerville, MA', 'Lynn, MA', 'New Bedford, MA', 'Brockton, MA', 'Fall River, MA', 'Medford, MA', 'Malden, MA', 'Waltham, MA', 'Brookline, MA', 'Plymouth, MA', 'Haverhill, MA', 'Taunton, MA', 'Peabody, MA', 'Revere, MA', 'Methuen, MA', 'Chicopee, MA', 'Attleboro, MA', 'Arlington, MA'];
-const schools = ['Boston University', 'Northeastern University', 'UMass Amherst', 'Salem State University', 'MIT', 'Harvard University', 'Tufts University', 'Boston College', 'Suffolk University', 'Emerson College', 'Wentworth Institute of Technology', 'UMass Boston', 'UMass Lowell', 'Bridgewater State University', 'Framingham State University', 'Bentley University', 'Brandeis University', 'Wellesley College', 'Babson College', 'WPI', 'Clark University', 'Holy Cross', 'Merrimack College', 'Endicott College', 'Gordon College', 'Simmons University', 'Lesley University'];
-const majors = ['Computer Science', 'Biology', 'History', 'Engineering', 'Psychology', 'Nursing', 'Business Administration', 'Economics', 'Political Science', 'English Literature', 'Mathematics', 'Communications', 'Marketing', 'Finance', 'Accounting', 'Sociology', 'Chemistry', 'Physics', 'Environmental Science', 'Art History', 'Graphic Design', 'Education', 'Public Health', 'International Relations', 'Criminal Justice'];
-const streets = ['Main St', 'Maple Ave', 'Oak Ln', 'Washington St', 'Park Dr', 'Highland Ave', 'Elm St', 'Cedar St', 'Pine St', 'Lakeview Dr', 'Sunset Blvd', 'River Rd', 'Broadway', 'Market St', 'School St', 'Church St', 'Chestnut St', 'Walnut St', 'Pleasant St', 'Center St', 'Union St', 'North St', 'South St', 'West St', 'East St', 'Spring St', 'Summer St', 'Winter St', 'Autumn Dr'];
-const emailDomains = ['yahoo.com', 'gmail.com', 'outlook.com', 'hotmail.com', 'aol.com', 'mail.com', 'icloud.com', 'protonmail.com'];
+const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell', 'Carter', 'Roberts', 'Gomez', 'Phillips', 'Evans', 'Turner', 'Diaz', 'Patel', 'Cruz', 'Edwards', 'Collins', 'Reyes', 'Stewart', 'Morris', 'Morales', 'Murphy', 'Cook', 'Rogers', 'Gutierrez', 'Ortiz', 'Morgan', 'Cooper'];
+const organizations = [
+	'North Shore YMCA',
+	'Haven From Hunger',
+	'The Food Project (Lynn)',
+	'Salem Public Library Friends',
+	'Essex County Community Foundation',
+	'Partners Healthcare Volunteer Corps',
+	'House of Peace & Education (Lawrence)',
+	'Groundwork Lawrence',
+	'Merrimack Valley Habitat for Humanity',
+	'Boys & Girls Club of Greater Salem',
+	'Newburyport Chamber Youth Mentors',
+	'Gloucester Maritime Heritage Center',
+	'Ipswich River Watershed Association',
+	'Beverly Bootstraps',
+	'North Shore Community Outreach',
+	'Tufts Medical Center Youth Corps',
+	'Mass Audubon Ipswich River Sanctuary',
+	'Greater Lawrence Community Action Council',
+	'Peabody Institute Library Tutors',
+	'North Shore Community College Mentors',
+	'Salem State Neighbor Mentoring',
+	'New England Aquarium Teen Interpreter',
+	'Boston Harbor Islands Alliance',
+	'Boston Cares',
+	'North Shore Community Development Coalition',
+	'Lynn Museum & Arts Ambassadors',
+	'Amesbury Senior Center Helpers',
+	'Marblehead Community Center',
+	'Manchester Athletic Club Youth Assist',
+	'Rockport Art Association Guides',
+];
+const roles = ['Team Lead', 'Volunteer Coordinator', 'Mentor', 'Project Manager', 'Outreach Specialist', 'Tutor', 'Fundraiser', 'Event Planner', 'Research Assistant', 'Camp Counselor', 'Peer Advisor', 'Site Supervisor', 'Program Aide', 'Front Desk Assistant', 'Data Entry Volunteer', 'Community Liaison', 'Shift Leader', 'Content Creator', 'Grant Writer Assistant', 'Youth Coach'];
+const cities = [
+	'Salem, MA',
+	'Lynn, MA',
+	'Peabody, MA',
+	'Beverly, MA',
+	'Danvers, MA',
+	'Marblehead, MA',
+	'Swampscott, MA',
+	'Nahant, MA',
+	'Saugus, MA',
+	'Lynnfield, MA',
+	'Middleton, MA',
+	'Topsfield, MA',
+	'Boxford, MA',
+	'Ipswich, MA',
+	'Rowley, MA',
+	'Newbury, MA',
+	'Newburyport, MA',
+	'Amesbury, MA',
+	'Salisbury, MA',
+	'Georgetown, MA',
+	'Groveland, MA',
+	'Merrimac, MA',
+	'West Newbury, MA',
+	'Essex, MA',
+	'Hamilton, MA',
+	'Wenham, MA',
+	'Manchester-by-the-Sea, MA',
+	'Gloucester, MA',
+	'Rockport, MA',
+	'Lawrence, MA',
+	'Methuen, MA',
+	'Andover, MA',
+	'North Andover, MA',
+	'Haverhill, MA',
+];
+const schools = [
+	'Salem State University',
+	'North Shore Community College',
+	'Endicott College',
+	'Merrimack College',
+	'Northern Essex Community College',
+	'Gordon College',
+	'Massachusetts College of Art and Design',
+	'UMass Lowell',
+	'UMass Boston',
+	'UMass Amherst',
+	'Boston University',
+	'Northeastern University',
+	'Suffolk University',
+	'Emerson College',
+	'Tufts University',
+	'Harvard Extension School',
+	'MIT',
+	'Boston College',
+	'Bentley University',
+	'Brandeis University',
+	'Wellesley College',
+	'Babson College',
+	'Wentworth Institute of Technology',
+	'Simmons University',
+	'Lesley University',
+	'Bridgewater State University',
+	'Framingham State University',
+];
+const highSchools = [
+	'Salem High School',
+	'Lynn Classical High School',
+	'Lynn English High School',
+	'Peabody Veterans Memorial High School',
+	'Beverly High School',
+	'Danvers High School',
+	'Marblehead High School',
+	'Swampscott High School',
+	'Saugus High School',
+	'Ipswich High School',
+	'Newburyport High School',
+	'Amesbury High School',
+	'Gloucester High School',
+	'Rockport High School',
+	'Manchester Essex Regional High School',
+	'Hamilton-Wenham Regional High School',
+	'Triton Regional High School',
+	'Pentucket Regional High School',
+	'Andover High School',
+	'North Andover High School',
+	'Lawrence High School',
+	'Methuen High School',
+	'Haverhill High School',
+];
+const majors = ['Computer Science', 'Biology', 'History', 'Engineering', 'Psychology', 'Nursing', 'Business Administration', 'Economics', 'Political Science', 'English Literature', 'Mathematics', 'Communications', 'Marketing', 'Finance', 'Accounting', 'Sociology', 'Chemistry', 'Environmental Science', 'Education', 'Public Health', 'Marine Biology', 'Hospitality Management', 'Graphic Design', 'Criminal Justice', 'Social Work'];
+const streets = ['Essex St', 'Washington St', 'Lafayette St', 'Highland Ave', 'Cabot St', 'Main St', 'Federal St', 'Bridge St', 'Ocean Ave', 'Central St', 'Market St', 'Harbor St', 'Summer St', 'Winter St', 'Chestnut St', 'Union St', 'Maple St', 'School St', 'Park St', 'Pleasant St', 'Derby St', 'Congress St', 'Bay View Ave', 'Atlantic Ave'];
+const emailDomains = ['gmail.com', 'outlook.com', 'icloud.com', 'protonmail.com', 'yahoo.com', 'northeastern.edu', 'bu.edu', 'salemstate.edu', 'endicott.edu'];
 
 const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -55,11 +178,15 @@ const deleteCollection = async (collectionPath) => {
 	if (snapshot.size === 0) return;
 
 	console.log(`Deleting ${snapshot.size} documents from ${collectionPath}...`);
-	const batch = db.batch();
-	snapshot.docs.forEach((doc) => {
-		batch.delete(doc.ref);
-	});
-	await batch.commit();
+	const CHUNK = 400;
+	for (let i = 0; i < snapshot.docs.length; i += CHUNK) {
+		const batch = db.batch();
+		snapshot.docs.slice(i, i + CHUNK).forEach((doc) => {
+			batch.delete(doc.ref);
+		});
+		await batch.commit();
+		console.log(`  deleted ${Math.min(i + CHUNK, snapshot.size)}/${snapshot.size}`);
+	}
 };
 
 const createMockApplicantGraph = async (i) => {
@@ -72,9 +199,8 @@ const createMockApplicantGraph = async (i) => {
 	const major = getRandom(majors);
 	const city = getRandom(cities);
 
-	// Generate a random date extending back 3 years, starting from late 2026/future
-	// This ensures 2026 gets plenty of applications
-	const endDate = new Date('2026-12-31T23:59:59Z').getTime();
+	// Generate a random date from 2023 through today (demo "as of" cutover)
+	const endDate = new Date('2026-07-15T23:59:59Z').getTime();
 	const startDate = new Date('2023-01-01T00:00:00Z').getTime();
 	const randomDate = new Date(startDate + Math.random() * (endDate - startDate));
 	const randomYear = randomDate.getFullYear();
@@ -144,7 +270,7 @@ const createMockApplicantGraph = async (i) => {
 		major: major,
 		expectedGraduationDate: new Date('2025-05-01').toISOString(),
 		currentGPA: getRandomFloat(2.5, 4.0),
-		previousSchools: ['Local High School'],
+		previousSchools: [getRandom(highSchools)],
 		completedBy: uid,
 		searchableTerms: generateSearchTokens([school, major]),
 	});
@@ -210,10 +336,14 @@ const createMockApplicantGraph = async (i) => {
 	batch.set(db.collection('attachments').doc(attachmentsId), {
 		id: attachmentsId,
 		attachmentsID: attachmentsId,
-		applicantPersonalLetter: { displayName: 'My_Essay.pdf', home: 'http://example.com/fake.pdf' },
-		academicTranscript: { displayName: 'Transcript_2024.pdf', home: 'http://example.com/fake.pdf' },
+		applicantPersonalLetter: { displayName: 'Personal_Statement.pdf', home: 'http://example.com/fake.pdf' },
+		academicRecommendationLetter: { displayName: 'Academic_Rec.pdf', home: 'http://example.com/fake.pdf' },
+		communityRecommendationLetter: { displayName: 'Community_Rec.pdf', home: 'http://example.com/fake.pdf' },
+		experienceRecommendationLetter: { displayName: 'Experience_Rec.pdf', home: 'http://example.com/fake.pdf' },
+		academicTranscript: { displayName: 'Transcript.pdf', home: 'http://example.com/fake.pdf' },
+		studentAidReport: { displayName: 'SAR_Summary.pdf', home: 'http://example.com/fake.pdf' },
 		completedBy: uid,
-		searchableTerms: generateSearchTokens(['Essay', 'Transcript']),
+		searchableTerms: generateSearchTokens(['Essay', 'Transcript', 'Recommendation']),
 	});
 
 	// Round-robin distribution avoids low-balling any specific application type
@@ -242,26 +372,45 @@ const createMockApplicantGraph = async (i) => {
 		searchableTerms: generateSearchTokens([appType, appStatus, firstName, lastName]),
 	};
 
-	batch.set(db.collection('applications').doc(appId), applicationData);
-
-	// Mock Awards
+	// Mock Awards — schema matches UI (awardAmount / awardID) and links onto the application
 	if (appStatus === 'Awarded') {
 		const awardId = uuidv4();
+		const amount = getRandomInt(1000, 5000);
 		const awardData = {
+			awardID: awardId,
 			id: awardId,
+			awardAmount: amount,
+			amount,
 			applicantID: uid,
+			applicantId: uid,
+			applicationID: appId,
+			applicationId: appId,
 			applicantName: `${firstName} ${lastName}`,
-			type: appType,
+			completedBy: uid,
+			createdOn: randomDate.toISOString(),
+			awardedOn: randomDate.toISOString(),
 			deadline: windowString,
-			amount: getRandomInt(1000, 5000),
-			awardedOn: randomDate.toISOString()
+			message: 'Awarded by the review committee.',
+			type: appType,
 		};
 		batch.set(db.collection('awards').doc(awardId), awardData);
+		applicationData.awards = [awardId];
+		applicationData.status = 'Awarded';
 
 		await db.collection('applicants').doc(uid).update({
-			awards: admin.firestore.FieldValue.arrayUnion(awardData)
+			awards: admin.firestore.FieldValue.arrayUnion({
+				id: awardId,
+				awardID: awardId,
+				awardAmount: amount,
+				amount,
+				type: appType,
+				deadline: windowString,
+				awardedOn: randomDate.toISOString(),
+			}),
 		});
 	}
+
+	batch.set(db.collection('applications').doc(appId), applicationData);
 
 	await batch.commit();
 
@@ -276,19 +425,32 @@ const createMockApplicantGraph = async (i) => {
 };
 
 const seed = async () => {
-	console.log('Wiping existing mock data...');
-	await deleteCollection('applicants');
-	await deleteCollection('profiles');
-	await deleteCollection('families');
-	await deleteCollection('educationRecords');
-	await deleteCollection('experienceRecords');
-	await deleteCollection('expenseReports');
-	await deleteCollection('incomeReports');
-	await deleteCollection('contributions');
-	await deleteCollection('projections');
-	await deleteCollection('attachments');
-	await deleteCollection('applications');
-	await deleteCollection('awards');
+	console.log(`Wiping existing demo/makeover data in ${PROJECT_ID} (leaving members, authUsers, siteConfiguration)...`);
+	const wipeTargets = [
+		'applicants',
+		'profiles',
+		'families',
+		'educationRecords',
+		'experienceRecords',
+		'expenseReports',
+		'incomeReports',
+		'contributions',
+		'projections',
+		'attachments',
+		'applications',
+		'awards',
+		'interviews',
+		'requests',
+		'mail_cache',
+		'emails',
+		'sms',
+		'legacy_financials',
+		'sitelog',
+		'dblog',
+	];
+	for (const name of wipeTargets) {
+		await deleteCollection(name);
+	}
 
 	console.log('Starting 150-Record Seed...');
 	for (let i = 1; i <= 150; i++) {

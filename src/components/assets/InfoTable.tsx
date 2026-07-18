@@ -1,31 +1,57 @@
-// @ts-nocheck
 /**
  * InfoTable Component
  * Renders a simple key-value list for displaying read-only data.
- * Skips rows with empty values to keep the UI clean.
+ * Uses sx colors (not Typography color prop) so palette paths resolve in MUI 9.
  */
 
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 import PropTypes from 'prop-types';
+import type { InfoTableProps } from './types';
 
-const InfoTable = ({ data }) => {
+const InfoTable = ({ data }: InfoTableProps) => {
 	if (!data || data.length === 0) return null;
 
 	return (
-		<Box>
+		<Box
+			sx={{
+				display: 'grid',
+				gridTemplateColumns: { xs: '1fr', sm: 'minmax(96px, 8.75rem) minmax(0, 1fr)' },
+				columnGap: 1.5,
+				rowGap: 0.65,
+				width: '100%',
+				minWidth: 0,
+			}}>
 			{data.map(
 				(row) =>
-					// Only render rows that have a value
 					row.value && (
-						<Box key={row.label} mb='10px' fontSize='14px'>
-							<Typography component='span' fontWeight='bold' color='text.secondary' mr='5px'>
-								{row.label}:
+						<React.Fragment key={row.label}>
+							<Typography
+								component='div'
+								sx={{
+									fontWeight: 600,
+									color: 'text.secondary',
+									fontSize: '0.72rem',
+									letterSpacing: '0.04em',
+									textTransform: 'uppercase',
+									lineHeight: 1.35,
+								}}>
+								{row.label}
 							</Typography>
-							<Typography component='span' fontWeight='300'>
+							<Typography
+								component='div'
+								sx={{
+									fontWeight: 400,
+									color: 'text.primary',
+									fontSize: '0.9375rem',
+									lineHeight: 1.35,
+									wordBreak: 'break-word',
+									overflowWrap: 'anywhere',
+									minWidth: 0,
+								}}>
 								{row.value}
 							</Typography>
-						</Box>
+						</React.Fragment>
 					)
 			)}
 		</Box>
@@ -36,7 +62,7 @@ InfoTable.propTypes = {
 	data: PropTypes.arrayOf(
 		PropTypes.shape({
 			label: PropTypes.string.isRequired,
-			value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+			value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.node]),
 		})
 	).isRequired,
 };

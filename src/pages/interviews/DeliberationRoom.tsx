@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DELIBERATION ROOM (Admin "War Room")
  * ---------------------------------------------------------------------------
@@ -24,6 +23,7 @@ import Loader from '../../components/loader/Loader';
 import AdminDrawer from '../../components/interviews/AdminDrawer';
 import ApplicationViewer from '../../components/interviews/ApplicationViewer';
 import CallUI from '../../components/interviews/CallInterface';
+import VideoRoomUnavailable from '../../components/interviews/VideoRoomUnavailable';
 
 // Contexts
 import { useAlert } from '../../context/AlertContext';
@@ -32,12 +32,39 @@ import { useTitle } from '../../context/HelmetContext';
 import { useAuth } from '../../context/AuthContext';
 
 // Backend & Config
-import { generateJoinToken, updateCollectionData, getRealTimeMeetings, db } from '../../config/data/firebase';
+import { generateJoinToken, updateInterviewStatus, getRealTimeMeetings, db } from '../../config/data/firebase';
 import { InterviewStatus, collections } from '../../config/data/collections';
+import { formatDailyJoinError } from '../../utils/interviewUtils';
+import { paths } from '../../config/navigation/paths';
+import { useDailyJoin } from '../../hooks/useDailyJoin';
 
 // Layout Constants
 const adminDrawerWidth = 320;
 const appViewerDrawerWidth = 1100;
+
+// Local shapes for Daily participants and meeting docs (context/hooks are untyped)
+interface DailyParticipantLike {
+	local?: boolean;
+	session_id: string;
+	user_id?: string;
+	owner?: boolean;
+}
+
+interface ParticipantDetailEntry {
+	pictureUrl?: string;
+	[key: string]: unknown;
+}
+
+interface DeliberationMeeting {
+	id: string;
+	deliberation?: boolean;
+	status?: string;
+	displayName?: string;
+	applicationId?: string;
+	applicantPresent?: boolean;
+	startTime?: { toDate: () => Date };
+	endTime?: { toDate: () => Date };
+}
 
 export default function DeliberationRoom() {
 	useTitle({ title: 'Deliberation Room', appear: false });
@@ -51,30 +78,31 @@ export default function DeliberationRoom() {
 
 	// Local State
 	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState(null);
+	const [error, setError] = useState<string | null>(null);
 
 	// Layout State
 	const [isAppDrawerOpen, setIsAppDrawerOpen] = useState(false);
 	const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
-	const [appsToShow, setAppsToShow] = useState([]); // List of Application IDs to display in the viewer
+	const [appsToShow, setAppsToShow] = useState<string[]>([]); // List of Application IDs to display in the viewer
 	const [isOwner, setIsOwner] = useState(false); // If true, user has "Meeting Owner" privileges
+	const [hasJoined, setHasJoined] = useState(false);
 
 	// Schedule State
-	const [inProgressInterview, setInProgressInterview] = useState(null);
-	const [previousInterview, setPreviousInterview] = useState(null);
-	const [nextInterview, setNextInterview] = useState(null);
+	const [inProgressInterview, setInProgressInterview] = useState<DeliberationMeeting | null>(null);
+	const [previousInterview, setPreviousInterview] = useState<DeliberationMeeting | null>(null);
+	const [nextInterview, setNextInterview] = useState<DeliberationMeeting | null>(null);
 	const [isStartingNext, setIsStartingNext] = useState(false);
 
 	// Navigation/Redirect State
 	const [isNavigating, setIsNavigating] = useState(false);
-	const [abortedNavigations, setAbortedNavigations] = useState([]); // List of interview IDs the user chose NOT to auto-join
+	const [abortedNavigations, setAbortedNavigations] = useState<string[]>([]); // List of interview IDs the user chose NOT to auto-join
 	const [redirectCountdown, setRedirectCountdown] = useState(5);
-	const prevInProgressRef = useRef();
+	const prevInProgressRef = useRef<DeliberationMeeting | null>(null);
 
 	// --- Helper: Fetch Participant Metadata ---
 	// Daily.co only gives us a user_id. We need to fetch their profile picture from Firestore.
 	const fetchAndSetMemberPicture = useCallback(
-		async (participant) => {
+		async (participant: DailyParticipantLike | null | undefined) => {
 			if (!participant?.user_id) return;
 
 			try {
@@ -87,8 +115,8 @@ export default function DeliberationRoom() {
 						setParticipantDetails((prev) => ({
 							...prev,
 							[participant.session_id]: {
-								...prev[participant.session_id],
-								pictureUrl: pictureUrl,
+								...(prev[participant.session_id] as ParticipantDetailEntry | undefined),
+								pictureUrl,
 							},
 						}));
 					}
@@ -108,13 +136,13 @@ export default function DeliberationRoom() {
 		const unsubscribe = getRealTimeMeetings(user.uid, true, (allMeetings) => {
 			try {
 				// Filter out the deliberation room itself (if it appears in the list)
-				const interviews = allMeetings.filter((m) => !m.deliberation);
+				const interviews = (allMeetings as DeliberationMeeting[]).filter((m) => !m.deliberation);
 
 				const inProgress = interviews.find((m) => m.status === InterviewStatus.inProgress);
 
-				const finished = interviews.filter((m) => m.status === InterviewStatus.completed || m.status === InterviewStatus.missed).sort((a, b) => b.endTime.toDate() - a.endTime.toDate());
+				const finished = interviews.filter((m) => m.status === InterviewStatus.completed || m.status === InterviewStatus.missed).sort((a, b) => (b.endTime?.toDate().getTime() ?? 0) - (a.endTime?.toDate().getTime() ?? 0));
 
-				const upcoming = interviews.filter((m) => m.status === InterviewStatus.confirmed).sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
+				const upcoming = interviews.filter((m) => m.status === InterviewStatus.confirmed).sort((a, b) => (a.startTime?.toDate().getTime() ?? 0) - (b.startTime?.toDate().getTime() ?? 0));
 
 				setInProgressInterview(inProgress || null);
 				setPreviousInterview(finished.length > 0 ? finished[0] : null);
@@ -145,51 +173,68 @@ export default function DeliberationRoom() {
 	}, [inProgressInterview, abortedNavigations]);
 
 	// --- Effect 3: Video Call Setup ---
-	// Generates a token and joins the Daily.co room.
+	// Joins Daily via useDailyJoin so toast/callback identity changes cannot leave+rejoin.
+	const fetchToken = useCallback(async () => {
+		const result = await generateJoinToken({ deliberation: true });
+		const { token, roomUrl } = (result.data || {}) as { token?: string; roomUrl?: string };
+		if (!token || !roomUrl) {
+			throw new Error('Invalid token or room URL received from the server.');
+		}
+		return { token, roomUrl };
+	}, []);
+
+	const handleJoined = useCallback(() => {
+		const localParticipant = callObject.participants().local;
+		fetchAndSetMemberPicture(localParticipant);
+		if (localParticipant?.owner) setIsOwner(true);
+		setHasJoined(true);
+		setLoading(false);
+	}, [callObject, fetchAndSetMemberPicture]);
+
+	const handleJoinError = useCallback(
+		(err: unknown) => {
+			const detail = formatDailyJoinError(err, 'deliberation room');
+			handleError(Object.assign(err instanceof Error ? err : new Error(detail), { message: detail }), 'deliberation-join-call', false);
+			setError(detail);
+			setLoading(false);
+		},
+		[handleError]
+	);
+
+	useDailyJoin({
+		callObject,
+		enabled: Boolean(callObject && user),
+		fetchToken,
+		videoDeviceId,
+		audioDeviceId,
+		onJoined: handleJoined,
+		onError: handleJoinError,
+	});
+
 	useEffect(() => {
-		if (!callObject || !user) return;
+		setHasJoined(false);
+		setLoading(true);
+	}, [videoDeviceId, audioDeviceId]);
 
-		const setupAndJoin = async () => {
-			setLoading(true);
-			try {
-				// Request a 'deliberation' token (admin privileges)
-				const result = await generateJoinToken({ deliberation: true });
-				const { token, roomUrl } = result.data;
-
-				callObject.on('joined-meeting', () => {
-					const localParticipant = callObject.participants().local;
-					fetchAndSetMemberPicture(localParticipant);
-					if (localParticipant?.owner) setIsOwner(true);
-					setLoading(false);
-				});
-
-				if (callObject.meetingState() !== 'left-meeting') await callObject.leave();
-
-				await callObject.join({
-					url: roomUrl,
-					token: token,
-					videoSource: videoDeviceId || true,
-					audioSource: audioDeviceId || true,
-				});
-			} catch (err) {
-				handleError(err, 'deliberation-join-call');
-				setError('Could not join the deliberation room.');
-				setLoading(false);
-			}
+	useEffect(() => {
+		if (!callObject) return;
+		const handleLeftMeeting = () => setHasJoined(false);
+		callObject.on('left-meeting', handleLeftMeeting);
+		return () => {
+			callObject.off('left-meeting', handleLeftMeeting);
 		};
-		setupAndJoin();
-	}, [callObject, user, videoDeviceId, audioDeviceId, fetchAndSetMemberPicture, handleError]);
+	}, [callObject]);
 
 	// --- Effect 4: Participant Tracking ---
 	useEffect(() => {
 		if (!callObject) return;
 
-		const handleParticipantJoined = (event) => {
+		const handleParticipantJoined = (event: { participant: DailyParticipantLike }) => {
 			if (event.participant.local) return;
 			fetchAndSetMemberPicture(event.participant);
 		};
 
-		const handleParticipantLeft = (event) => {
+		const handleParticipantLeft = (event: { participant: DailyParticipantLike }) => {
 			setParticipantDetails((prev) => {
 				const newDetails = { ...prev };
 				delete newDetails[event.participant.session_id];
@@ -229,12 +274,12 @@ export default function DeliberationRoom() {
 		}
 	};
 
-	const handleStartNextInterview = async (nextInterviewId) => {
+	const handleStartNextInterview = async (nextInterviewId: string) => {
 		if (!nextInterviewId) return;
 		setIsStartingNext(true);
 		try {
-			// Update Firestore: This triggers "In Progress" for everyone else
-			await updateCollectionData(collections.interviews, nextInterviewId, { status: InterviewStatus.inProgress });
+			// Must go through updateInterviewStatus so Daily room is created (status flip alone is not enough).
+			await updateInterviewStatus({ interviewId: nextInterviewId, newStatus: InterviewStatus.inProgress });
 			showAlert({ message: 'Next interview starting! Redirecting...', type: 'success' });
 			setIsNavigating(true);
 		} catch (err) {
@@ -243,22 +288,27 @@ export default function DeliberationRoom() {
 		}
 	};
 
-	const handleJoinInterview = (interviewId) => {
+	const handleJoinInterview = (interviewId: string) => {
 		if (!interviewId) return;
 		navigate(`/interviews/interview-room/${interviewId}`);
 	};
 
-	const handleRelevantAppsChange = useCallback((appIds) => {
+	const handleRelevantAppsChange = useCallback((appIds: string[]) => {
 		setAppsToShow(appIds);
 	}, []);
 
-	if (loading) return <Loader label='Joining Deliberation Room...' />;
-	if (error)
+	if (error) {
 		return (
-			<Typography color='error' p={3}>
-				{error}
-			</Typography>
+			<VideoRoomUnavailable
+				title='Deliberation Room Unavailable'
+				message={error}
+				onLeave={() => navigate(paths.interviewDash)}
+				leaveLabel='Back to Interviews'
+			/>
 		);
+	}
+
+	if (loading || !hasJoined) return <Loader />;
 
 	return (
 		<DailyProvider callObject={callObject}>

@@ -4,27 +4,32 @@ import { Member } from './Member';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
-import { getMemberActions } from '../../config/ui/buttonActions';
-import { useAssetActionHandler } from '../../hooks/useAssetActionHandler';
 
-// --- Mocks ---
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
 	useNavigate: jest.fn(),
 }));
 
-vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
-vi.mock('../../context/AlertContext', () => ({ useAlert: jest.fn() }));
-vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn() }));
+vi.mock('../../context/ThemeContext', () => ({
+	useTheme: jest.fn(),
+}));
 
-vi.mock('../../config/ui/buttonActions', () => ({
-	__esModule: true,
-	getMemberActions: jest.fn(() => []),
+vi.mock('../../context/AlertContext', () => ({
+	useAlert: jest.fn(),
+}));
+
+vi.mock('../../context/ConfigContext', () => ({
+	useConfig: jest.fn(),
 }));
 
 vi.mock('../../hooks/useAssetActionHandler', () => ({
 	__esModule: true,
-	useAssetActionHandler: jest.fn(),
+	useAssetActionHandler: jest.fn(() => jest.fn()),
+}));
+
+vi.mock('../../config/ui/buttonActions', () => ({
+	__esModule: true,
+	getMemberActions: jest.fn(() => []),
 }));
 
 vi.mock('../../config/navigation/routeUtils', () => ({
@@ -40,6 +45,7 @@ vi.mock('../../config/navigation/paths', () => ({
 vi.mock('../../config/ui/tableConfig', () => ({
 	__esModule: true,
 	UserLastLogin: () => <span>2 days ago</span>,
+	UserLastSeen: () => <span>Recently</span>,
 }));
 
 vi.mock('../../config/ui/formConfig', () => ({
@@ -47,23 +53,23 @@ vi.mock('../../config/ui/formConfig', () => ({
 	memberFormConfig: { fields: [] },
 }));
 
-// Mock Children
 vi.mock('../layout/SingleAssetPage', () => ({
 	__esModule: true,
 	default: ({ children }) => <div>{children}</div>,
 	AssetCard: ({ children }) => <div>{children}</div>,
 }));
 
-// FIXED: Header mock now accepts and renders 'children'
-vi.mock('../assets/Header', () => ({ default: ({ title, children }) => (
-	<div>
-		<h1>{title}</h1>
-		{children}
-	</div>
-) }));
+vi.mock('../assets/AssetProfileSection', () => ({
+	__esModule: true,
+	default: ({ displayName, footerMeta }) => (
+		<div>
+			<h1>{displayName}</h1>
+			{footerMeta}
+		</div>
+	),
+}));
 
-vi.mock('../assets/InfoTable', () => ({ default: () => <div>InfoTable</div> }));
-vi.mock('../dynamicButtons/DynamicButtons', () => ({ default: () => <div>DynamicButtons</div> }));
+vi.mock('../assets/AssetSectionHeader', () => ({ default: ({ title }) => <h2>{title}</h2> }));
 vi.mock('../forms/PermissionGroup', () => ({ default: () => <div>PermissionGroup</div> }));
 vi.mock('../notes/MyNotes', () => ({ default: () => <div>MyNotes</div> }));
 
@@ -83,22 +89,17 @@ describe('Member Card', () => {
 		useConfig.mockReturnValue({});
 	});
 
-	test('renders member name and info', () => {
+	test('renders member name and presence footer', () => {
 		render(<Member member={mockMember} />);
 		expect(screen.getByText('Alice')).toBeInTheDocument();
-		// Now accessible because Header renders children
-		expect(screen.getByText('InfoTable')).toBeInTheDocument();
-		expect(screen.getByText('2 days ago')).toBeInTheDocument(); // Last login
+		expect(screen.getByText(/Last seen/i)).toBeInTheDocument();
+		expect(screen.getByText('Recently')).toBeInTheDocument();
+		expect(screen.getByText(/Last login/i)).toBeInTheDocument();
+		expect(screen.getByText('2 days ago')).toBeInTheDocument();
 	});
 
 	test('renders permissions group', () => {
 		render(<Member member={mockMember} />);
 		expect(screen.getByText('PermissionGroup')).toBeInTheDocument();
-	});
-
-	test('renders function buttons', () => {
-		render(<Member member={mockMember} />);
-		expect(screen.getByText('Functions')).toBeInTheDocument();
-		expect(screen.getByText('DynamicButtons')).toBeInTheDocument();
 	});
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EMAIL CONTENT HYDRATION HOOK
  * ---------------------------------------------------------------------------
@@ -26,11 +25,35 @@ import { fetchAttachmentContent } from '../config/data/firebase';
  * Escapes characters that have special meaning in Regular Expressions.
  * Vital because attachment filenames often contain periods (image.png) or brackets.
  */
-function escapeRegExp(string) {
-	return string.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+function escapeRegExp(string: string): string {
+	return string.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
-export const useProcessedEmailContent = (email) => {
+interface InlineAttachment {
+	cid?: string;
+	attachmentId?: string;
+	[key: string]: unknown;
+}
+
+export interface ProcessableEmail {
+	id: string;
+	content?: string;
+	folderId?: string;
+	inlineAttachments?: InlineAttachment[];
+	[key: string]: unknown;
+}
+
+interface ResolvedAttachment {
+	cid: string;
+	dataUrl: string;
+}
+
+interface UseProcessedEmailContentResult {
+	processedContent: string;
+	contentLoading: boolean;
+}
+
+export const useProcessedEmailContent = (email: ProcessableEmail | null | undefined): UseProcessedEmailContentResult => {
 	const [processedContent, setProcessedContent] = useState('');
 	const [contentLoading, setContentLoading] = useState(true);
 
@@ -61,7 +84,7 @@ export const useProcessedEmailContent = (email) => {
 			}
 
 			// 3. Fetch Data for all Inline Images (Parallel)
-			const attachmentPromises = email.inlineAttachments.map(async (attachment) => {
+			const attachmentPromises = email.inlineAttachments.map(async (attachment): Promise<ResolvedAttachment | null> => {
 				if (!attachment.cid) {
 					console.warn('Skipping inline attachment with missing cid:', attachment);
 					return null;
@@ -73,12 +96,12 @@ export const useProcessedEmailContent = (email) => {
 						folderId: email.folderId,
 					});
 
-					const data = result.data;
+					const data = (result as { data: { contentType: string; content: string } }).data;
 					// Create the renderable Base64 URL
 					const dataUrl = `data:${data.contentType};base64,${data.content}`;
 
 					// Clean up the CID string (sometimes wrapped in < > brackets)
-					return { cid: attachment.cid.replaceAll(/[<>]/g, '').trim(), dataUrl: dataUrl };
+					return { cid: attachment.cid.replace(/[<>]/g, '').trim(), dataUrl: dataUrl };
 				} catch (error) {
 					console.error('Failed to fetch inline attachment:', error);
 					return null;
@@ -89,7 +112,7 @@ export const useProcessedEmailContent = (email) => {
 
 			// 4. Perform String Replacement (Injection)
 			if (isMounted) {
-				for (const att of resolvedAttachments.filter(Boolean)) {
+				for (const att of resolvedAttachments.filter((a): a is ResolvedAttachment => a !== null)) {
 					const escapedCid = escapeRegExp(att.cid);
 
 					// Regex looks for: src="...cid=THE_CID..."
@@ -97,7 +120,7 @@ export const useProcessedEmailContent = (email) => {
 					const cidRegex = new RegExp(`src="[^"]*cid=${escapedCid}[^"]*"`, 'g');
 					const replacementString = `src="${att.dataUrl}"`;
 
-					htmlContent = htmlContent.replaceAll(cidRegex, replacementString);
+					htmlContent = htmlContent.replace(cidRegex, replacementString);
 				}
 
 				setProcessedContent(htmlContent);

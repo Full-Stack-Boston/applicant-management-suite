@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Application Widget
  * A dashboard summary card representing a single application.
@@ -23,8 +22,14 @@ import { getApplication } from '../../config/data/firebase';
 import { generatePath } from '../../config/navigation/routeUtils';
 import { paths } from '../../config/navigation/paths';
 
-const Application = ({ id }) => {
-	const [data, setData] = useState(blankApp);
+type WidgetApplicationData = typeof blankApp;
+
+interface ApplicationWidgetProps {
+	id: string;
+}
+
+const Application = ({ id }: ApplicationWidgetProps) => {
+	const [data, setData] = useState<WidgetApplicationData>(blankApp);
 	const navigate = useNavigate();
 	const { darkMode, boxShadow } = useTheme();
 
@@ -33,10 +38,10 @@ const Application = ({ id }) => {
 			try {
 				const applicationIn = await getApplication(id, id);
 				if (applicationIn) {
-					setData(applicationIn);
+					setData(applicationIn as WidgetApplicationData);
 				}
 			} catch (error) {
-				console.error(error.message);
+				console.error(error instanceof Error ? error.message : String(error));
 			}
 		};
 		fetch();
@@ -51,13 +56,22 @@ const Application = ({ id }) => {
 	};
 
 	return (
-		<Box display='flex' flex='1' padding='15px' justifyContent='space-between' borderRadius='12px' boxShadow={boxShadow} bgcolor='background.paper'>
-			<Box display='flex' flexDirection='column' justifyContent='space-between' gap={1}>
-				<Typography variant='subtitle2' fontWeight='bold' color='text.primary'>
+		<Box
+			sx={{
+				display: 'flex',
+				flex: 1,
+				p: '15px',
+				justifyContent: 'space-between',
+				borderRadius: '12px',
+				boxShadow: boxShadow,
+				bgcolor: 'background.paper',
+			}}>
+			<Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 1 }}>
+				<Typography variant='subtitle2' sx={{ fontWeight: 'bold', color: 'text.primary' }}>
 					{data.type}
 				</Typography>
 
-				<Typography variant='h4' fontWeight='300' color='text.primary'>
+				<Typography variant='h4' sx={{ fontWeight: 300, color: 'text.primary' }}>
 					{data.window ? new Date(data.window).getFullYear() : '----'}
 				</Typography>
 
@@ -76,8 +90,19 @@ const Application = ({ id }) => {
 				</Button>
 			</Box>
 
-			<Box display='flex' flexDirection='column' justifyContent='space-between' alignItems='flex-end'>
-				<Box display='flex' fontSize='12px' fontWeight='bold' alignItems='center' borderRadius='12px' padding='4px 12px' bgcolor={darkMode ? 'highlight.main' : 'background.passive'} color='text.active'>
+			<Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+				<Box
+					sx={{
+						display: 'flex',
+						fontSize: '12px',
+						fontWeight: 'bold',
+						alignItems: 'center',
+						borderRadius: '12px',
+						px: 1.5,
+						py: 0.5,
+						bgcolor: darkMode ? 'highlight.main' : 'background.passive',
+						color: 'text.active',
+					}}>
 					{data.status || 'Unknown'}
 				</Box>
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DATABASE COLLECTIONS & CONSTANTS
  * ---------------------------------------------------------------------------
@@ -40,16 +39,23 @@ export const collections = {
 	emails: 'emails', // Log of transactional emails sent via SendGrid/etc
 	sms: 'sms', // Log of SMS messages (Twilio)
 	sitelog: 'sitelog', // General activity log
+	presence: 'presence', // Live authenticated-user heartbeat docs
 	dblog: 'dblog', // Database modification log
 	mailCache: 'mail_cache', // Cached inbox for the Admin Dashboard
 	mailSync: 'mail_sync', // State tracking for the Email Sync background job
+	emailTemplates: 'emailTemplates', // Dynamic contact-center email templates
+	videoUsage: 'videoUsage', // Monthly Daily participant-minute counters
+	videoBudget: 'videoBudget', // Remote status snapshot (status doc) for FSB dash
 
 	// Features
 	requests: 'requests', // External reference requests (Teachers/Clergy)
 	awards: 'awards', // History of monetary grants given
 	interviews: 'interviews', // Scheduling & Interview records
 	legacyFinances: 'legacy_financials', // Historical financial data (pre-2023)
-};
+} as const;
+
+export type CollectionKey = keyof typeof collections;
+export type CollectionId = (typeof collections)[CollectionKey];
 
 /**
  * A subset of collections that represent the "parts" of a single Application.
@@ -57,7 +63,18 @@ export const collections = {
  * 1. Cascading Deletes (Deleting an App deletes its profile, family, etc.)
  * 2. Bulk Fetching (Getting the full "Packet" for PDF generation)
  */
-export const applicationSpecificCollections = [collections.applications, collections.profiles, collections.families, collections.education, collections.experience, collections.expenses, collections.incomes, collections.contributions, collections.projections, collections.attachments];
+export const applicationSpecificCollections = [
+	collections.applications,
+	collections.profiles,
+	collections.families,
+	collections.education,
+	collections.experience,
+	collections.expenses,
+	collections.incomes,
+	collections.contributions,
+	collections.projections,
+	collections.attachments,
+] as const;
 
 // --- 2. Enums & Constants ---
 
@@ -77,7 +94,10 @@ export const ApplicationStatus = {
 	awarded: 'Awarded', // Board voted to fund this applicant
 	denied: 'Not Awarded', // Board voted not to fund
 	deleted: 'Deleted', // Soft-delete status
-};
+} as const;
+
+export type ApplicationStatusKey = keyof typeof ApplicationStatus;
+export type ApplicationStatusValue = (typeof ApplicationStatus)[ApplicationStatusKey];
 
 /**
  * Distinguishes the "Track" or "Form" the applicant is using.
@@ -87,7 +107,10 @@ export const ApplicationType = {
 	newApplication: 'New Applicant', // The full, long-form application
 	returningGrant: 'Returning Grant', // A slightly shorter renewal form
 	scholarship: 'Scholarship Check In', // Compliance check only (upload grades)
-};
+} as const;
+
+export type ApplicationTypeKey = keyof typeof ApplicationType;
+export type ApplicationTypeValue = (typeof ApplicationType)[ApplicationTypeKey];
 
 /**
  * The Status of an Interview Appointment.
@@ -100,7 +123,10 @@ export const InterviewStatus = {
 	completed: 'Completed', // Interview finished, feedback submitted
 	cancelled: 'Cancelled', // Cancelled by either party
 	missed: 'Missed', // No-show
-};
+} as const;
+
+export type InterviewStatusKey = keyof typeof InterviewStatus;
+export type InterviewStatusValue = (typeof InterviewStatus)[InterviewStatusKey];
 
 /**
  * User Roles within the system.
@@ -109,7 +135,10 @@ export const UserType = {
 	applicant: 'Applicant', // Can only see their own data
 	member: 'Member', // Admin/Board Member with Dashboard access
 	both: 'both', // Edge case (rarely used)
-};
+} as const;
+
+export type UserTypeKey = keyof typeof UserType;
+export type UserTypeValue = (typeof UserType)[UserTypeKey];
 
 /**
  * Classifications for Experience/Activity entries.
@@ -121,7 +150,7 @@ export const OrganizationTypes = {
 	athletic: 'Athletic',
 	other: 'Other',
 	none: 'None',
-};
+} as const;
 
 // --- 3. Search Configuration ---
 
@@ -146,7 +175,7 @@ export const SearchableCollections = {
 		collection: collections.profiles,
 		fields: ['applicantFirstName', 'applicantLastName', 'applicantEmailAddress', 'applicantCellPhone'],
 	},
-};
+} as const;
 
 // --- 4. Storage Paths ---
 
@@ -157,4 +186,4 @@ export const UploadType = {
 	applicationAttachment: 'applications', // Documents (Transcripts, Letters)
 	applicantAvatar: 'applicants/avatars', // Profile Pictures
 	memberAvatar: 'members/avatars', // Admin Photos
-};
+} as const;

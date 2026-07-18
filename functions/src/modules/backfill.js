@@ -109,6 +109,43 @@ exports.backfillLastUpdated = onCall(async (request) => {
 	};
 });
 
+// Backfill applicant Auth accountCreated timestamps onto applicant docs
+exports.backfillApplicantCreationDates = onCall({ timeoutSeconds: 300, memory: '1GiB' }, async (request) => {
+	if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+
+	const db = admin.firestore();
+	const member = await db.doc(`members/${request.auth.uid}`).get();
+	if (!member.data()?.permissions?.admin) throw new HttpsError('permission-denied', 'Admin only.');
+
+	let nextPageToken;
+	let userCount = 0;
+
+	try {
+		do {
+			const listUsersResult = await admin.auth().listUsers(1000, nextPageToken);
+			const batch = db.batch();
+
+			for (const userRecord of listUsersResult.users) {
+				const applicantRef = db.collection('applicants').doc(userRecord.uid);
+				const creationDate = new Date(userRecord.metadata.creationTime);
+				batch.set(applicantRef, { accountCreated: admin.firestore.Timestamp.fromDate(creationDate) }, { merge: true });
+				userCount++;
+			}
+
+			if (listUsersResult.users.length > 0) {
+				await batch.commit();
+			}
+
+			nextPageToken = listUsersResult.pageToken;
+		} while (nextPageToken);
+
+		return { success: true, count: userCount };
+	} catch (error) {
+		console.error('Error backfilling applicant creation dates:', error);
+		throw new HttpsError('internal', 'Failed to backfill creation dates.');
+	}
+});
+
 // Backfill Sent Email Tags
 // Scans the Zoho "Sent" folder and retroactively applies tags based on the "From" alias.
 exports.backfillSentEmailTags = onCall({ timeoutSeconds: 300, memory: '1GB' }, async (request) => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import Navbar from './Navbar';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -7,6 +7,7 @@ import { useMailbox } from '../../context/MailboxContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useDialog } from '../../context/DialogContext';
 import { useNavigate } from 'react-router-dom';
+import * as firebase from '../../config/data/firebase';
 
 // --- MOCKS ---
 vi.mock('../../context/AuthContext', () => ({ useAuth: jest.fn() }));
@@ -18,7 +19,6 @@ vi.mock('react-router-dom', () => ({
 	useNavigate: jest.fn(),
 }));
 vi.mock('firebase/functions', () => ({ httpsCallable: jest.fn() }));
-import * as firebase from '../../config/data/firebase';
 vi.mock('../../config/data/firebase', () => ({
 	functions: {},
 	saveCollectionData: jest.fn(),

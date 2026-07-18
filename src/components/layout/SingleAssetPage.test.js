@@ -1,18 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import SingleAssetPage, { AssetCard } from './SingleAssetPage';
-import { useSidebar } from '../../context/SidebarContext';
 import { useTheme } from '../../context/ThemeContext';
-
-// --- Mocks ---
-const mockNavigate = jest.fn();
-vi.mock('react-router-dom', () => ({
-	useNavigate: () => mockNavigate,
-}));
-
-vi.mock('../../context/SidebarContext', () => ({
-	useSidebar: jest.fn(),
-}));
 
 vi.mock('../../context/ThemeContext', () => ({
 	useTheme: jest.fn(),
@@ -21,11 +10,10 @@ vi.mock('../../context/ThemeContext', () => ({
 describe('SingleAssetPage', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		useSidebar.mockReturnValue({ collapsed: false });
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 	});
 
-	test('renders children and back button', () => {
+	test('renders children without a page-level back button', () => {
 		render(
 			<SingleAssetPage>
 				<div>Page Content</div>
@@ -33,34 +21,7 @@ describe('SingleAssetPage', () => {
 		);
 
 		expect(screen.getByText('Page Content')).toBeInTheDocument();
-		expect(screen.getByRole('button')).toBeInTheDocument(); // Back button (IconButton)
-	});
-
-	test('navigates back on button click', () => {
-		render(
-			<SingleAssetPage>
-				<div />
-			</SingleAssetPage>
-		);
-
-		const backButton = screen.getByRole('button');
-		fireEvent.click(backButton);
-
-		expect(mockNavigate).toHaveBeenCalledWith(-1);
-	});
-
-	test('adjusts back button position when sidebar is collapsed', () => {
-		// This mainly checks if the hook is called, implying logic execution
-		useSidebar.mockReturnValue({ collapsed: true });
-
-		render(
-			<SingleAssetPage>
-				<div />
-			</SingleAssetPage>
-		);
-
-		// Verifying style logic via hook calls is sufficient for unit tests usually
-		expect(useSidebar).toHaveBeenCalled();
+		expect(screen.queryByRole('button', { name: /go back/i })).not.toBeInTheDocument();
 	});
 });
 

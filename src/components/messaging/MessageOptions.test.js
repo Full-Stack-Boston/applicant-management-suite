@@ -7,6 +7,13 @@ import { send } from '../../config/content/push';
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
 
+// --- IMPORTS MUST COME AFTER MOCKS ---
+
+// Import the component-under-test *after* all mocks are defined
+import { TemplatedOptions, CustomMessageTrigger } from './MessageOptions';
+// Import the *mocked* functions so we can track their calls
+import { setDoc, collection, doc } from 'firebase/firestore';
+
 // Mock dependencies
 
 // 1. Mock the deepest dependencies
@@ -67,13 +74,6 @@ vi.mock('firebase/firestore', async () => ({
 	getFirestore: jest.fn(),
 }));
 
-// --- IMPORTS MUST COME AFTER MOCKS ---
-
-// Import the component-under-test *after* all mocks are defined
-import { TemplatedOptions, CustomMessageTrigger } from './MessageOptions';
-// Import the *mocked* functions so we can track their calls
-import { setDoc, collection, doc } from 'firebase/firestore';
-
 // Mock DOMParser
 const mockParseFromString = jest.fn(() => ({
 	body: {
@@ -83,7 +83,6 @@ const mockParseFromString = jest.fn(() => ({
 
 beforeAll(() => {
 	global.DOMParser = class {
-		constructor() {}
 		parseFromString() {
 			// This calls the global mockParseFromString
 			return mockParseFromString();

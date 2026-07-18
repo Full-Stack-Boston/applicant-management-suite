@@ -1,80 +1,63 @@
-// @ts-nocheck
-/**
- * PUBLIC LANDING PAGE
- * ---------------------------------------------------------------------------
- * This is the main entry point for unauthenticated visitors.
- *
- * * ARCHITECTURE:
- * 1. CMS-Driven: Sections (Intro, AppBar, Info, Footer) are conditionally rendered
- * based on 'homePageContent' in 'src/config/content/content.js'.
- * 2. State Lifting: The navigation state (which tab is active) is lifted up to this
- * parent component so the Header (AppBar) can control the Content (InfoSection).
- * 3. Scroll Management: Refs are passed down to allow smooth scrolling to specific
- * anchors (e.g. "Back to Top").
- */
-
-import React, { useRef, useState } from 'react';
-import { Container } from '@mui/material';
-
-// Contexts
+import React, { useMemo, useRef, useEffect } from 'react';
+import { Box } from '@mui/material';
+import HomeNav from '../../components/home/HomeNav';
+import HomeHero from '../../components/home/HomeHero';
+import HomeTrustStats from '../../components/home/HomeTrustStats';
+import HomeAboutSection from '../../components/home/HomeAboutSection';
+import HomeRequirementsSection from '../../components/home/HomeRequirementsSection';
+import HomeContactSection from '../../components/home/HomeContactSection';
+import HomeSupportSection from '../../components/home/HomeSupportSection';
+import HomeFooter from '../../components/home/HomeFooter';
+import { useHomeSectionNav } from '../../components/home/useHomeSectionNav';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
-
-// Config
-import { homePageContent } from '../../config/content/content';
-
-// Page Sections
-import Intro from '../../components/home/Sections/Intro';
-import ResponsiveAppBar from '../../components/home/Sections/ResponsiveAppBar';
-import ResponsiveFooter from '../../components/home/Sections/ResponsiveFooter';
-import InformationSection from '../../components/home/Sections/Information';
+import { homePageContent } from '../../config/content';
 
 export default function Home() {
-	// --- SEO ---
+	const topRef = useRef<HTMLElement>(null) as React.RefObject<HTMLElement>;
+	const { darkMode } = useTheme();
+	const { sectionIds } = homePageContent;
+
+	const sectionIdList = useMemo(
+		() => [sectionIds.about, sectionIds.apply, sectionIds.contact, sectionIds.support],
+		[sectionIds.about, sectionIds.apply, sectionIds.contact, sectionIds.support],
+	);
+
+	const { activeSection, navSolid, scrollToSection } = useHomeSectionNav(sectionIdList);
+
+	useEffect(() => {
+		const hash = window.location.hash.replace('#', '');
+		if (hash && sectionIdList.includes(hash)) {
+			scrollToSection(hash);
+		}
+	}, [scrollToSection, sectionIdList]);
+
 	useTitle({ title: 'Home', appear: true });
 
-	// --- Theme ---
-	const { darkMode } = useTheme();
-
-	// --- Scroll Refs ---
-	// Used to programmatically scroll to specific parts of the page
-	const topRef = useRef(null); // Top of the page (for "Intro")
-	const appBarRef = useRef(null); // The sticky navigation bar
-	const tabBarRef = useRef(null); // The tab strip within the Info section
-	const innerTabBarRef = useRef(null); // The content inside the tabs
-
-	// --- Navigation State ---
-	// value: The primary tab index (e.g. 0 = "About", 1 = "Donate")
-	// secondValue: The sub-tab index (e.g. 0 = "Mission", 1 = "History")
-	const [value, setValue] = useState(0);
-	const [secondValue, setSecondValue] = useState(0);
-
 	return (
-		<>
-			{/* 1. Hero / Intro Section */}
-			{/* Renders the big splash image or video. Can be disabled via config. */}
-			{homePageContent.intro.enabled && <Intro topRef={topRef} appBarRef={appBarRef} />}
+		<Box sx={{ bgcolor: darkMode ? 'custom.black' : 'custom.white', color: 'text.primary', minHeight: '100vh' }}>
+			{homePageContent.appBar.enabled && (
+				<HomeNav navSolid={navSolid} activeSection={activeSection} onNavigateSection={scrollToSection} />
+			)}
 
-			{/* 2. Navigation Bar */}
-			{/* The Sticky Header. Controls the tabs in the section below. */}
-			{homePageContent.appBar.enabled && <ResponsiveAppBar appBarRef={appBarRef} tabBarRef={tabBarRef} innerTabBarRef={innerTabBarRef} parentTabBarValue={value} childTabBarValue={secondValue} setParentTab={setValue} setChildTab={setSecondValue} />}
+			{homePageContent.intro.enabled && (
+				<HomeHero topRef={topRef} onLearnMore={() => scrollToSection(sectionIds.about)} />
+			)}
 
-			{/* 3. Main Content Area */}
-			{/* Renders the text content (History, FAQ, etc.) based on selected tabs. */}
-			<Container
-				maxWidth='xl'
-				sx={{
-					backgroundColor: darkMode ? 'custom.black' : 'custom.white',
-					width: '100%',
-					color: darkMode ? 'gray' : 'custom.black',
-					minHeight: '50vh', // Ensure footer doesn't float up on empty pages
-				}}>
-				{homePageContent.information.enabled && <InformationSection tabBarRef={tabBarRef} innerTabBarRef={innerTabBarRef} parentTabBarValue={value} childTabBarValue={secondValue} setParentTab={setValue} setChildTab={setSecondValue} />}
-			</Container>
+			<HomeTrustStats />
 
-			{/* 4. Footer */}
-			{/* Contains Copyright, Social Links, and "Back to Top" button */}
-			{homePageContent.footer.enabled && <ResponsiveFooter topRef={topRef} setParentTab={setValue} setChildTab={setSecondValue} />}
-		</>
+			{homePageContent.information.enabled && (
+				<>
+					<HomeAboutSection sectionId={sectionIds.about} />
+					<HomeRequirementsSection sectionId={sectionIds.apply} />
+					<HomeContactSection sectionId={sectionIds.contact} />
+					<HomeSupportSection sectionId={sectionIds.support} />
+				</>
+			)}
+
+			{homePageContent.footer.enabled && (
+				<HomeFooter topRef={topRef} onNavigateSection={scrollToSection} />
+			)}
+		</Box>
 	);
 }

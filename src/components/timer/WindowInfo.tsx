@@ -1,14 +1,13 @@
-// @ts-nocheck
 /**
  * Window Info Component
  * Displays specific dates and labels for the current application cycle.
  * Features:
  * - Shows "Deadline", "Opens", or "Closed" dates based on the mode provided by the child <Timer>.
  * - Adapts text to show the relevant academic years (e.g., 2023 - 2024).
+ * - tone="onDark" forces light text/border for use on hero imagery (any theme mode).
  */
 
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import { useState } from 'react';
 import { Box, Typography } from '@mui/material';
 
 // Context
@@ -18,13 +17,18 @@ import { useTheme } from '../../context/ThemeContext';
 // Components
 import Timer from './Timer';
 
-export default function WindowInfo({ bg = 'transparent' }) {
+interface WindowInfoProps {
+	bg?: string;
+	tone?: 'default' | 'onDark';
+}
+
+export default function WindowInfo({ bg = 'transparent', tone = 'default' }: WindowInfoProps) {
 	const config = useConfig();
-	const { boxShadow } = useTheme();
+	const { darkMode, boxShadow } = useTheme();
 	const [mode, setMode] = useState('loading');
 
-	const deadline = new Date(config.APPLICATION_DEADLINE);
-	const nextOpen = config.NEXT_APPLICATION_OPEN_DATE ? new Date(config.NEXT_APPLICATION_OPEN_DATE) : null;
+	const deadline = new Date(config.APPLICATION_DEADLINE as string);
+	const nextOpen = config.NEXT_APPLICATION_OPEN_DATE ? new Date(config.NEXT_APPLICATION_OPEN_DATE as string) : null;
 
 	const windowYear = deadline.getFullYear();
 	const nextOpenYear = nextOpen?.getFullYear?.() || windowYear;
@@ -44,37 +48,52 @@ export default function WindowInfo({ bg = 'transparent' }) {
 		subLabelText = `Closed: ${deadline.toLocaleString()}`;
 	}
 
+	const onDark = tone === 'onDark';
+
 	return (
 		<Box
-			width='100%'
-			p={2}
-			border={1}
-			borderRadius={2}
-			borderColor='divider'
-			boxShadow={boxShadow}
-			maxWidth='450px'
-			display='flex'
-			alignItems='center'
-			flexDirection='column'
 			sx={{
-				color: 'text.primary',
+				width: 'min(100%, 450px)',
+				maxWidth: '100%',
+				boxSizing: 'border-box',
+				p: 2,
+				border: 1,
+				borderRadius: 2,
+				borderColor: onDark ? 'rgba(255,255,255,0.35)' : 'divider',
+				boxShadow,
+				display: 'flex',
+				alignItems: 'center',
+				flexDirection: 'column',
+				color: onDark ? 'common.white' : darkMode ? 'custom.white' : 'custom.black',
 				bgcolor: bg,
 			}}>
-			<Typography gutterBottom variant='body1' fontWeight='bold'>
+			<Typography
+				gutterBottom
+				variant='body1'
+				sx={{
+					fontWeight: 'bold',
+					textAlign: 'center',
+					width: '100%',
+					overflowWrap: 'anywhere',
+				}}>
 				{labelText}
 			</Typography>
 
-			<Typography variant='body1' gutterBottom fontWeight='bold'>
+			<Typography
+				variant='body1'
+				gutterBottom
+				sx={{
+					fontWeight: 'bold',
+					textAlign: 'center',
+					width: '100%',
+					overflowWrap: 'anywhere',
+				}}>
 				{subLabelText}
 			</Typography>
 
-			<Box>
+			<Box sx={{ color: 'inherit' }}>
 				<Timer onModeChange={setMode} />
 			</Box>
 		</Box>
 	);
 }
-
-WindowInfo.propTypes = {
-	bg: PropTypes.string,
-};

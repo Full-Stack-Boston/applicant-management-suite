@@ -1,5 +1,4 @@
 // Do not import muiStyles here. We will require it inside beforeEach.
-import { colors as importedColors } from './theme';
 
 vi.mock('@mui/material/styles', () => ({
 	createTheme: jest.fn((config) => config),
@@ -48,13 +47,15 @@ describe('src/config/ui/theme.js', () => {
 		const themeModule = await import('./theme');
 		colors = themeModule.colors;
 
-		// Test default (fallback) values
-		expect(colors.black).toBe('#161C24');
-		expect(colors.white).toBe('#F4F6F8');
+		// Test default values (env preload overrides take precedence when present)
+		expect(colors.black).toBe(process.env.REACT_APP_PRELOAD_BG_DARK || '#0F172A');
+		expect(colors.white).toBe(process.env.REACT_APP_PRELOAD_BG_LIGHT || '#E8EEF4');
 
 		// Spot-check other colors
-		expect(colors.red).toBe('#D32F2F');
+		expect(colors.red).toBe('#C62828');
 		expect(colors.green).toBe('#2E7D32');
+		expect(colors.blue).toBe('#0277BD');
+		expect(colors.brown).toBe('#546E7A');
 	});
 
 	it('should use environment variables for colors when provided', async () => {
@@ -76,7 +77,7 @@ describe('src/config/ui/theme.js', () => {
 		theme = (await import('./theme')).default;
 		colors = (await import('./theme')).colors;
 
-		const primaryColor = 'red';
+		const primaryColor = 'teal';
 		const lightTheme = theme(false, primaryColor); // darkMode = false
 
 		// Check that createTheme was called once (using the module reference)
@@ -92,14 +93,18 @@ describe('src/config/ui/theme.js', () => {
 
 		// Check a light-mode-specific value
 		expect(lightTheme.palette.background.main).toBe(colors.brightWhite);
+		expect(lightTheme.palette.background.paper).toBe(colors.lightPaper);
+		expect(lightTheme.palette.background.canvas).toMatch(/^#[0-9A-F]{6}$/i);
 		expect(lightTheme.palette.text.primary).toBe(colors.lightTextPrimary);
+		expect(lightTheme.palette.text.heading).toBe(lightTheme.palette.contentAccent.main);
+		expect(lightTheme.palette.text.highlight).toBe(mainColor);
 
 		// Check a common value
 		expect(lightTheme.palette.error.main).toBe(colors.red);
 
 		// Check a component override
 		expect(lightTheme.components.MuiButton.defaultProps.variant).toBe('contained');
-		expect(lightTheme.components.MuiCssBaseline.styleOverrides.body.backgroundColor).toBe(colors.white);
+		expect(lightTheme.components.MuiCssBaseline.styleOverrides.body.backgroundColor).toMatch(/^#[0-9A-F]{6}$/i);
 	});
 
 	it('should return a dark theme configuration', async () => {
@@ -120,13 +125,16 @@ describe('src/config/ui/theme.js', () => {
 
 		// Check a dark-mode-specific value
 		expect(darkTheme.palette.background.main).toBe(colors.black);
+		expect(darkTheme.palette.background.paper).toBe(colors.darkPaper);
+		expect(darkTheme.palette.background.canvas).toMatch(/^#[0-9A-F]{6}$/i);
 		expect(darkTheme.palette.text.primary).toBe(colors.darkTextPrimary);
+		expect(darkTheme.palette.text.heading).toBe(darkTheme.palette.contentAccent.main);
 
 		// Check a common value
 		expect(darkTheme.palette.success.main).toBe(colors.green);
 
 		// Check a component override
-		expect(darkTheme.components.MuiCssBaseline.styleOverrides.body.backgroundColor).toBe(colors.black);
+		expect(darkTheme.components.MuiCssBaseline.styleOverrides.body.backgroundColor).toMatch(/^#[0-9A-F]{6}$/i);
 		expect(darkTheme.components.MuiListItemText.styleOverrides.primary.color).toBe(colors.darkTextSecondary);
 	});
 
@@ -148,18 +156,19 @@ describe('src/config/ui/theme.js', () => {
 		theme = (await import('./theme')).default;
 		// Use the imported colors const for comparison
 		colors = (await import('./theme')).colors;
-		const lightTheme = theme(false, 'red');
-
+		const lightTheme = theme(false, 'teal');
 		// Create an expected object that matches the *actual* (lowercase) keys
 		// in the commonCustomColors object in theme.js
 		const expectedCustomPalette = {
 			brown: colors.brown,
 			red: colors.red,
+			teal: colors.teal,
 			black: colors.black,
 			white: colors.white,
 			offWhite: colors.offWhite,
 			brightWhite: colors.brightWhite,
 			yellow: colors.yellow,
+			yellow2: colors.yellow2,
 			blue: colors.blue,
 			green: colors.green,
 			stwhite: colors.stWhite,

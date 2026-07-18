@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Application Controller (The "Wizard")
  * Manages the multi-step application process for applicants.
@@ -9,17 +8,18 @@
  * 4. Persistence (Saving step data to specific Firestore collections).
  */
 
-import React, { useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { v4 as uuidv4 } from 'uuid';
-import { Button, CssBaseline, Box, Stepper, Step, StepButton, Typography, useMediaQuery } from '@mui/material';
+import { Button, Box, Stepper, Step, StepButton, Typography, useMediaQuery, Stack } from '@mui/material';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
+import HistoryEduIcon from '@mui/icons-material/HistoryEdu';
 
 // Context & Hooks
 import { useAuth } from '../../../context/AuthContext';
-import { ApplicationContext } from '../../../context/ApplicationContext';
+import { useApplicationContext } from '../../../context/ApplicationContext';
 import { useConfig } from '../../../context/ConfigContext';
 import { useTitle } from '../../../context/HelmetContext';
 import { useAlert } from '../../../context/AlertContext';
@@ -37,22 +37,40 @@ import { applicationConfigurations } from '../../../config/ui/applicationConfig'
 // Components
 import Loader from '../../loader/Loader';
 import NotFound from '../../layout/NotFound';
-import CopyrightFooter from '../../footer/CopyrightFooter';
-import Crumbs from '../../breadcrumbs/Breadcrumbs';
+import PublicPageLayout from '../../home/PublicPageLayout';
+import AuthFormCard from '../../auth/AuthFormCard';
 import GenericFormPage from '../../forms/GenericFormPage';
+import { homeAuthSecondaryButtonSx, homeAuthSubmitButtonSx } from '../../home/homePageStyles';
+
+import type { DocumentData } from 'firebase/firestore';
+import type { EducationForm, ExperienceForm, IncomesForm, ProfileForm } from '../../../types/forms';
+import type { ApplicationRecord } from '../types';
 
 dayjs.extend(customParseFormat);
 
 // Map string keys from config to actual React components
-const componentMap = {
+const componentMap: Record<string, typeof GenericFormPage> = {
 	GenericFormPage,
 };
+
+// --- Local Types ---
+
+type WizardAppConfig = (typeof applicationConfigurations)[keyof typeof applicationConfigurations];
+
+type HandleErrorFn = (error: unknown, context: string) => void;
+
+interface LoadExistingResult {
+	notFound: boolean;
+	application?: ApplicationRecord;
+	completed?: DocumentData | null;
+	applicant?: DocumentData | null;
+}
 
 // --- Helpers ---
 
 // Maps section keys (e.g., "education") to the specific ID field name expected by the DB
-const getRecordIdKeyForSection = (sectionKey) => {
-	const map = {
+const getRecordIdKeyForSection = (sectionKey: string): string => {
+	const map: Record<string, string> = {
 		profile: 'applicantID',
 		family: 'familyID',
 		education: 'educationRecordID',
@@ -67,8 +85,8 @@ const getRecordIdKeyForSection = (sectionKey) => {
 };
 
 // Maps section keys to their Firestore collection names
-const getCollectionNameForSection = (sectionKey) => {
-	const map = {
+const getCollectionNameForSection = (sectionKey: string): string => {
+	const map: Record<string, string> = {
 		profile: collections.profiles,
 		family: collections.families,
 		education: collections.education,
@@ -83,12 +101,13 @@ const getCollectionNameForSection = (sectionKey) => {
 };
 
 // Validates if all required attachments are present
-const checkApplicationCompleteness = (applicationData, appConfig) => {
+const checkApplicationCompleteness = (applicationData: ApplicationRecord, appConfig: WizardAppConfig) => {
 	let attachmentsComplete = true;
-	const requiredAttachments = attachmentFields.filter((field) => field.requiredBy.includes(appConfig.type)).map((field) => field.key);
+	const requiredAttachments = attachmentFields.filter((field) => (field.requiredBy as string[]).includes(appConfig.type)).map((field) => field.key);
+	const attachments = applicationData.attachments as Record<string, { displayName?: string; requestID?: string } | undefined> | undefined;
 
 	for (const key of requiredAttachments) {
-		const attachment = applicationData.attachments?.[key];
+		const attachment = attachments?.[key];
 		// Must exist and have either a displayName (uploaded) or requestID (requested)
 		if (!attachment || (!attachment.displayName && !attachment.requestID)) {
 			attachmentsComplete = false;
@@ -100,51 +119,56 @@ const checkApplicationCompleteness = (applicationData, appConfig) => {
 };
 
 // Creates an update object for the Applicant Profile based on Application Data
-const buildApplicantUpdate = (appState, applicantState) => {
-	const update = {};
+const buildApplicantUpdate = (appState: ApplicationRecord, applicantState: DocumentData) => {
+	const update: Record<string, unknown> = {};
 
 	// Sync Profile Info
-	if (appState.profile) {
-		update.firstName = appState.profile.applicantFirstName || applicantState?.firstName;
-		update.lastName = appState.profile.applicantLastName || applicantState?.lastName;
-		update.email = appState.profile.applicantEmailAddress || applicantState?.email;
-		update.cell = appState.profile.applicantCellPhone || applicantState?.cell;
+	const profile = appState.profile as Partial<ProfileForm> | undefined;
+	if (profile) {
+		update.firstName = profile.applicantFirstName || applicantState?.firstName;
+		update.lastName = profile.applicantLastName || applicantState?.lastName;
+		update.email = profile.applicantEmailAddress || applicantState?.email;
+		update.cell = profile.applicantCellPhone || applicantState?.cell;
+		update.homePhone = profile.applicantHomePhone || applicantState?.homePhone;
 	}
 
 	// Sync Education Info
-	if (appState.education) {
-		update.school = appState.education.schoolName || applicantState?.school;
-		update.major = appState.education.major || applicantState?.major;
-		if (appState.education.expectedGraduationDate) {
-			update.gradYear = Number(new Date(appState.education.expectedGraduationDate).getFullYear());
+	const education = appState.education as Partial<EducationForm> | undefined;
+	if (education) {
+		update.school = education.schoolName || applicantState?.school;
+		update.major = education.major || applicantState?.major;
+		if (education.expectedGraduationDate) {
+			update.gradYear = Number(new Date(education.expectedGraduationDate).getFullYear());
 		}
 	}
 
 	// Sync Organization/Role
-	if (appState.experience?.positions) {
-		const currentIndex = appState.experience.currentOrganization;
-		if (currentIndex !== 'undefined' && appState.experience.positions[currentIndex]) {
-			const unit = appState.experience.positions[currentIndex];
+	const experience = appState.experience as (Partial<ExperienceForm> & { positions?: Array<{ role?: string; organization?: string }> }) | undefined;
+	if (experience?.positions) {
+		const rawIndex = experience.currentOrganization;
+		const currentIndex = Number.parseInt(String(rawIndex ?? ''), 10);
+		if (rawIndex !== 'undefined' && !Number.isNaN(currentIndex) && experience.positions[currentIndex]) {
+			const unit = experience.positions[currentIndex];
 			update.organization = `${unit.role} | ${unit.organization}`;
 		}
 	}
 	return update;
 };
 
-const loadExistingApplication = async (appId, userId, appConfig, handleError) => {
+const loadExistingApplication = async (appId: string, userId: string, appConfig: WizardAppConfig, handleError: HandleErrorFn): Promise<LoadExistingResult> => {
 	try {
 		const appData = await getApplication(userId, appId);
 		if (!appData) return { notFound: true };
 
 		const collectionsToFetch = appConfig.dataCollections || [];
-		const fetchedData = {};
+		const fetchedData: ApplicationRecord = {};
 
 		// Fetch linked documents (Family, Education, etc.)
 		await Promise.all(
 			collectionsToFetch.map(async ({ key, collectionName }) => {
 				const recordId = appData[key];
 				if (recordId) {
-					fetchedData[key] = await getCollectionData(userId, collectionName, recordId);
+					fetchedData[key] = await getCollectionData(userId, collectionName, String(recordId));
 				}
 			})
 		);
@@ -162,7 +186,7 @@ const loadExistingApplication = async (appId, userId, appConfig, handleError) =>
 	}
 };
 
-const initializeNewApplication = async (userId, handleError) => {
+const initializeNewApplication = async (userId: string, handleError: HandleErrorFn) => {
 	try {
 		const applicantData = await getApplicant(userId);
 		return { applicant: applicantData, newId: uuidv4() };
@@ -176,16 +200,16 @@ const initializeNewApplication = async (userId, handleError) => {
 
 export default function ApplicationController() {
 	const { applicationType, applicationID: paramID } = useParams();
-	const appConfig = useMemo(() => applicationConfigurations[applicationType], [applicationType]);
+	const appConfig = useMemo(() => (applicationType ? (applicationConfigurations as Record<string, WizardAppConfig>)[applicationType] : undefined), [applicationType]);
 
 	// Wizard State
 	const [activeStep, setActiveStep] = useState(0);
-	const [completed, setCompleted] = useState({}); // Tracks completion of each section (stores IDs)
-	const [applicationID, setApplicationID] = useState(paramID || null);
+	const [completed, setCompleted] = useState<Record<string, unknown>>({}); // Tracks completion of each section (stores IDs)
+	const [applicationID, setApplicationID] = useState<string | null>(paramID || null);
 
 	// Data State
-	const [application, setApplication] = useState(appConfig?.template);
-	const [applicant, setApplicant] = useState(null);
+	const [application, setApplication] = useState<ApplicationRecord>((appConfig?.template ?? {}) as unknown as ApplicationRecord);
+	const [applicant, setApplicant] = useState<DocumentData | null>(null);
 
 	// UI State
 	const [hasErrors, setHasErrors] = useState(false);
@@ -193,13 +217,13 @@ export default function ApplicationController() {
 	const [submissionAttempted, setSubmissionAttempted] = useState(false);
 
 	// Hooks & Context
-	const siteConfig = useConfig();
+	const siteConfig = useConfig() as { APPLICATION_DEADLINE?: string; VALIDATION_OVERRIDE?: boolean };
 	const { user } = useAuth();
-	const { setAllowEditing, loading, setLoading } = useContext(ApplicationContext);
+	const { setAllowEditing, loading, setLoading } = useApplicationContext();
 	const navigate = useNavigate();
 	const { showAlert, handleError } = useAlert();
 	const handleErrorRef = useRef(handleError); // Persist ref to avoid effect dependencies
-	const { boxShadow } = useTheme();
+	const { primaryColor } = useTheme();
 	const theme = useMuiTheme();
 	const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -223,23 +247,28 @@ export default function ApplicationController() {
 				if (result.notFound) {
 					setWasNotFound(true);
 				} else {
-					setApplicant(result.applicant);
+					const appStatus = result.completed?.status;
+					if (appStatus && appStatus !== ApplicationStatus.started) {
+						navigate(generatePath(paths.reviewApp, { id: paramID }), { replace: true });
+						return;
+					}
+					setApplicant(result.applicant ?? null);
 					setApplication((prev) => ({ ...prev, ...result.application }));
-					setCompleted(result.completed);
-					setAllowEditing(result.completed?.status === ApplicationStatus.started);
+					setCompleted(result.completed ?? {});
+					setAllowEditing(appStatus === ApplicationStatus.started);
 				}
 			} else {
 				// Initialize new application
 				const { applicant: loadedApplicant, newId } = await initializeNewApplication(user.uid, handleErrorRef.current);
-				setApplicant(loadedApplicant);
+				setApplicant(loadedApplicant ?? null);
 				setApplicationID(newId);
-				setApplication(appConfig.template);
+				setApplication(appConfig.template as unknown as ApplicationRecord);
 				setAllowEditing(true);
 			}
 			setLoading(false);
 		};
 		initialize();
-	}, [paramID, user?.uid, appConfig, setAllowEditing, setLoading]);
+	}, [paramID, user?.uid, appConfig, setAllowEditing, setLoading, navigate]);
 
 	// Navigation Helpers
 	const totalSteps = useCallback(() => steps.length, [steps]);
@@ -250,7 +279,7 @@ export default function ApplicationController() {
 		const allCompleted = Object.keys(completed).length >= steps.length - 1;
 
 		// Find next incomplete step if at end, otherwise just next
-		const newActiveStep = isLast && !allCompleted ? steps.findIndex((step, i) => !completed[appConfig.pages[i]?.section]) : activeStep + 1;
+		const newActiveStep = isLast && !allCompleted ? steps.findIndex((_step: string, i: number) => !completed[appConfig?.pages[i]?.section ?? '']) : activeStep + 1;
 
 		setActiveStep(newActiveStep);
 	}, [activeStep, steps, completed, appConfig]);
@@ -260,16 +289,17 @@ export default function ApplicationController() {
 	const handleReset = () => {
 		setActiveStep(0);
 		setCompleted({});
-		setApplication(appConfig.template);
+		if (appConfig) setApplication(appConfig.template as unknown as ApplicationRecord);
 	};
 
 	const handleLogout = () => navigate(generatePath(paths.apply));
 
 	// Save Data Helpers
 	const updateApplicantAndApplicationRecords = useCallback(
-		async (updatedCompleted, currentApplicationState) => {
+		async (updatedCompleted: Record<string, unknown>, currentApplicationState: ApplicationRecord) => {
+			if (!applicationID || !appConfig || !user) return;
 			try {
-				// Update the main Application Record
+				const deadlineDate = new Date(siteConfig.APPLICATION_DEADLINE as string);
 				const applicationRecord = {
 					id: applicationID,
 					...updatedCompleted,
@@ -277,6 +307,8 @@ export default function ApplicationController() {
 					type: appConfig.type,
 					status: ApplicationStatus.started,
 					window: siteConfig.APPLICATION_DEADLINE,
+					cycleYear: deadlineDate.getFullYear(),
+					deadline: deadlineDate,
 					lastUpdated: new Date().toLocaleString(),
 				};
 				await saveCollectionData(collections.applications, applicationID, applicationRecord);
@@ -300,7 +332,7 @@ export default function ApplicationController() {
 	const handleValidationSuccess = useCallback(async () => {
 		setSubmissionAttempted(false);
 
-		const currentStepConfig = appConfig.pages[activeStep];
+		const currentStepConfig = appConfig?.pages[activeStep];
 
 		// Skip saving for informational steps (like Confirmation)
 		if (!currentStepConfig || currentStepConfig.section === 'confirmation') {
@@ -308,13 +340,15 @@ export default function ApplicationController() {
 			return;
 		}
 
+		if (!user) return;
+
 		const sectionKey = currentStepConfig.section;
 		const collectionName = getCollectionNameForSection(sectionKey);
-		const dataToSave = { ...application[sectionKey], completedBy: user.uid };
+		const dataToSave: Record<string, unknown> = { ...((application[sectionKey] ?? {}) as Record<string, unknown>), completedBy: user.uid };
 		const recordIdKey = getRecordIdKeyForSection(sectionKey);
 
 		// Generate ID if missing
-		let recordID = dataToSave[recordIdKey];
+		let recordID = dataToSave[recordIdKey] as string | undefined;
 		if (!recordID) {
 			recordID = uuidv4();
 			dataToSave[recordIdKey] = recordID;
@@ -322,8 +356,9 @@ export default function ApplicationController() {
 
 		// Special handling for Projections (sync with Incomes)
 		if (collectionName === collections.projections) {
-			dataToSave['applicantEarnings'] = application.incomes?.earningsAppliedToEducation;
-			dataToSave['applicantSavings'] = application.incomes?.savingsAppliedToEducation;
+			const incomes = application.incomes as Partial<IncomesForm> | undefined;
+			dataToSave['applicantEarnings'] = incomes?.earningsAppliedToEducation;
+			dataToSave['applicantSavings'] = incomes?.savingsAppliedToEducation;
 		}
 
 		// Save Step Data
@@ -361,13 +396,14 @@ export default function ApplicationController() {
 	};
 
 	// Handler: Final Submission
-	const handleApplicationSubmit = async (event) => {
+	const handleApplicationSubmit = async (event: React.MouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
 		const now = new Date().toLocaleString();
 
-		if (!appConfig) return;
+		if (!appConfig || !applicationID || !user) return;
 		try {
 			// 1. Mark as Submitted
+			const submissionDeadline = new Date(siteConfig.APPLICATION_DEADLINE as string);
 			const submission = {
 				id: applicationID,
 				...completed,
@@ -377,6 +413,8 @@ export default function ApplicationController() {
 				lastUpdated: now,
 				submittedOn: now,
 				window: siteConfig.APPLICATION_DEADLINE,
+				cycleYear: submissionDeadline.getFullYear(),
+				deadline: submissionDeadline,
 			};
 			await saveCollectionData(collections.applications, applicationID, submission);
 			showAlert('application', 'submitted');
@@ -386,14 +424,15 @@ export default function ApplicationController() {
 			await saveCollectionData(collections.applications, applicationID, { status: finalStatus });
 
 			// 3. Send Notifications
-			const firstName = application.profile?.applicantFirstName || applicant?.firstName;
-			const lastName = application.profile?.applicantLastName || applicant?.lastName;
+			const profile = application.profile as Partial<ProfileForm> | undefined;
+			const firstName = profile?.applicantFirstName || applicant?.firstName;
+			const lastName = profile?.applicantLastName || applicant?.lastName;
 			const update = {
 				id: user.uid,
 				firstName: firstName,
 				lastName: lastName,
 				name: `${firstName} ${lastName}`,
-				email: application.profile?.applicantEmailAddress || applicant?.email,
+				email: profile?.applicantEmailAddress || applicant?.email,
 			};
 
 			const template = finalStatus === ApplicationStatus.completed ? ContactTemplate.appCompleted : ContactTemplate.appIncomplete;
@@ -417,68 +456,103 @@ export default function ApplicationController() {
 		return <PageComponent sectionName={stepConfig.section} application={application} setApplication={setApplication} setHasErrors={setHasErrors} submissionAttempted={submissionAttempted} onValidationSuccess={handleValidationSuccess} onValidationFailure={handleValidationFailure} applicationType={appConfig.type} />;
 	};
 
-	const getButtonText = (original, smallScreenText) => (isSmallScreen ? smallScreenText : original);
+	const getButtonText = (original: string, smallScreenText: string) => (isSmallScreen ? smallScreenText : original);
 
 	if (!appConfig || wasNotFound) return <NotFound />;
 	if (loading) return <Loader />;
 
 	return (
-		<Box display='flex' flexDirection='column' justifyContent='center' alignItems='center' bgcolor='background.passive' color='secondary.main' sx={{ minHeight: '100vh', width: '100%' }}>
-			<Box width={{ xs: '100%', lg: '90%', xl: '80%' }} padding={3} bgcolor='background.main' color='secondary.main' sx={{ borderRadius: { xs: 0, md: 4 }, boxShadow: boxShadow, display: 'flex', flexDirection: 'column', minHeight: { xs: '100vh', md: '95vh' }, marginY: { xs: 0, lg: 3 } }}>
-				<CssBaseline />
+		<PublicPageLayout maxWidth='lg' compact tightMobile applicantNav>
+			<AuthFormCard
+				layout='stacked'
+				size='dashboard'
+				compact
+				tightMobile
+				denseHeader
+				headerAlign='left'
+				title={appConfig.title}
+				icon={<HistoryEduIcon />}
+				eyebrow='Application'
+				intro={
+					<Stack spacing={1.5} sx={{ width: '100%' }}>
+						<Typography
+							variant='body2'
+							color='text.secondary'
+							sx={{ display: { xs: 'block', md: 'none' }, textAlign: 'left', fontWeight: 600 }}>
+							Step {activeStep + 1} of {steps.length}: {steps[activeStep]}
+						</Typography>
+						<Stepper
+							activeStep={activeStep}
+							alternativeLabel={!isSmallScreen}
+							sx={{
+								display: { xs: 'none', md: 'flex' },
+								width: '100%',
+								overflowX: 'auto',
+								'& .MuiStepLabel-label': {
+									fontSize: { md: '0.7rem', lg: '0.75rem' },
+								},
+							}}>
+							{steps.map((label: string, index: number) => (
+								<Step key={label} completed={completed[appConfig.pages[index]?.section ?? ''] !== undefined}>
+									<StepButton color='inherit' onClick={() => setActiveStep(index)}>
+										{label}
+									</StepButton>
+								</Step>
+							))}
+						</Stepper>
+					</Stack>
+				}>
+				<Box sx={{ width: '100%', minWidth: 0 }}>{renderActiveStepForm()}</Box>
 
-				{/* Header & Stepper */}
-				<Box sx={{ width: '100%', flexShrink: 0 }}>
-					<Crumbs title={appConfig.title} />
-					<Typography variant='caption' sx={{ display: { xs: 'block', lg: 'none' }, textAlign: 'center', my: 1 }}>
-						Step {activeStep + 1} of {steps.length}: {steps[activeStep]}
-					</Typography>
-					<Stepper activeStep={activeStep} sx={{ display: { xs: 'none', lg: 'flex' }, overflowX: 'hidden', my: 2 }}>
-						{steps.map((label, index) => (
-							<Step key={label} completed={completed[appConfig.pages[index]?.section] !== undefined}>
-								<StepButton color='inherit' onClick={() => setActiveStep(index)}>
-									{label}
-								</StepButton>
-							</Step>
-						))}
-					</Stepper>
-				</Box>
-
-				{/* Main Form Area */}
-				<Box sx={{ flexGrow: 1, overflowY: 'auto', width: '100%', px: { xs: 1, md: 2 }, position: 'relative' }}>{renderActiveStepForm()}</Box>
-
-				{/* Footer Controls */}
-				<Box sx={{ width: '100%', flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.main', pt: 2, pb: 1 }}>
+				<Box
+					sx={{
+						width: '100%',
+						mt: 2.5,
+						pt: 2,
+						borderTop: '1px solid',
+						borderColor: 'divider',
+					}}>
 					{isLastStep() ? (
-						<Box sx={{ display: 'flex', flexDirection: 'row', px: 2 }}>
-							<Button variant='outlined' color='inherit' onClick={handleLogout} sx={{ mr: 1 }}>
+						<Box
+							sx={{
+								display: 'flex',
+								flexDirection: { xs: 'column', sm: 'row' },
+								gap: 1.5,
+								alignItems: 'stretch',
+							}}>
+							<Button variant='outlined' onClick={handleLogout} sx={homeAuthSecondaryButtonSx}>
 								{getButtonText('Return to Applicant Portal', 'Leave')}
 							</Button>
-							<Button variant='outlined' color='inherit' onClick={handleReset} sx={{ mr: 1 }}>
+							<Button variant='outlined' onClick={handleReset} sx={homeAuthSecondaryButtonSx}>
 								{getButtonText('Clear & Start Over', 'Reset')}
 							</Button>
-							<Box sx={{ flex: '1 1 auto' }} />
-							<Button variant='outlined' color='inherit' onClick={handleApplicationSubmit} disabled={hasErrors}>
+							<Box sx={{ flex: { sm: '1 1 auto' }, display: { xs: 'none', sm: 'block' } }} />
+							<Button variant='contained' onClick={handleApplicationSubmit} disabled={hasErrors} sx={homeAuthSubmitButtonSx(primaryColor)}>
 								{getButtonText('Confirm & Submit', 'Submit')}
 							</Button>
 						</Box>
 					) : (
-						<Box sx={{ display: 'flex', flexDirection: 'row', px: 2 }}>
-							<Button variant='outlined' color='inherit' onClick={handleLogout} sx={{ mr: 1 }}>
+						<Box
+							sx={{
+								display: 'flex',
+								flexDirection: { xs: 'column', sm: 'row' },
+								gap: 1.5,
+								alignItems: 'stretch',
+							}}>
+							<Button variant='outlined' onClick={handleLogout} sx={homeAuthSecondaryButtonSx}>
 								{getButtonText('Save & Exit', 'Exit')}
 							</Button>
-							<Button variant='outlined' color='inherit' disabled={activeStep === 0} onClick={handleBack} sx={{ mr: 1 }}>
+							<Button variant='outlined' disabled={activeStep === 0} onClick={handleBack} sx={homeAuthSecondaryButtonSx}>
 								Back
 							</Button>
-							<Box sx={{ flex: '1 1 auto' }} />
-							<Button variant='outlined' type='submit' onClick={handleComplete}>
+							<Box sx={{ flex: { sm: '1 1 auto' }, display: { xs: 'none', sm: 'block' } }} />
+							<Button variant='contained' type='submit' onClick={handleComplete} sx={homeAuthSubmitButtonSx(primaryColor)}>
 								{getButtonText('Save & Continue', 'Next')}
 							</Button>
 						</Box>
 					)}
-					<CopyrightFooter sx={{ mt: 2, px: 2 }} />
 				</Box>
-			</Box>
-		</Box>
+			</AuthFormCard>
+		</PublicPageLayout>
 	);
 }

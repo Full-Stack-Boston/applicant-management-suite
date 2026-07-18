@@ -1,16 +1,22 @@
 const admin = require('firebase-admin');
 const path = require('path');
 
-const SERVICE_ACCOUNT_KEY_PATH = path.join(__dirname, '../../serviceAccountKey.json');
+const SERVICE_ACCOUNT_KEY_PATH = path.join(__dirname, '../../../serviceAccountKey.json');
 
 let db;
+const EXPECTED_PROJECT_ID = 'ams-fsb';
 try {
     const serviceAccount = require(SERVICE_ACCOUNT_KEY_PATH);
+    if (serviceAccount.project_id !== EXPECTED_PROJECT_ID) {
+        console.error(`REFUSING: service account project_id=${serviceAccount.project_id}, expected ${EXPECTED_PROJECT_ID}`);
+        process.exit(2);
+    }
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
+        projectId: EXPECTED_PROJECT_ID,
     });
     db = admin.firestore();
-    console.log('Firebase Admin initialized.');
+    console.log(`Firebase Admin initialized for ${EXPECTED_PROJECT_ID} only.`);
 } catch (e) {
     console.error('Initialization Error:', e.message);
     process.exit(1);
@@ -156,13 +162,13 @@ const fakeEmails = [
     },
     {
         to: "inquiries@demo-ams.org",
-        sender: "\"Local Scout Troop\" <troop_104@gmail.com>",
+        sender: "\"Local Community Group\" <community_group@example.com>",
         subject: "Thank you!",
         description: "We wanted to say a huge thank you for the grant last year.",
         timestamp: now - (10 * oneDay),
         tags: ["inquiries"],
         isRead: true,
-        content: `<div><p>Dear Committee,</p><p>We just wanted to reach out and say a huge thank you. The funding we received last year allowed us to upgrade all our cooking gear. The scouts are thrilled!</p><p>Gratefully,<br>Troop 104</p></div>`
+        content: `<div><p>Dear Committee,</p><p>We just wanted to reach out and say a huge thank you. The funding we received last year allowed us to upgrade all our cooking gear. The participants are thrilled!</p><p>Gratefully,<br>Community Group</p></div>`
     },
     {
         to: "admin@demo-ams.org",

@@ -3,7 +3,6 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import RSVP from './RSVP';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { updateDoc, serverTimestamp } from 'firebase/firestore';
-import { useTitle } from '../../context/HelmetContext';
 import { InterviewStatus } from '../../config/data/collections';
 
 // --- Mocks ---

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * APPLICATION ROUTE PATHS
  * ---------------------------------------------------------------------------
@@ -23,7 +22,7 @@ export const paths = {
 	logout: '/logout',
 	redirect: '/redirect', // Intermediate page for handling auth redirects
 	registerApplicant: '/register', // Public sign-up for Applicants
-	registerMember: '/board-registration', // Secret sign-up for Admins
+	registerMember: '/board-registration', // Demo / optional self-serve board sign-up
 
 	// -------------------------
 	// 2. Applicant Workflow
@@ -95,6 +94,20 @@ export const paths = {
 	newAppsInYear: '/applications/:year/newApplicants',
 	returningAppsInYear: '/applications/:year/returningGrants',
 	scholarshipAppsInYear: '/applications/:year/scholarshipRecipients',
+
+	// Type queues (all years / current-cycle via list fetcher)
+	newApps: '/applications/newApplicants',
+	returningApps: '/applications/returningGrants',
+	scholarshipApps: '/applications/scholarshipRecipients',
+
+	// Year × status queues
+	completedAppsInYear: '/applications/:year/completed',
+	eligibleAppsInYear: '/applications/:year/eligible',
+	invitedAppsInYear: '/applications/:year/invited',
+	awardedAppsInYear: '/applications/:year/awarded',
+	deletedAppsInYear: '/applications/:year/deleted',
+	rejectedAppsInYear: '/applications/:year/rejected',
+	incompleteAppsInYear: '/applications/:year/incomplete',
 
 	// Single Application Actions
 	viewApp: '/applications/view/:id', // The Review Console

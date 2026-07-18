@@ -2,8 +2,39 @@ const admin = require('firebase-admin');
 const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
 
 const { brand, templates } = require('../config');
+const { getConfigFromDb } = require('../utils');
+const {
+	isMailboxLive,
+	isConnectedEmailMode,
+	isZohoConfigured,
+	connectedMailboxRequiredMessage,
+} = require('../emailDelivery');
+
+/** live=true → Zoho API; live=false → mail_cache-only demo simulation. */
+const resolveMailboxMode = async () => {
+	const config = await getConfigFromDb();
+	if (isMailboxLive(config)) return { live: true, config };
+	if (isConnectedEmailMode(config) && !isZohoConfigured()) {
+		throw new HttpsError('failed-precondition', connectedMailboxRequiredMessage);
+	}
+	return { live: false, config };
+};
+
+const DEMO_FOLDERS = [
+	{ folderId: 'inbox', folderName: 'Inbox' },
+	{ folderId: 'sent', folderName: 'Sent' },
+	{ folderId: 'trash', folderName: 'Trash' },
+];
+
+const stripHtml = (html) =>
+	String(html || '')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 200);
 
 // ==================================================================
 //  INTERNAL HELPER FUNCTIONS
@@ -145,6 +176,12 @@ exports.syncZohoMailCache = onDocumentUpdated('mail_sync/stats', async (event) =
 	// Skip self-writes or debouncing
 	if (beforeData.trigger === afterData.trigger) {
 		console.log('Sync skipped: Trigger value did not change (self-write).');
+		return null;
+	}
+
+	const config = await getConfigFromDb();
+	if (!isMailboxLive(config)) {
+		console.log('Sync skipped: Demo email delivery mode (seeded mail_cache only).');
 		return null;
 	}
 
@@ -338,6 +375,23 @@ exports.fetchEmailsByFolder = onCall(async (request) => {
 	const { folderId } = request.data;
 	if (!folderId) throw new HttpsError('invalid-argument', 'A folderId is required.');
 
+	const { live } = await resolveMailboxMode();
+	if (!live) {
+		const folderName = String(folderId).toLowerCase();
+		const snap = await admin.firestore().collection('mail_cache').where('folderName', '==', folderName).limit(200).get();
+		return snap.docs.map((doc) => {
+			const d = doc.data();
+			return {
+				id: d.id || doc.id,
+				sender: d.sender,
+				subject: d.subject,
+				description: d.description,
+				timestamp: d.timestamp,
+				isRead: d.isRead,
+			};
+		});
+	}
+
 	try {
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
@@ -376,6 +430,9 @@ exports.fetchZohoFolders = onCall(async (request) => {
 		throw new HttpsError('permission-denied', 'You must be an admin to perform this action.');
 	}
 
+	const { live } = await resolveMailboxMode();
+	if (!live) return DEMO_FOLDERS;
+
 	try {
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
@@ -406,7 +463,7 @@ exports.sendZohoEmail = onCall(async (request) => {
 		const memberFullName = `${memberData.firstName} ${memberData.lastName}`;
 
 		let formattedFromAddress;
-		const fromAlias = fromAddress.split('@')[0];
+		const fromAlias = fromAddress.split('@')[0].toLowerCase();
 
 		const groupAliasDisplayNames = {
 			applications: ` ${brand.organizationShortName}`,
@@ -432,6 +489,33 @@ exports.sendZohoEmail = onCall(async (request) => {
 			const header = templates.emailHeader(brand);
 			const footer = templates.staticEmailFooter(brand);
 			finalBody = header + `<main style="font-family: Arial, Helvetica, sans-serif; color: #333; padding: 5px; margin: 5px;">` + body + `</main>` + footer;
+		}
+
+		const { live } = await resolveMailboxMode();
+		if (!live) {
+			const messageId = `demo-${Date.now()}-${uuidv4()}`;
+			const toAddress = Array.isArray(to) ? to.join(',') : to;
+			await db.collection('mail_cache').doc(messageId).set({
+				id: messageId,
+				to: toAddress,
+				sender: formattedFromAddress,
+				subject,
+				description: stripHtml(finalBody),
+				timestamp: Date.now(),
+				folderId: 'sent',
+				folderName: 'sent',
+				isRead: true,
+				tags: [fromAlias],
+				hasAttachment: false,
+				hasInline: false,
+				content: finalBody,
+				headerContent: null,
+				attachments: [],
+				inlineAttachments: [],
+				simulated: true,
+				inReplyTo: originalMessageId || null,
+			});
+			return { success: true, message: 'Email simulated successfully (demo mode).', simulated: true, messageId };
 		}
 
 		const accessToken = await getZohoAccessToken();
@@ -473,6 +557,21 @@ exports.fetchEmailContent = onCall(async (request) => {
 	const { messageId, folderId } = request.data;
 	if (!messageId || !folderId) throw new HttpsError('invalid-argument', 'A messageId and folderId are required.');
 
+	const { live } = await resolveMailboxMode();
+	if (!live) {
+		const snap = await admin.firestore().doc(`mail_cache/${messageId}`).get();
+		if (!snap.exists) throw new HttpsError('not-found', 'Email not found in demo mailbox cache.');
+		const d = snap.data();
+		return {
+			...(d.headerContent || {}),
+			content: d.content || '',
+			attachments: d.attachments || [],
+			inlineAttachments: d.inlineAttachments || [],
+			folderId: d.folderId || folderId,
+			simulated: true,
+		};
+	}
+
 	try {
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
@@ -507,6 +606,11 @@ exports.fetchAttachmentContent = onCall(async (request) => {
 		throw new HttpsError('invalid-argument', 'messageId, attachmentId, and folderId are all required.');
 	}
 
+	const { live } = await resolveMailboxMode();
+	if (!live) {
+		throw new HttpsError('failed-precondition', 'Attachments are not available in demo mailbox mode.');
+	}
+
 	try {
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
@@ -539,6 +643,12 @@ exports.deleteZohoEmail = onCall(async (request) => {
 	if (!messageId) throw new HttpsError('invalid-argument', 'A messageId is required.');
 
 	try {
+		const { live } = await resolveMailboxMode();
+		if (!live) {
+			await admin.firestore().doc(`mail_cache/${messageId}`).delete();
+			return { success: true, message: 'Email removed from demo mailbox.', simulated: true };
+		}
+
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
 		const folderId = await getInboxFolderId(accessToken, accountId);
@@ -552,6 +662,7 @@ exports.deleteZohoEmail = onCall(async (request) => {
 
 		return { success: true, message: 'Email moved to trash.' };
 	} catch (error) {
+		if (error instanceof HttpsError) throw error;
 		console.error('Error deleting Zoho email:', error.response?.data);
 		throw new HttpsError('internal', 'Failed to delete email via Zoho.');
 	}
@@ -571,6 +682,17 @@ exports.bulkDeleteZohoEmails = onCall(async (request) => {
 	}
 
 	try {
+		const { live } = await resolveMailboxMode();
+		const batch = admin.firestore().batch();
+		messageIds.forEach((id) => {
+			batch.delete(admin.firestore().doc(`mail_cache/${id}`));
+		});
+
+		if (!live) {
+			await batch.commit();
+			return { success: true, message: `${messageIds.length} email(s) removed from demo mailbox.`, simulated: true };
+		}
+
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
 		const folderId = await getInboxFolderId(accessToken, accountId);
@@ -581,16 +703,11 @@ exports.bulkDeleteZohoEmails = onCall(async (request) => {
 			return axios.delete(deleteApiUrl, apiHeaders);
 		});
 		await Promise.all(deletionPromises);
-
-		const batch = admin.firestore().batch();
-		messageIds.forEach((id) => {
-			const docRef = admin.firestore().doc(`mail_cache/${id}`);
-			batch.delete(docRef);
-		});
 		await batch.commit();
 
 		return { success: true, message: `${messageIds.length} email(s) moved to trash.` };
 	} catch (error) {
+		if (error instanceof HttpsError) throw error;
 		console.error('Error bulk deleting Zoho emails:', error.response?.data || error.message);
 		throw new HttpsError('internal', 'Failed to delete one or more emails via Zoho.');
 	}
@@ -610,25 +727,30 @@ exports.updateEmailReadStatus = onCall(async (request) => {
 	}
 
 	try {
+		const messageIds = messages.map((msg) => msg.id);
+		const batch = admin.firestore().batch();
+		const newIsRead = status === 'read';
+		messageIds.forEach((id) => {
+			batch.update(admin.firestore().doc(`mail_cache/${id}`), { isRead: newIsRead });
+		});
+
+		const { live } = await resolveMailboxMode();
+		if (!live) {
+			await batch.commit();
+			return { success: true, message: `${messages.length} email(s) marked as ${status}.`, simulated: true };
+		}
+
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
-		const messageIds = messages.map((msg) => msg.id);
-
 		const apiEndpoint = `https://mail.zoho.com/api/accounts/${accountId}/updatemessage`;
 		const sanitizedStatus = status === 'read' ? 'markAsRead' : 'markAsUnread';
 
 		await axios.put(apiEndpoint, { mode: sanitizedStatus, messageId: messageIds }, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
-
-		const batch = admin.firestore().batch();
-		const newIsRead = status === 'read';
-		messageIds.forEach((id) => {
-			const docRef = admin.firestore().doc(`mail_cache/${id}`);
-			batch.update(docRef, { isRead: newIsRead });
-		});
 		await batch.commit();
 
 		return { success: true, message: `${messages.length} email(s) marked as ${status}.` };
 	} catch (error) {
+		if (error instanceof HttpsError) throw error;
 		console.error('Error updating email read status:', error.response?.data || error.message);
 		throw new HttpsError('internal', 'Failed to update email status. Check function logs.');
 	}

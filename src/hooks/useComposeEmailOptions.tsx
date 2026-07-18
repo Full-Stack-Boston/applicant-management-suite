@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EMAIL COMPOSER OPTIONS HOOK
  * ---------------------------------------------------------------------------
@@ -15,14 +14,34 @@
 
 import { useMemo } from 'react';
 import { brand } from '../config/Constants';
+import type { Member } from '../types/domain';
+import type { ConfigContextValue } from '../context/ConfigContext';
 
 const DOMAIN = brand.emailDomain;
 
-export const useComposeEmailOptions = ({ member, config, fromAddress }) => {
+interface SelectOption {
+	label: string;
+	value: string;
+}
+
+interface ComposeEmailOptionsParams {
+	member: (Member & { alias?: string; personalSignature?: string }) | null | undefined;
+	config: ConfigContextValue | null | undefined;
+	fromAddress?: string;
+}
+
+interface ComposeEmailOptionsResult {
+	fromOptions: SelectOption[];
+	signatureOptions: SelectOption[];
+	defaultFrom: string;
+	permittedAliases: string[];
+}
+
+export const useComposeEmailOptions = ({ member, config, fromAddress }: ComposeEmailOptionsParams): ComposeEmailOptionsResult => {
 	// --- 1. Calculate Permitted Aliases ---
 	// Returns a list of strings: ['admin', 'info', 'john.doe']
 	const permittedAliases = useMemo(() => {
-		const aliases = [];
+		const aliases: string[] = [];
 
 		// Check explicit permission grants (e.g. Committee roles)
 		if (member?.permissions?.emails?.aliases) {
@@ -42,7 +61,7 @@ export const useComposeEmailOptions = ({ member, config, fromAddress }) => {
 	}, [member]);
 
 	// --- 2. Generate "From" Dropdown Options ---
-	const fromOptions = useMemo(() => {
+	const fromOptions = useMemo<SelectOption[]>(() => {
 		return permittedAliases.map((alias) => ({
 			label: `${alias}@${DOMAIN}`,
 			value: `${alias}@${DOMAIN}`,
@@ -50,8 +69,8 @@ export const useComposeEmailOptions = ({ member, config, fromAddress }) => {
 	}, [permittedAliases]);
 
 	// --- 3. Generate "Signature" Dropdown Options ---
-	const signatureOptions = useMemo(() => {
-		const sigOpts = [{ label: 'None', value: 'none' }];
+	const signatureOptions = useMemo<SelectOption[]>(() => {
+		const sigOpts: SelectOption[] = [{ label: 'None', value: 'none' }];
 
 		// A. Personal Signature (from Member Profile)
 		if (member?.personalSignature) {
@@ -69,7 +88,7 @@ export const useComposeEmailOptions = ({ member, config, fromAddress }) => {
 					if (permittedAliases.includes(aliasName)) {
 						// Format Label: "admin" -> "Admin Signature"
 						const label = aliasName.charAt(0).toUpperCase() + aliasName.slice(1) + ' Signature';
-						sigOpts.push({ label: label, value: config[key] });
+						sigOpts.push({ label: label, value: String(config[key]) });
 					}
 				}
 			}

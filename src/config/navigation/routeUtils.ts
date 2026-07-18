@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ROUTING UTILITIES
  * ---------------------------------------------------------------------------
@@ -25,7 +24,7 @@ const adminPathPrefixes = [
  * * @param {string} pathname - The current browser URL path (from useLocation).
  * @returns {boolean} True if the path belongs to an admin section.
  */
-export const isAdminPath = (pathname) => {
+export const isAdminPath = (pathname: string): boolean => {
 	return adminPathPrefixes.some((prefix) => {
 		// Extract the root segment (e.g. '/members' -> 'members')
 		// This ensures we match '/members' and '/members/...' but not '/membership-info'
@@ -42,11 +41,13 @@ export const isAdminPath = (pathname) => {
  * @param {object} params - Key-value pairs to inject into the path.
  * @returns {string} The constructed URL.
  */
-export const generatePath = (path, params = {}) => {
+export type PathParams = Record<string, string | number | undefined>;
+
+export const generatePath = (path: string, params: PathParams = {}): string => {
 	let finalPath = path;
-	for (const key in params) {
-		if (Object.hasOwn(params, key)) {
-			finalPath = finalPath.replace(`:${key}`, params[key]);
+	for (const [key, value] of Object.entries(params)) {
+		if (value !== undefined) {
+			finalPath = finalPath.replace(`:${key}`, String(value));
 		}
 	}
 	return finalPath;

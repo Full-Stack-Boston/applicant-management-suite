@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * PDF Application View
  * Renders a full Applicant "Packet" optimized for printing or PDF generation.
@@ -30,18 +29,20 @@ import Loader from '../loader/Loader';
 import NotFound from '../layout/NotFound';
 import PDFPreview from './PDFPreview';
 
+import type { AttachmentMeta, AttachmentPreview, AwardRecord, ExperiencePositionRow, TemplateApplication, TemplateApplicant } from './types';
+
 // --- Helpers ---
 
-const formatMoney = (amount) => {
+const formatMoney = (amount: string | number | null | undefined) => {
 	if (amount === undefined || amount === null || amount === '') return '';
 	// If it's already formatted (contains $), return as is
 	if (typeof amount === 'string' && amount.includes('$')) return amount;
 
-	const num = Number.parseFloat(amount);
+	const num = Number.parseFloat(String(amount));
 	return Number.isNaN(num) ? amount : `$${num.toLocaleString()}`;
 };
 
-const calculateAge = (dob) => {
+const calculateAge = (dob: string | Date | null | undefined) => {
 	if (!dob) return '';
 	const birthDate = new Date(dob);
 	const today = new Date();
@@ -52,9 +53,9 @@ const calculateAge = (dob) => {
 	return String(age);
 };
 
-const currentOrgString = (data) => {
-	const currentIndex = Number.parseInt(data.currentOrganization, 10);
-	const currentPos = Array.isArray(data.positions) ? data.positions[currentIndex] : null;
+const currentOrgString = (data: { currentOrganization?: string; positions?: unknown[] }) => {
+	const currentIndex = Number.parseInt(data.currentOrganization ?? '', 10);
+	const currentPos = Array.isArray(data.positions) ? (data.positions[currentIndex] as { role?: string; organization?: string } | undefined) : null;
 	return currentPos ? `${currentPos.role} | ${currentPos.organization}` : 'N/A';
 };
 
@@ -66,8 +67,8 @@ export const PDFApplication = () => {
 	const dataID = useParams().id;
 
 	// State
-	const [application, setApplication] = useState(templateApp);
-	const [applicant, setApplicant] = useState(blankApplicant);
+	const [application, setApplication] = useState<TemplateApplication>(templateApp);
+	const [applicant, setApplicant] = useState<TemplateApplicant>(blankApplicant);
 
 	// Sub-sections
 	const [profile, setProfile] = useState(templateApp.profile);
@@ -78,10 +79,10 @@ export const PDFApplication = () => {
 	const [incomes, setIncomes] = useState(templateApp.incomes);
 	const [contributions, setContributions] = useState(templateApp.contributions);
 	const [projections, setProjections] = useState(templateApp.projections);
-	const [awards, setAwards] = useState([]);
+	const [awards, setAwards] = useState<AwardRecord[]>([]);
 
 	// Attachments & UI
-	const [attachmentPreviews, setAttachmentPreviews] = useState({});
+	const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, AttachmentPreview>>({});
 	const [loading, setLoading] = useState(false);
 	const [wasNotFound, setWasNotFound] = useState(false);
 
@@ -92,10 +93,10 @@ export const PDFApplication = () => {
 
 	// Data Fetching
 	useEffect(() => {
-		const fetchAttachmentPreviews = async (attachmentsData) => {
+		const fetchAttachmentPreviews = async (attachmentsData: Record<string, AttachmentMeta> | null | undefined) => {
 			if (!attachmentsData || Object.keys(attachmentsData).length === 0) return;
 
-			const previews = {};
+			const previews: Record<string, AttachmentPreview> = {};
 
 			await Promise.all(
 				Object.entries(attachmentsData).map(async ([key, meta]) => {
@@ -117,7 +118,7 @@ export const PDFApplication = () => {
 							pages,
 						};
 					} catch (err) {
-						console.error(`Failed to process ${key}:`, err.message);
+						console.error(`Failed to process ${key}:`, err instanceof Error ? err.message : String(err));
 					}
 				})
 			);
@@ -140,34 +141,34 @@ export const PDFApplication = () => {
 					return;
 				}
 
-				setApplication(applicationIn);
+				setApplication(applicationIn as TemplateApplication);
 
 				// Parallel fetch of all sub-collections
 				const { completedBy, profile, family, education, experience, expenses, incomes, contributions, projections, attachments, awards } = applicationIn;
 
 				const [profileData, familyData, eduData, expData, expnData, incData, contData, projData, attachData, applicantData] = await Promise.all([getCollectionData(completedBy, collections.profiles, profile), getCollectionData(completedBy, collections.families, family), getCollectionData(completedBy, collections.education, education), getCollectionData(completedBy, collections.experience, experience), getCollectionData(completedBy, collections.expenses, expenses), getCollectionData(completedBy, collections.incomes, incomes), getCollectionData(completedBy, collections.contributions, contributions), getCollectionData(completedBy, collections.projections, projections), getCollectionData(completedBy, collections.attachments, attachments), getCollectionData(completedBy, collections.applicants, completedBy)]);
 
-				setProfile(profileData);
-				setFamily(familyData);
-				setEducation(eduData);
-				setExperience(expData);
-				setExpenses(expnData);
-				setIncomes(incData);
-				setContributions(contData);
-				setProjections(projData);
-				setApplicant(applicantData);
+				if (profileData) setProfile({ ...templateApp.profile, ...profileData });
+				if (familyData) setFamily({ ...templateApp.family, ...familyData });
+				if (eduData) setEducation({ ...templateApp.education, ...eduData });
+				if (expData) setExperience({ ...templateApp.experience, ...expData });
+				if (expnData) setExpenses({ ...templateApp.expenses, ...expnData });
+				if (incData) setIncomes({ ...templateApp.incomes, ...incData });
+				if (contData) setContributions({ ...templateApp.contributions, ...contData });
+				if (projData) setProjections({ ...templateApp.projections, ...projData });
+				if (applicantData) setApplicant({ ...blankApplicant, ...applicantData });
 
 				// Fetch Attachments & Awards separately
-				fetchAttachmentPreviews(attachData);
+				fetchAttachmentPreviews(attachData as Record<string, AttachmentMeta> | null | undefined);
 
 				if (Array.isArray(awards) && awards.length > 0) {
 					const awardsData = await getAwardsData(completedBy, awards);
-					setAwards(awardsData);
+					setAwards(awardsData as AwardRecord[]);
 				} else {
 					setAwards([]);
 				}
 			} catch (err) {
-				console.error(err.message);
+				console.error(err instanceof Error ? err.message : String(err));
 			} finally {
 				setLoading(false);
 			}
@@ -180,7 +181,7 @@ export const PDFApplication = () => {
 	if (wasNotFound) return <NotFound />;
 
 	return (
-		<Box bgcolor='background.passive' color='text.active'>
+		<Box sx={{ bgcolor: 'background.passive', color: 'text.active' }}>
 			<style>
 				{`
                 @media print {
@@ -232,7 +233,7 @@ export const PDFApplication = () => {
                 `}
 			</style>
 
-			<Box display='flex' gap='10px' padding='20px'>
+			<Box sx={{ display: 'flex', gap: '10px', p: '20px' }}>
 				<Button variant='outlined' onClick={() => navigate(-1)}>
 					← Back
 				</Button>
@@ -245,14 +246,14 @@ export const PDFApplication = () => {
 				</Button>
 			</Box>
 
-			<Box id='printable' padding='20px'>
+			<Box id='printable' sx={{ p: '20px' }}>
 				<Typography variant='h4' gutterBottom>{`${brand.organizationShortName} Application`}</Typography>
 				<Typography variant='subtitle1'>Application ID: {application.id}</Typography>
 				<Typography>Status: {application.status}</Typography>
 
 				{/* Section: Applicant Info */}
-				<Box display='flex' gap={3} mt={4}>
-					<Box flex={1} minWidth='250px'>
+				<Box sx={{ display: 'flex', gap: 3, mt: 4 }}>
+					<Box sx={{ flex: 1, minWidth: '250px' }}>
 						<Typography variant='h5' gutterBottom>
 							Applicant Information
 						</Typography>
@@ -270,7 +271,7 @@ export const PDFApplication = () => {
 					</Box>
 
 					{awards?.length > 0 && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Award History
 							</Typography>
@@ -297,9 +298,9 @@ export const PDFApplication = () => {
 				</Box>
 
 				{/* Section: Profile & Family */}
-				<Box display='flex' gap={3} mt={4}>
+				<Box sx={{ display: 'flex', gap: 3, mt: 4 }}>
 					{profile && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Profile
 							</Typography>
@@ -307,14 +308,14 @@ export const PDFApplication = () => {
 								Full Name: {profile.applicantFirstName} {profile.applicantMiddleInitial} {profile.applicantLastName}
 							</Typography>
 							<Typography>DOB: {`${dayjs(profile.applicantDOB).add(12, 'hour').format('M/D/YYYY')} (${calculateAge(profile.applicantDOB)} years old)`}</Typography>
-							<Typography>Address: {profile.applicantMailingAddress?.description}</Typography>
+							<Typography>Address: {typeof profile.applicantMailingAddress === 'string' ? profile.applicantMailingAddress : profile.applicantMailingAddress?.description}</Typography>
 							<Typography>Phone: {profile.applicantCellPhone}</Typography>
 							<Typography>Email: {profile.applicantEmailAddress}</Typography>
 						</Box>
 					)}
 
 					{family?.familyMembers?.length > 0 && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Family Members
 							</Typography>
@@ -343,9 +344,9 @@ export const PDFApplication = () => {
 				</Box>
 
 				{/* Section: Education & Experience */}
-				<Box display='flex' gap={3} mt={4}>
+				<Box sx={{ display: 'flex', gap: 3, mt: 4 }}>
 					{education && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Education
 							</Typography>
@@ -362,11 +363,14 @@ export const PDFApplication = () => {
 										</TableRow>
 									</TableHead>
 									<TableBody>
-										{education.previousSchools.map((school) => (
-											<TableRow key={school}>
-												<TableCell>{school}</TableCell>
-											</TableRow>
-										))}
+										{education.previousSchools.map((school, index) => {
+											const schoolName = typeof school === 'string' ? school : school.school;
+											return (
+												<TableRow key={schoolName ?? `school-${index}`}>
+													<TableCell>{schoolName}</TableCell>
+												</TableRow>
+											);
+										})}
 									</TableBody>
 								</Table>
 							)}
@@ -374,7 +378,7 @@ export const PDFApplication = () => {
 					)}
 
 					{experience && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Experience
 							</Typography>
@@ -390,7 +394,7 @@ export const PDFApplication = () => {
 										</TableRow>
 									</TableHead>
 									<TableBody>
-										{experience.positions.map((pos) => (
+										{(experience.positions as ExperiencePositionRow[]).map((pos) => (
 											<TableRow key={`${pos.type}-${pos.organization}`}>
 												<TableCell>
 													{pos.type} - {pos.organization}
@@ -407,9 +411,9 @@ export const PDFApplication = () => {
 				</Box>
 
 				{/* Section: Finances (Income & Expenses) */}
-				<Box display='flex' gap={3} mt={4}>
+				<Box sx={{ display: 'flex', gap: 3, mt: 4 }}>
 					{incomes && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Incomes
 							</Typography>
@@ -452,7 +456,7 @@ export const PDFApplication = () => {
 
 							{incomes.otherIncomeSources?.length > 0 && (
 								<>
-									<Typography mt={2}>Other Sources</Typography>
+									<Typography sx={{ mt: 2 }}>Other Sources</Typography>
 									<Table size='small' sx={{ mt: 1 }}>
 										<TableHead>
 											<TableRow>
@@ -475,7 +479,7 @@ export const PDFApplication = () => {
 					)}
 
 					{expenses && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Expenses
 							</Typography>
@@ -502,7 +506,7 @@ export const PDFApplication = () => {
 
 							{expenses.otherExpenses?.length > 0 && (
 								<>
-									<Typography mt={2}>Other Expenses</Typography>
+									<Typography sx={{ mt: 2 }}>Other Expenses</Typography>
 									<Table size='small' sx={{ mt: 1 }}>
 										<TableHead>
 											<TableRow>
@@ -526,9 +530,9 @@ export const PDFApplication = () => {
 				</Box>
 
 				{/* Section: Contributions & Projections */}
-				<Box display='flex' gap={3} mt={4}>
+				<Box sx={{ display: 'flex', gap: 3, mt: 4 }}>
 					{contributions && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Parental Contributions
 							</Typography>
@@ -559,7 +563,7 @@ export const PDFApplication = () => {
 
 							{contributions.siblingSchools?.length > 0 && (
 								<>
-									<Typography mt={2}>Sibling Schools</Typography>
+									<Typography sx={{ mt: 2 }}>Sibling Schools</Typography>
 									<Table size='small' sx={{ mt: 1 }}>
 										<TableHead>
 											<TableRow>
@@ -582,7 +586,7 @@ export const PDFApplication = () => {
 					)}
 
 					{projections && (
-						<Box flex={1} minWidth='250px'>
+						<Box sx={{ flex: 1, minWidth: '250px' }}>
 							<Typography variant='h5' gutterBottom>
 								Financial Projections
 							</Typography>
@@ -609,7 +613,7 @@ export const PDFApplication = () => {
 
 							{contributions.anyExtraordinaryExpenses && (
 								<>
-									<Typography variant='h5' gutterBottom mt={4}>
+									<Typography variant='h5' gutterBottom sx={{ mt: 4 }}>
 										Extraordinary Circumstances
 									</Typography>
 									<Typography variant='body1' sx={{ whiteSpace: 'pre-line' }}>
@@ -623,7 +627,7 @@ export const PDFApplication = () => {
 
 				{/* Section: Attachments */}
 				{attachmentPreviews && (
-					<Box mt={4}>
+					<Box sx={{ mt: 4 }}>
 						<Typography variant='h5' gutterBottom>
 							Attachments
 						</Typography>

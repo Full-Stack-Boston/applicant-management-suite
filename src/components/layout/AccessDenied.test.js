@@ -21,8 +21,7 @@ vi.mock('../../config/navigation/paths', () => ({
 	paths: { home: 'default', redirect: 'default' },
 }));
 
-// 3. Mock Lottie
-vi.mock('lottie-react', () => ({
+vi.mock('../../utils/lottie', () => ({
 	default: function MockLottie() {
 		return <div data-testid='lottie-animation'>Lottie Animation</div>;
 	},
@@ -31,6 +30,28 @@ vi.mock('lottie-react', () => ({
 // 4. Mock Constants
 vi.mock('../../config/Constants', () => ({
 	Assets: { accessDeniedLottie: 'mock-animation-data' },
+	brand: { theOrganizationName: 'AMS', organizationName: 'AMS', shortName: 'AMS', githubUrl: '', githubLabel: 'GitHub' },
+}));
+
+vi.mock('../../context/ThemeContext', () => ({
+	useTheme: () => ({ primaryColor: '#0288D1', darkMode: false, boxShadow: 'none' }),
+}));
+
+vi.mock('../home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeStatusPageLottieSx: {},
+	homeStatusPageLottieSquareSx: {},
+}));
+
+vi.mock('../home/PublicStatusPage', () => ({
+	__esModule: true,
+	default: ({ title, children, subtitle }) => (
+		<div data-testid='public-status-page'>
+			<h1>{title}</h1>
+			{subtitle && <p>{subtitle}</p>}
+			{children}
+		</div>
+	),
 }));
 
 describe('AccessDenied Component', () => {
@@ -48,7 +69,7 @@ describe('AccessDenied Component', () => {
 			</MemoryRouter>
 		);
 
-		expect(screen.getByText(/Access Denied \(403\)/i)).toBeInTheDocument();
+		expect(screen.getByText(/Access Denied/i)).toBeInTheDocument();
 		expect(screen.getByTestId('lottie-animation')).toBeInTheDocument();
 	});
 
@@ -62,7 +83,7 @@ describe('AccessDenied Component', () => {
 			</MemoryRouter>
 		);
 
-		expect(screen.getByText(`Message: ${customMsg}`)).toBeInTheDocument();
+		expect(screen.getByText(customMsg)).toBeInTheDocument();
 	});
 
 	test('shows "Go Home" button pointing to homePath when logged out', () => {
@@ -83,7 +104,7 @@ describe('AccessDenied Component', () => {
 	});
 
 	test('shows "Go to Dashboard" button pointing to dashboardPath when logged in', () => {
-		useAuth.mockReturnValue({ user: { uid: '123' } }); // Logged in
+		useAuth.mockReturnValue({ user: { uid: '123' }, role: 'member' }); // Logged in
 
 		const testDashPath = '/custom-dashboard-link';
 

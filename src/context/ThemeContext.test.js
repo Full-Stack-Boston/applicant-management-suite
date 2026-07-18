@@ -23,9 +23,24 @@ vi.mock('@mui/material/styles', () => ({
 	createTheme: () => ({ palette: { boxShadow: 'mock-shadow' } }),
 }));
 
-vi.mock('../config/ui/theme', () => ({ default: () => ({
-	palette: { boxShadow: 'mock-shadow' },
-}) }));
+vi.mock('@mui/material/CssBaseline', () => ({
+	default: () => null,
+}));
+
+vi.mock('../config/ui/theme', () => ({
+	default: () => ({
+		palette: { boxShadow: 'mock-shadow' },
+	}),
+	colors: {
+		blue: '#0277BD',
+		green: '#2E7D32',
+		teal: '#0F766E',
+		yellow: '#B7892E',
+		yellow2: '#B7892E',
+		brown: '#546E7A',
+		red: '#C62828',
+	},
+}));
 
 const TestConsumer = () => {
 	const { darkMode, dispatch } = useTheme();

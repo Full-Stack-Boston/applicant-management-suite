@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Main Application Component
  * Handles client-side routing, layout rendering, and global event logging.
@@ -30,7 +29,7 @@ const RouteChangeLogger = () => {
 	useEffect(() => {
 		if (previousPath.current !== location.pathname) {
 			previousPath.current = location.pathname;
-			logEvent(`Mapsd to ${location.pathname}`).catch(console.error);
+			logEvent(`Mapped to ${location.pathname}`).catch(() => {});
 		}
 	}, [location]);
 
@@ -61,7 +60,7 @@ function App() {
 
 	return (
 		<Box sx={{ width: '100%', margin: 0, padding: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-			{config.ROUTE_LOGGING_ENABLED && <RouteChangeLogger />}
+			{Boolean(config.ROUTE_LOGGING_ENABLED) && <RouteChangeLogger />}
 			<Routes>{renderRoutes(siteManifest)}</Routes>
 		</Box>
 	);

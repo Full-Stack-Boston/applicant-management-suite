@@ -26,7 +26,6 @@ vi.mock('../../config/data/collections', () => ({
 
 describe('AttachmentViewer Component', () => {
 	const mockApplication = { attachments: 'attach_id_123', completedBy: 'user_123' };
-	const mockPdfBlob = new Blob(['pdf-content'], { type: 'application/pdf' });
 	const mockImgBlob = new Blob(['img-content'], { type: 'image/png' });
 
 	beforeEach(() => {

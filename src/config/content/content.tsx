@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * STATIC CONTENT CONFIGURATION (CMS)
  * ---------------------------------------------------------------------------
@@ -60,14 +59,20 @@ export const homePageContent = {
 		},
 		// Links displayed in the Navbar
 		navLinks: [
-			{ type: 'scroll', label: 'Platform Overview', index: 0 },
-			{ type: 'scroll', label: 'Workflow Types', index: 1 },
-			{ type: 'scroll', label: 'Contact Sales', index: 2 },
-			{ type: 'navigate', label: 'Start Demo', path: paths.registerApplicant },
-			{ type: 'navigate', label: 'Login', path: paths.login },
+			{ type: 'scroll', label: 'Platform Overview', shortLabel: 'Overview', sectionId: 'about' },
+			{ type: 'scroll', label: 'Workflow Types', shortLabel: 'Workflows', sectionId: 'apply' },
+			{ type: 'scroll', label: 'Contact Sales', shortLabel: 'Contact', sectionId: 'contact' },
+			{ type: 'navigate', label: 'Get Started', path: paths.registerApplicant },
 		],
-		themeToggle: { enabled: true }, // Show Light/Dark mode switch
-		authLink: { enabled: true }, // Show Login/Logout button
+		applicantNavLinks: [{ type: 'navigate', label: 'Dashboard', path: paths.apply }],
+		applicantInfoLinks: [
+			{ type: 'scroll', label: 'Platform Overview', sectionId: 'about' },
+			{ type: 'scroll', label: 'Workflow Types', sectionId: 'apply' },
+			{ type: 'scroll', label: 'Contact Sales', sectionId: 'contact' },
+		],
+		utilityNavLinks: [{ type: 'navigate', label: 'Home', path: paths.home }],
+		themeToggle: { enabled: true },
+		authLink: { enabled: true },
 	},
 
 	// Main Content Area (Tabs & Information)
@@ -82,12 +87,12 @@ export const homePageContent = {
 					title: 'About the Suite',
 					paragraphs: [
 						'The Application Management Suite (AMS) by Full Stack Boston is a robust, secure, and scalable platform designed to modernize how organizations collect, review, and administer applications. Whether you are managing scholarships, community grants, or fellowship programs, AMS reduces administrative overhead while providing a seamless experience for your applicants.',
-						'Our suite replaces disjointed paper trails and email chains with a centralized dashboard. Administrators can define custom requirements, automate communication, and coordinate review committees—all from one intuitive interface.',
-						"Security and privacy are at the core of AMS. Built on Google Cloud's Firebase infrastructure, the platform ensures that sensitive applicant data—from financial aid reports to personal transcripts—is encrypted and accessible only to authorized personnel.",
+						'Our suite replaces disjointed paper trails and email chains with a centralized dashboard. Administrators can define custom requirements, automate communication, and coordinate review committees, all from one intuitive interface.',
+						"Security and privacy are at the core of AMS. Built on Google Cloud's Firebase infrastructure, the platform ensures that sensitive applicant data, from financial aid reports to personal transcripts, is encrypted and accessible only to authorized personnel.",
 						'Key capabilities include:',
 						'"Dynamic Workflow Engine: Tailor the application process for different cohorts. Create distinct paths for new applicants, returning grantees, or multi-year scholarship recipients without managing separate systems."',
 						'"Integrated Review Tools: Empower your committee members with dedicated review portals. Assign applications, score candidates based on custom rubrics, and deliberate in real-time with integrated video conferencing."',
-						'This demo environment showcases the full lifecycle of an application. Feel free to register a test account, submit a mock application, and experience the efficiency of modern grant management firsthand.',
+						'This demo environment showcases the full lifecycle of an application. Feel free to register a test applicant account, submit a mock application, or create a committee account via board registration to tour the administrative side firsthand.',
 					],
 				},
 			},
@@ -100,6 +105,8 @@ export const homePageContent = {
 							label: 'Standard Grant',
 							content: {
 								title: 'Standard Intake Workflow',
+								eligibilityNotice:
+									'This demo path models a <strong>first-time applicant</strong> intake with full document collection.',
 								introParagraphs: ['This workflow demonstrates a typical intake process for <strong>new applicants</strong>. It requires comprehensive data collection, including demographics, file attachments, and external recommendations. In a live environment, this workflow acts as the primary funnel for your program.'],
 								deadlineMessage: 'Applications for this cycle must be finalized by',
 								requirements: [
@@ -124,6 +131,8 @@ export const homePageContent = {
 							label: 'Renewal Request',
 							content: {
 								title: 'Renewal Workflow',
+								eligibilityNotice:
+									'Use this path to demo <strong>returning applicants</strong> with pre-filled prior-year data.',
 								introParagraphs: ['The Renewal workflow is optimized for <strong>returning users</strong>. It pre-fills data from previous years, reducing friction for applicants and ensuring data consistency for your records. Ideal for multi-year grants or annual funding cycles.'],
 								deadlineMessage: 'Renewal requests must be submitted by',
 								requirements: [
@@ -143,6 +152,8 @@ export const homePageContent = {
 							label: 'Compliance Check-In',
 							content: {
 								title: 'Compliance Workflow',
+								eligibilityNotice:
+									'Use this path for a <strong>lightweight compliance check-in</strong> without a full re-application.',
 								introParagraphs: ['This workflow demonstrates a <strong>lightweight check-in</strong> for multi-year scholarship recipients. It ensures compliance with program terms (e.g., maintaining GPA) without requiring a full application re-submission.'],
 								deadlineMessage: 'Check-ins must be completed by',
 								requirements: [
@@ -165,27 +176,30 @@ export const homePageContent = {
 				label: 'Contact Sales',
 				content: {
 					title: 'Get in Touch',
-					subtitle: 'Interested in deploying AMS for your organization? Contact Full Stack Boston today.',
+					subtitle:
+						'Interested in deploying AMS for your organization? Use the contact form. Messages go to the project owner. You can also reach Full Stack Boston by phone or the @fullstackboston.com addresses listed here.',
+					scamNotice:
+						'Full Stack Boston and this AMS demo never ask for payment, passwords, or Social Security numbers through unofficial channels. Use only the contact options on this site.',
 					address: {
-						enabled: true,
+						enabled: false,
 						title: 'Headquarters',
-						lines: ['Full Stack Boston', '100 High Street', 'Boston, MA 02110', 'United States'],
+						lines: [],
 					},
 					emails: {
 						enabled: true,
-						title: 'Department Emails',
+						title: 'Email',
 						items: [
-							{ label: 'Sales & Inquiries', configKey: 'MAIL_TO_GENERAL_EMAIL' },
-							{ label: 'Technical Support', configKey: 'MAIL_TO_WEBMASTER' },
-							{ label: 'Partnerships', configKey: 'MAIL_TO_CHAIRMAN' },
+							{ label: 'General', configKey: 'MAIL_TO_GENERAL_EMAIL' },
+							{ label: 'Webmaster', configKey: 'MAIL_TO_WEBMASTER' },
+							{ label: 'Admin', configKey: 'MAIL_TO_CHAIRMAN' },
 						],
 					},
 					phones: {
 						enabled: true,
-						title: 'Phone Support',
+						title: 'Phone',
 						items: [
-							{ label: 'Sales Team', configKey: 'TEL_GENERAL' },
-							{ label: '24/7 Support Line', configKey: 'TEL_WEBMASTER' },
+							{ label: 'Main line', configKey: 'TEL_GENERAL' },
+							{ label: 'Support', configKey: 'TEL_WEBMASTER' },
 						],
 					},
 				},
@@ -197,22 +211,43 @@ export const homePageContent = {
 			supportUs: {
 				enabled: true,
 				title: 'Custom Solutions',
-				paragraphs: ['Every organization has a unique process. AMS is built to be flexible. We offer custom implementation services to tailor the workflow, data collection, and branding to your specific needs.', 'Whether you are a small non-profit or a large university department, we can scale the infrastructure to match your volume.'],
+				paragraphs: [
+					'Every organization has a unique process. AMS is built to be flexible. We offer custom implementation services to tailor the workflow, data collection, and branding to your specific needs.',
+					'Whether you are a small non-profit or a large university department, we can scale the infrastructure to match your volume.',
+				],
 				mailTo: {
-					title: 'Contact us for a consultation at',
-					lines: ['Full Stack Boston', 'Attn: Enterprise Sales', '100 High Street', 'Boston, MA 02110'],
+					title: 'To discuss a custom deployment',
+					lines: [
+						'Use the contact form above. Messages go to the project owner.',
+						'Or call the main / support lines listed under Contact Sales.',
+						'Web: ams.fullstackboston.com',
+					],
 				},
 			},
 			applyNow: {
 				enabled: true,
 				title: 'Start Your Trial',
-				paragraph: 'Ready to see the platform in action? Create a demo applicant account to walk through the intake process, or contact us to schedule a full administrative walkthrough.',
+				paragraph:
+					'Ready to see the platform in action? Create a demo applicant account to walk through intake, or register a committee account to explore the admin dashboard, inbox, and interview tools.',
 				button: {
 					label: 'Access Demo Portal',
 					path: paths.login,
 				},
+				boardButton: {
+					label: 'Create Board Account',
+					path: paths.registerMember,
+				},
 			},
 		},
+	},
+
+	/** Demo-only copy pointing visitors to `/board-registration` (hidden when MEMBER_ONBOARDING_PAGE_ENABLED is false). */
+	demoBoardAccess: {
+		heroLinkLabel: 'Exploring the admin side? Create a board account',
+		loginLinkLabel: 'Demo staff access? Register a committee account',
+		registerLinkLabel: 'Need committee access instead? Register as board staff',
+		footerLinkLabel: 'Committee demo access',
+		path: paths.registerMember,
 	},
 
 	// Footer Content
@@ -233,6 +268,32 @@ export const homePageContent = {
 			line1: `${brand.organizationName} | Powered by ${brand.broughtToYouBy}`,
 			startYear: 2023,
 		},
+		githubLink: {
+			enabled: true,
+			label: 'Source on GitHub',
+			url: brand.githubUrl,
+		},
+	},
+
+	missionLine: `${brand.tagline} Built by ${brand.broughtToYouBy}. Source available on GitHub.`,
+
+	deadlineMessage: 'Demo applications and attachments should be finalized by end of day',
+
+	trustStats: {
+		enabled: true,
+		items: [
+			{ value: '1 platform', label: 'Intake through deliberation' },
+			{ value: '3 workflows', label: 'Standard, renewal, compliance' },
+			{ value: 'Firebase', label: 'Auth, data, and hosting' },
+			{ value: 'FSB', label: 'Deployed by Full Stack Boston' },
+		],
+	},
+
+	sectionIds: {
+		about: 'about',
+		apply: 'apply',
+		contact: 'contact',
+		support: 'support',
 	},
 };
 
@@ -285,31 +346,67 @@ export const loginContent = {
 
 // --- 4. Applicant Dashboard (Apply Home) ---
 
+interface AvailableApp {
+	type: string;
+	path: string;
+	disabled: boolean;
+	label: string;
+	description: string;
+}
+
+export interface ApplyDashboardIntro {
+	overview: string;
+	preparation: string;
+	applicationPaths: string[];
+	eligibility: string;
+	help: string;
+}
+
+export interface ApplyContent {
+	title: string;
+	intro: ApplyDashboardIntro;
+	availableApps: AvailableApp[];
+}
+
 /**
  * Configuration for the Applicant's "Dashboard" where they select a workflow.
  * @param {Object} config - The global system configuration (used to disable apps).
  */
-export const getApplyContent = (config) => ({
-	title: 'Application Dashboard',
-	subtitle: [`Welcome to the ${brand.organizationShortName} Demo Portal. In a live production environment, this text would guide your applicants through your specific process.`, '<br />For this demo, you can choose from three distinct workflow types designed to showcase different system capabilities:<br />', '1. <strong>New Applicant (Standard Grant)</strong>: Full data collection including files and references.', '2. <strong>Returning Grant (Renewal)</strong>: Optimized flow for users with existing data.', '3. <strong>Scholarship Check-In (Compliance)</strong>: Lightweight status update form.', '<br />Please select a workflow below to proceed.<br />', `<br />Need help navigating the demo? Contact ${brand.contactEmail}.`],
+export const getApplyContent = (config: Record<string, unknown>): ApplyContent => ({
+	title: 'Dashboard',
+	intro: {
+		overview: `This dashboard is your home for the ${brand.organizationShortName} demo application process. From here you can begin a workflow, resume a draft, review a submission, and respond to interview invitations when the window is open.`,
+		preparation:
+			'Before you start, gather supporting documents as PDF files. You will also need the full name, email address, and phone number for each person writing a recommendation on your behalf.',
+		applicationPaths: [
+			'Select <strong>Standard Grant</strong> for a first-time intake with full data collection, files, and references.',
+			'Select <strong>Renewal</strong> for a returning applicant with an optimized flow that reuses existing data.',
+			'Select <strong>Compliance Check-In</strong> for a lightweight scholarship status update.',
+		],
+		eligibility: 'This is a demo environment. In production, your organization would define cycle limits and eligibility rules here.',
+		help: `Need help navigating the demo? Contact ${brand.contactEmail}.`,
+	},
 	availableApps: [
 		{
 			type: 'newApplicants',
 			path: paths.createApplication,
 			disabled: config.NEW_APPLICANT_APPLICATIONS_DISABLED !== false,
-			label: 'Start Standard Grant Application',
+			label: 'Standard Grant',
+			description: 'Full intake for first-time applicants, including documents and recommendations.',
 		},
 		{
 			type: 'returningGrants',
 			path: paths.createApplication,
 			disabled: config.RETURNING_APPLICANT_APPLICATIONS_DISABLED !== false,
-			label: 'Start Renewal Application',
+			label: 'Renewal',
+			description: 'Optimized renewal flow for applicants with existing data on file.',
 		},
 		{
 			type: 'scholarshipRecipients',
 			path: paths.createApplication,
 			disabled: config.SCHOLARSHIP_RECIPIENT_APPLICATIONS_DISABLED !== false,
-			label: 'Start Compliance Check-In',
+			label: 'Compliance Check-In',
+			description: 'Lightweight status update for ongoing scholarship recipients.',
 		},
 	],
 });

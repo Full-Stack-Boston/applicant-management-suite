@@ -1,5 +1,4 @@
 import { isAdminPath, generatePath } from './routeUtils';
-import { paths } from './paths';
 
 // Mock the paths module
 // The logic `prefix.split('/')[1]` suggests paths are like 'admin/members'

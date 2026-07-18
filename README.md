@@ -5,7 +5,7 @@
 **Live demo:** [ams.fullstackboston.com](https://ams.fullstackboston.com)  
 **Repository:** [jonaldoalix/applicant-management-suite](https://github.com/jonaldoalix/applicant-management-suite)
 
-AMS is the portfolio-ready product surface. Client production deployments (such as the Parker Memorial Fund site) share the same architecture and can track this suite for toolchain and product upgrades.
+AMS is the portfolio-ready product surface. Client production deployments share the same architecture and can track this suite for toolchain and product upgrades.
 
 ---
 
@@ -17,7 +17,7 @@ AMS is the portfolio-ready product surface. Client production deployments (such 
 - Real-time dashboards and award trend charts (Recharts)
 - Video interview rooms via Daily.co, with scheduling and RSVP flows
 - Firebase Auth, Firestore, Storage, and Cloud Functions Gen2 backends
-- Synthetic seed data only — no real applicant PII is required to explore the suite
+- Synthetic seed data only. No real applicant PII is required to explore the suite
 
 ---
 
@@ -90,7 +90,7 @@ REACT_APP_environment=development
 REACT_APP_ORGANIZATION_NAME="Applicant Management Suite"
 REACT_APP_ORGANIZATION_SHORT_NAME="AMS"
 REACT_APP_URL="https://ams.fullstackboston.com"
-REACT_APP_META_DESCRIPTION="Applicant Management Suite — scholarship and grants operations demo."
+REACT_APP_META_DESCRIPTION="Applicant Management Suite: scholarship and grants operations demo."
 REACT_APP_FAVICON="favicon-32x32.png"
 REACT_APP_APPLE_TOUCH_ICON="android-chrome-192x192.png"
 REACT_APP_MS_TILE_ICON="android-chrome-192x192.png"
@@ -169,5 +169,15 @@ See [`docs/dockge.md`](docs/dockge.md). For a **zero-config** working demo, Dock
 
 ## Related
 
-- **Production client example:** [revparkermemorialfund.org](https://revparkermemorialfund.org) — same product family, organization-specific content and schema naming
 - Built and maintained by [Full Stack Boston](https://fullstackboston.com)
+
+## Attribution and license
+
+Original application architecture and interface design by
+[Jonaldo Alix](https://github.com/jonaldoalix). If this project or its design
+saves you time, visible attribution is appreciated; organizations may also
+contact [Full Stack Boston](https://fullstackboston.com) about supporting its
+continued development.
+
+AMS is available under the [MIT License](LICENSE). Reuse must retain the
+copyright and license notice as described in that license.

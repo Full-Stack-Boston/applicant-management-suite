@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ROUTE SECURITY & AUTHORIZATION GUARDS
  * ---------------------------------------------------------------------------
@@ -14,17 +13,33 @@
  */
 
 import React, { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import PropTypes from 'prop-types';
 import { Navigate, useLocation } from 'react-router-dom';
 
 // Context & Config
 import { useAuth } from '../../context/AuthContext';
 import { UserType } from '../data/collections';
+import type { UserTypeValue } from '../data/collections';
 import { generatePath } from './routeUtils';
 import { paths } from './paths';
 
 // Components
 import Loader from '../../components/loader/Loader';
+
+type AuthStatus = 'LOADING' | 'AUTHORIZED' | 'REDIRECT_LOGIN' | 'REDIRECT_ACCESS_DENIED';
+
+interface AuthState {
+	status: AuthStatus;
+	redirectPath?: string;
+}
+
+interface RouteGuardProps {
+	children: ReactNode;
+	allowedRoles?: UserTypeValue[];
+	permissions?: string[];
+	allowUnauthed?: boolean;
+}
 
 /**
  * The Master Security Component.
@@ -34,18 +49,31 @@ import Loader from '../../components/loader/Loader';
  * @param {string[]} permissions - Array of specific permission keys required (e.g. ['admin', 'interviews.canHost']).
  * @param {boolean} allowUnauthed - If true, bypasses login check (rarely used).
  */
-export const RouteGuard = ({ children, allowedRoles = [], permissions = [], allowUnauthed = false }) => {
+export const RouteGuard = ({ children, allowedRoles = [], permissions = [], allowUnauthed = false }: RouteGuardProps): ReactNode => {
 	const { user, member, role, loading } = useAuth();
 	const location = useLocation();
 
-	const authState = useMemo(() => {
-		// 1. Wait for Auth to Initialize
-		const isStillLoading = loading || (user && !role);
-		if (isStillLoading) return { status: 'LOADING' };
+	const authState = useMemo((): AuthState => {
+		// 1. Wait for Auth + first profile snapshot(s). Do NOT wait forever on `!role`
+		// (missing docs / denied reads used to hang protected pages on <Loader />).
+		if (loading) return { status: 'LOADING' };
 
 		// 2. Check Basic Authentication
 		if (!user) {
 			return allowUnauthed ? { status: 'AUTHORIZED' } : { status: 'REDIRECT_LOGIN' };
+		}
+
+		// Authenticated but no member/applicant profile → recoverable redirect page
+		if (!role) {
+			const redirectPath = generatePath(paths.redirect);
+			// Already on the recovery route — render it (avoid Navigate ↔ RouteGuard loop)
+			if (location.pathname === redirectPath) {
+				return { status: 'AUTHORIZED' };
+			}
+			return {
+				status: 'REDIRECT_ACCESS_DENIED',
+				redirectPath,
+			};
 		}
 
 		// 3. Check Role (e.g. 'Member' vs 'Applicant')
@@ -53,12 +81,12 @@ export const RouteGuard = ({ children, allowedRoles = [], permissions = [], allo
 
 		// 4. Check Granular Permissions (Only applies to Members)
 		if (isAuthorized && permissions.length > 0 && member) {
-			const checkPermission = (permKey) => {
+			const checkPermission = (permKey: string): boolean => {
 				// Supports nested keys like 'interviews.canHost'
 				const keys = permKey.split('.');
-				let currentPerm = member.permissions;
+				let currentPerm: unknown = member.permissions;
 				for (const key of keys) {
-					currentPerm = currentPerm?.[key];
+					currentPerm = (currentPerm as Record<string, unknown> | undefined)?.[key];
 					if (currentPerm === undefined) return false;
 				}
 				return currentPerm === true;
@@ -94,7 +122,7 @@ export const RouteGuard = ({ children, allowedRoles = [], permissions = [], allo
 		return <Navigate to={generatePath(paths.login)} state={{ from: location }} replace />;
 	}
 
-	if (authState.status === 'REDIRECT_ACCESS_DENIED') {
+	if (authState.status === 'REDIRECT_ACCESS_DENIED' && authState.redirectPath) {
 		return <Navigate to={authState.redirectPath} state={{ from: location }} replace />;
 	}
 
@@ -108,10 +136,14 @@ RouteGuard.propTypes = {
 	allowUnauthed: PropTypes.bool,
 };
 
+interface ChildrenProps {
+	children: ReactNode;
+}
+
 /**
  * Guard: Only allows authenticated Applicants.
  */
-export const ApplicantsOnly = ({ children }) => {
+export const ApplicantsOnly = ({ children }: ChildrenProps): ReactNode => {
 	const { user, role, applicant, loading } = useAuth();
 	if (loading) return <Loader />;
 
@@ -129,7 +161,7 @@ ApplicantsOnly.propTypes = {
 /**
  * Guard: Only allows authenticated Members (Admins).
  */
-export const MembersOnly = ({ children }) => {
+export const MembersOnly = ({ children }: ChildrenProps): ReactNode => {
 	const { user, member, role, loading } = useAuth();
 	if (loading) return <Loader />;
 
@@ -147,7 +179,7 @@ MembersOnly.propTypes = {
 /**
  * Guard: Only allows authenticated users (Any role).
  */
-export const Protected = ({ children }) => {
+export const Protected = ({ children }: ChildrenProps): ReactNode => {
 	const { user, loading } = useAuth();
 	if (loading) return <Loader />;
 	if (!user) {
@@ -164,7 +196,7 @@ Protected.propTypes = {
  * Guard: Only allows Guests (Non-authenticated users).
  * Used for Login/Register pages to prevent logged-in users from seeing them.
  */
-export const Unprotected = ({ children }) => {
+export const Unprotected = ({ children }: ChildrenProps): ReactNode => {
 	const { user, loading } = useAuth();
 	if (loading) return <Loader />;
 	if (user) {

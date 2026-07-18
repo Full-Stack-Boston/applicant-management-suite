@@ -1,12 +1,12 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import EmailCard from './Email.jsx'; // Ensure correct extension if needed
 import { useMailbox } from '../../context/MailboxContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
-import { updateEmailReadStatus, deleteZohoEmail } from '../../config/data/firebase';
+import { updateEmailReadStatus } from '../../config/data/firebase';
 
 // --- Mocks ---
 vi.mock('react-router-dom', async () => ({

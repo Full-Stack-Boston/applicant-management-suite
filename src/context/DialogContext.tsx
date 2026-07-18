@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DIALOG & MODAL CONTEXT
  * ---------------------------------------------------------------------------
@@ -27,18 +26,67 @@
  * });
  */
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode, type ComponentType } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button, TextField, Select, MenuItem, FormControlLabel, Switch, Box, InputLabel, FormControl } from '@mui/material';
 
 // Config
 import { dialogConfig } from '../config/ui/dialogConfig';
 
-const DialogContext = createContext();
+export interface DialogInputConfig {
+	name: string;
+	label: string;
+	type: 'text' | 'select' | 'switch' | 'date';
+	required?: boolean;
+	multiline?: boolean;
+	rows?: number;
+	defaultValue?: unknown;
+	options?: Array<{ value: string; label: string }>;
+	condition?: ((data: Record<string, unknown>) => boolean) | boolean;
+}
 
-export const DialogProvider = ({ children }) => {
-	const [dialog, setDialog] = useState(null); // The active dialog configuration
-	const [formData, setFormData] = useState({}); // Local state for inputs inside the dialog
+export interface DialogAction {
+	label: string;
+	value: unknown;
+	color?: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success' | 'inherit';
+}
+
+export interface DialogConfigEntry {
+	title?: string;
+	message?: string;
+	actions?: DialogAction[];
+	inputs?: DialogInputConfig[];
+	actionLabel?: string;
+	component?: ComponentType<Record<string, unknown>>;
+}
+
+interface DialogState {
+	config: DialogConfigEntry;
+	callback?: ((value: unknown) => void) | null;
+	data: Record<string, unknown> & {
+		inputs?: DialogInputConfig[];
+		component?: ComponentType<Record<string, unknown>>;
+		title?: string;
+		maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+	};
+	messageOverride?: string;
+}
+
+export interface ShowDialogParams {
+	id: string;
+	callback?: ((value: unknown) => void) | null;
+	data?: Record<string, unknown>;
+	messageOverride?: string;
+}
+
+export interface DialogContextValue {
+	showDialog: (params: ShowDialogParams) => void;
+}
+
+const DialogContext = createContext<DialogContextValue | undefined>(undefined);
+
+export const DialogProvider = ({ children }: { children: ReactNode }) => {
+	const [dialog, setDialog] = useState<DialogState | null>(null); // The active dialog configuration
+	const [formData, setFormData] = useState<Record<string, unknown>>({}); // Local state for inputs inside the dialog
 
 	const handleClose = () => {
 		setDialog(null);
@@ -47,24 +95,36 @@ export const DialogProvider = ({ children }) => {
 
 	/**
 	 * Opens a dialog.
-	 * @param {string} id - The key matching an entry in 'dialogConfig.js'.
-	 * @param {function} [callback] - Function to run on close (returns true/false or form data).
-	 * @param {object} [data] - Dynamic data to pass to the dialog (e.g., the item being edited).
-	 * @param {string} [messageOverride] - Replace the default config message.
+	 * @param id - The key matching an entry in 'dialogConfig.js'.
+	 * @param callback - Function to run on close (returns true/false or form data).
+	 * @param data - Dynamic data to pass to the dialog (e.g., the item being edited).
+	 * @param messageOverride - Replace the default config message.
 	 */
-	const showDialog = useCallback(({ id, callback, data, messageOverride }) => {
-		const dialogSettings = dialogConfig[id];
+	const showDialog = useCallback(({ id, callback, data, messageOverride }: ShowDialogParams) => {
+		const dialogSettings = (dialogConfig as Record<string, DialogConfigEntry | undefined>)[id];
 		if (!dialogSettings) {
+			// Allow custom-component dialogs even if a config entry was forgotten,
+			// so Contact Center / Settings buttons never silently no-op.
+			if (data?.component) {
+				console.warn(`Dialog id '${id}' missing from dialogConfig; opening with component-only shell.`);
+				setDialog({
+					config: { title: (data.title as string) || 'Dialog' },
+					callback,
+					data: { ...data, component: data.component as ComponentType<Record<string, unknown>> },
+					messageOverride,
+				});
+				return;
+			}
 			console.error(`Dialog with id '${id}' not found in dialogConfig.`);
 			return;
 		}
 
 		// Merge dynamic inputs with default config inputs
-		let inputs = data?.inputs || dialogSettings.inputs;
+		const inputs = (data?.inputs as DialogInputConfig[] | undefined) || dialogSettings.inputs;
 
 		// Initialize form state with default values
 		if (inputs) {
-			const initialFormData = inputs.reduce((acc, input) => {
+			const initialFormData = inputs.reduce<Record<string, unknown>>((acc, input) => {
 				acc[input.name] = data?.[input.name] ?? input.defaultValue ?? (input.type === 'switch' ? false : '');
 				return acc;
 			}, {});
@@ -74,28 +134,28 @@ export const DialogProvider = ({ children }) => {
 		setDialog({
 			config: dialogSettings,
 			callback,
-			data: { ...data, inputs, component: data?.component || dialogSettings.component },
+			data: { ...data, inputs, component: (data?.component || dialogSettings.component) as ComponentType<Record<string, unknown>> | undefined },
 			messageOverride,
 		});
 	}, []);
 
 	// --- Action Handlers ---
 
-	const handleActionClick = (value) => {
-		if (dialog.callback) {
+	const handleActionClick = (value: unknown) => {
+		if (dialog?.callback) {
 			dialog.callback(value);
 		}
 		handleClose();
 	};
 
 	const handleFormSubmit = () => {
-		if (dialog.callback) {
+		if (dialog?.callback) {
 			dialog.callback(formData);
 		}
 		handleClose();
 	};
 
-	const handleInputChange = (event) => {
+	const handleInputChange = (event: { target: { name: string; value: unknown; type?: string; checked?: boolean } }) => {
 		const { name, value, type, checked } = event.target;
 		setFormData((prev) => ({
 			...prev,
@@ -107,7 +167,7 @@ export const DialogProvider = ({ children }) => {
 
 	const renderInputs = () => {
 		const inputsToRender = dialog?.data?.inputs || dialog?.config?.inputs;
-		if (!inputsToRender) return null;
+		if (!inputsToRender || !dialog) return null;
 
 		return inputsToRender.map((inputConfig) => {
 			// Conditional Rendering: Check if field depends on current data
@@ -119,13 +179,13 @@ export const DialogProvider = ({ children }) => {
 
 			switch (inputConfig.type) {
 				case 'text':
-					return <TextField key={inputConfig.name} name={inputConfig.name} label={inputConfig.label} value={formData[inputConfig.name] || ''} onChange={handleInputChange} fullWidth margin='dense' variant='outlined' multiline={!!inputConfig.multiline} rows={inputConfig.rows} />;
+					return <TextField key={inputConfig.name} name={inputConfig.name} label={inputConfig.label} value={(formData[inputConfig.name] as string) || ''} onChange={handleInputChange} fullWidth margin='dense' variant='outlined' multiline={!!inputConfig.multiline} rows={inputConfig.rows} />;
 				case 'select':
 					return (
 						<FormControl key={inputConfig.name} fullWidth margin='dense'>
 							<InputLabel>{inputConfig.label}</InputLabel>
-							<Select name={inputConfig.name} value={formData[inputConfig.name] || ''} label={inputConfig.label} onChange={handleInputChange}>
-								{inputConfig.options.map((option) => (
+							<Select name={inputConfig.name} value={(formData[inputConfig.name] as string) || ''} label={inputConfig.label} onChange={handleInputChange}>
+								{inputConfig.options?.map((option) => (
 									<MenuItem key={option.value} value={option.value}>
 										{option.label}
 									</MenuItem>
@@ -142,7 +202,9 @@ export const DialogProvider = ({ children }) => {
 	};
 
 	const renderActions = () => {
-		const inputsToRender = dialog?.data?.inputs || dialog?.config?.inputs;
+		if (!dialog) return null;
+
+		const inputsToRender = dialog.data?.inputs || dialog.config?.inputs;
 
 		// Scenario A: Form Mode (Cancel / Submit)
 		if (inputsToRender) {
@@ -181,7 +243,7 @@ export const DialogProvider = ({ children }) => {
 		);
 	};
 
-	const contextValue = useMemo(() => ({ showDialog }), [showDialog]);
+	const contextValue = useMemo<DialogContextValue>(() => ({ showDialog }), [showDialog]);
 
 	return (
         <DialogContext.Provider value={contextValue}>
@@ -213,11 +275,13 @@ export const DialogProvider = ({ children }) => {
     );
 };
 
-DialogProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 /**
  * Hook to use the Dialog System.
  */
-export const useDialog = () => useContext(DialogContext);
+export const useDialog = (): DialogContextValue => {
+	const context = useContext(DialogContext);
+	if (context === undefined) {
+		throw new Error('useDialog must be used within a DialogProvider');
+	}
+	return context;
+};

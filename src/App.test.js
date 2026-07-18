@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Outlet } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { logEvent } from './config/data/firebase';
 

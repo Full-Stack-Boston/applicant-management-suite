@@ -10,6 +10,7 @@ dayjs.extend(timezone);
 dayjs.extend(utc);
 
 const { brand } = require('../config');
+const { assertVideoBudgetAllows, recordVideoJoin } = require('../videoBudget');
 
 // Helper for Daily.co API calls
 const dailyApi = async (method, endpoint, data = null) => {
@@ -52,6 +53,8 @@ exports.createInterviewRoom = onCall(async (request) => {
     const applicantName = applicantData.exists ? `: ${applicantData.data().callMe} ${applicantData.data().lastName}` : '';
     const roomDisplayName = `${brand.organizationName} Interview${applicantName}`;
 
+    await assertVideoBudgetAllows();
+
     try {
         const roomResp = await dailyApi('POST', '/rooms', {
             name: interviewId,
@@ -70,6 +73,7 @@ exports.createInterviewRoom = onCall(async (request) => {
 
         return { roomUrl: roomResp.data.url };
     } catch (error) {
+        if (error instanceof HttpsError) throw error;
         console.error('Error creating room:', error.response?.data || error.message);
         throw new HttpsError('internal', 'Failed to create video room.');
     }
@@ -123,6 +127,8 @@ exports.createDeliberationRoom = onCall(async (request) => {
         throw new HttpsError('permission-denied', 'Only hosts can perform this action.');
     }
 
+    await assertVideoBudgetAllows();
+
     try {
         await dailyApi('POST', '/rooms', {
             name: 'deliberation-room',
@@ -130,6 +136,7 @@ exports.createDeliberationRoom = onCall(async (request) => {
         });
         return { success: true, message: 'Deliberation room created successfully.' };
     } catch (error) {
+        if (error instanceof HttpsError) throw error;
         if (error.response?.data?.info?.includes('already exists')) {
             return { success: true, message: 'Deliberation room already exists.' };
         }
@@ -167,9 +174,12 @@ exports.generateJoinToken = onCall(async (request) => {
 
     if (!context.auth) throw new HttpsError('unauthenticated', 'Not authenticated.');
 
+    await assertVideoBudgetAllows();
+
     const db = admin.firestore();
     let room_name;
     let payloadConfig = {};
+    let interviewData = null;
 
     if (!deliberation) {
         const interviewRef = db.collection('interviews').doc(interviewId);
@@ -177,19 +187,24 @@ exports.generateJoinToken = onCall(async (request) => {
 
         if (!interviewDoc.exists) throw new HttpsError('not-found', 'Interview not found.');
 
-        const interviewData = interviewDoc.data();
+        interviewData = interviewDoc.data();
         room_name = interviewData.roomId;
         if (!room_name) throw new HttpsError('failed-precondition', 'Room has not been created yet.');
 
-        if (['Completed', 'Cancelled', 'Deleted'].includes(interviewData.status)) {
-            throw new HttpsError('out-of-range', `This interview has been ${interviewData.status}.`);
+        const interviewStatus = interviewData.status;
+        if (['Completed', 'Cancelled', 'Deleted', 'Missed'].includes(interviewStatus)) {
+            throw new HttpsError('out-of-range', `This interview has been ${interviewStatus}.`);
+        }
+        if (interviewStatus !== 'In Progress') {
+            throw new HttpsError('failed-precondition', 'This interview has not started yet.');
         }
 
-        const startTime = dayjs(interviewData.startTime.toDate());
-        const endTime = dayjs(interviewData.startTime.toDate()).add(15, 'minute');
+        const startedAt = interviewData.startedAt
+            ? dayjs(interviewData.startedAt.toDate())
+            : dayjs(interviewData.startTime.toDate());
         payloadConfig = {
-            nbf: startTime.subtract(5, 'minute').unix(),
-            exp: endTime.add(30, 'minute').unix(),
+            nbf: startedAt.subtract(1, 'minute').unix(),
+            exp: startedAt.add(15, 'minute').add(15, 'minute').unix(),
         };
     } else {
         room_name = 'deliberation-room';
@@ -199,11 +214,14 @@ exports.generateJoinToken = onCall(async (request) => {
     let displayName = '';
     const memberDoc = await db.collection('members').doc(uid).get();
     const isCommittee = memberDoc.exists;
+    const interviewPerms = isCommittee ? memberDoc.data()?.permissions?.interviews || {} : {};
+    // Hosts can create rooms; treat canHost as sufficient for joining too.
+    const canEnter = interviewPerms.canAccess === true || interviewPerms.canHost === true;
 
-    if (isCommittee && memberDoc.data().permissions?.interviews?.canAccess !== true) {
-        throw new Error('You do not have access to interview rooms.');
+    if (isCommittee && !canEnter) {
+        throw new HttpsError('permission-denied', 'You do not have access to interview rooms.');
     }
-    const isAdmin = isCommittee && memberDoc.data().permissions?.interviews?.canHost === true;
+    const isAdmin = isCommittee && interviewPerms.canHost === true;
 
     if (isCommittee) {
         const memberData = memberDoc.data();
@@ -211,6 +229,12 @@ exports.generateJoinToken = onCall(async (request) => {
     } else {
         const applicantDoc = await db.collection('applicants').doc(uid).get();
         if (!applicantDoc.exists) throw new HttpsError('permission-denied', 'User not found.');
+        if (deliberation) {
+            throw new HttpsError('permission-denied', 'Only committee members can join the deliberation room.');
+        }
+        if (interviewData?.applicantId !== uid) {
+            throw new HttpsError('permission-denied', 'You are not assigned to this interview.');
+        }
         const applicantData = applicantDoc.data();
         displayName = `${applicantData.callMe || applicantData.firstName || 'Unknown'} ${applicantData.lastName || 'Applicant'}`;
     }
@@ -220,14 +244,28 @@ exports.generateJoinToken = onCall(async (request) => {
         room_name: room_name,
         is_owner: isAdmin,
         user_id: uid,
-        permissions: { hasPresence: true, canSend: true, canReceive: { base: true }, canAdmin: true },
+        permissions: { hasPresence: true, canSend: true, canReceive: { base: true }, canAdmin: isAdmin },
         ...payloadConfig,
     };
 
     try {
+        // Prefer Daily's canonical room URL so DAILY_DOMAIN drift cannot break join.
+        let roomUrl = `${brand.dailyCoDomain.replace(/\/$/, '')}/${room_name}`;
+        try {
+            const roomResp = await dailyApi('GET', `/rooms/${room_name}`);
+            if (roomResp.data?.url) roomUrl = roomResp.data.url;
+        } catch (roomError) {
+            if (roomError.response?.status === 404) {
+                throw new HttpsError('failed-precondition', 'Video room has not been created yet.');
+            }
+            console.warn('Could not fetch Daily room URL, using configured domain fallback:', roomError.response?.data || roomError.message);
+        }
+
         const response = await dailyApi('POST', '/meeting-tokens', { properties: tokenProperties });
-        return { token: response.data.token, roomUrl: `${brand.dailyCoDomain}/${room_name}` };
+        await recordVideoJoin();
+        return { token: response.data.token, roomUrl };
     } catch (error) {
+        if (error instanceof HttpsError) throw error;
         console.error('Token Generation Failed:', error.response?.data || error.message);
         throw new HttpsError('internal', 'Could not generate video session token.');
     }
@@ -259,6 +297,8 @@ exports.manageParticipant = onCall(async (request) => {
         case 'stopVideo': apiPayload = { setVideo: false }; break;
         case 'startVideo': apiPayload = { setVideo: true }; break;
         case 'eject': apiPayload = { eject: true }; break;
+        default:
+            throw new HttpsError('invalid-argument', 'Missing or invalid parameters.');
     }
 
     try {
@@ -288,18 +328,22 @@ exports.endInterview = onCall(async (request) => {
     const interviewDoc = await interviewRef.get();
 
     if (interviewDoc.exists) {
+        const roomId = interviewDoc.data().roomId || interviewId;
         try {
-            await dailyApi('DELETE', `/rooms/${interviewId}`);
+            await dailyApi('DELETE', `/rooms/${roomId}`);
         } catch (error) {
             if (error.response && error.response.status !== 404) {
-                console.warn(`Could not delete room ${interviewId}:`, error.message);
+                console.warn(`Could not delete room ${roomId}:`, error.message);
             }
         }
     }
 
     await interviewRef.update({
         status: 'Completed',
+        endTime: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        roomId: admin.firestore.FieldValue.delete(),
+        roomUrl: admin.firestore.FieldValue.delete(),
     });
 
     return { success: true, message: 'Interview completed and room deleted.' };
@@ -354,11 +398,19 @@ exports.dailyRoomScheduler = onSchedule(
 
         const interviewsRef = db.collection('interviews');
 
-        // 1. Create Rooms for Today
+        // 1. Create Rooms for Today (skip when video budget is off or exhausted)
+        let canCreateRooms = true;
+        try {
+            await assertVideoBudgetAllows();
+        } catch (error) {
+            canCreateRooms = false;
+            console.warn('dailyRoomScheduler: skipping room creates —', error.message || error);
+        }
+
         const todaysQuery = interviewsRef.where('startTime', '>=', startOfToday).where('startTime', '<=', endOfToday);
         const todaysSnapshot = await todaysQuery.get();
 
-        if (!todaysSnapshot.empty) {
+        if (canCreateRooms && !todaysSnapshot.empty) {
             const creationPromises = todaysSnapshot.docs.map(async (doc) => {
                 const interviewId = doc.id;
                 const data = doc.data();

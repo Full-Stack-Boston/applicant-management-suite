@@ -1,5 +1,4 @@
 const admin = require('firebase-admin');
-const path = require('path');
 
 // --- Configuration ---
 // Point to keys in root directory

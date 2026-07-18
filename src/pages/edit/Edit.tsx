@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GENERIC EDIT PAGE WRAPPER
  * ---------------------------------------------------------------------------
@@ -15,14 +14,15 @@
  * <Route path="/admin/members/edit/:id" element={<Edit type="members" />} />
  */
 
-import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import { useState, useEffect, cloneElement, type ReactElement } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import type { DocumentData } from 'firebase/firestore';
 import { Box, Typography, IconButton } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 // Contexts & Config
 import { useTheme } from '../../context/ThemeContext';
+import { adminPageHeaderSx, adminPagePanelSx } from '../../config/ui/adminPageStyles';
 import { useTitle } from '../../context/HelmetContext';
 import { useAuth } from '../../context/AuthContext';
 import { getCollectionData } from '../../config/data/firebase';
@@ -31,14 +31,14 @@ import { editableContent as editConfig } from '../../config/admin';
 // Styles
 import '../new/new.scss';
 
-const Edit = ({ type }) => {
+const Edit = ({ type }: { type: string }) => {
 	// --- Hooks & State ---
 	const { boxShadow } = useTheme();
 	const navigate = useNavigate();
 	const params = useParams();
 	const { member: currentUser } = useAuth(); // The Admin user performing the edit
 
-	const [data, setData] = useState({}); // The document data being edited
+	const [data, setData] = useState<DocumentData>({}); // The document data being edited
 
 	// --- Configuration Lookup ---
 	const dataID = params.id;
@@ -71,7 +71,7 @@ const Edit = ({ type }) => {
 	// --- Error Boundary ---
 	if (!currentConfig) {
 		return (
-			<Typography padding='20px' color='error'>
+			<Typography sx={{ padding: '20px' }} color='error'>
 				Error: Invalid edit type ('{type}') specified. Please check your route configuration.
 			</Typography>
 		);
@@ -80,34 +80,30 @@ const Edit = ({ type }) => {
 	// --- The Injection Pattern ---
 	// We take the Form Component defined in config (e.g. <MemberForm />)
 	// and clone it, injecting the fetched 'data' and the user's 'permissions' as props.
-	const formWithProps = React.cloneElement(currentConfig.renderForm(data), {
+	const formWithProps = cloneElement(currentConfig.renderForm(data) as ReactElement<{ permissions?: unknown }>, {
 		permissions: currentUser?.permissions,
 	});
 
 	return (
-		<Box display='flex' height='100%' width='100%' flexDirection='column'>
+		<Box sx={{ display: 'flex', height: '100%', width: '100%', flexDirection: 'column' }}>
 			{/* Header Section */}
-			<Box display='flex' padding='10px' margin='20px' bgcolor='background.paper' borderRadius='12px' sx={{ boxShadow: boxShadow }} alignItems='center'>
+			<Box sx={{ ...adminPageHeaderSx(boxShadow), m: '20px', width: 'auto' }}>
 				<IconButton onClick={() => navigate(-1)} sx={{ mr: 1, color: 'secondary.main' }}>
 					<ArrowBackIcon />
 				</IconButton>
-				<Typography fontSize='20px' variant='span' color='secondary.main'>
+				<Typography component='span' sx={{ fontSize: '20px' }} color='secondary.main'>
 					Edit {currentConfig.formConfig.title}
 				</Typography>
 			</Box>
 
 			{/* Form Container */}
-			<Box display='flex' padding='10px' margin='20px' bgcolor='background.paper' borderRadius='12px' sx={{ boxShadow: boxShadow }}>
-				<Box flex='1' margin='0px 20px' padding='20px 0px' color='text.primary'>
+			<Box sx={{ ...adminPagePanelSx(boxShadow), m: '20px', p: '10px', width: 'auto' }}>
+				<Box sx={{ flex: '1', margin: '0px 20px', padding: '20px 0px', color: 'text.primary' }}>
 					{formWithProps}
 				</Box>
 			</Box>
 		</Box>
 	);
-};
-
-Edit.propTypes = {
-	type: PropTypes.string.isRequired, // matches a key in 'editableContent'
 };
 
 export default Edit;

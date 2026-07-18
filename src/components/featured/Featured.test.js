@@ -5,22 +5,16 @@ import { useConfig } from '../../context/ConfigContext';
 import * as firebase from '../../config/data/firebase';
 import { ApplicationType } from '../../config/data/collections';
 
-// Mock Context
 vi.mock('../../context/ConfigContext', () => ({
 	useConfig: jest.fn(),
 }));
 
-// Mock Firebase
 vi.mock('../../config/data/firebase', () => ({
-	getCurrentlyEligibleApplicationsCountByType: jest.fn(),
-	getBenchmarkedAwardCounts: jest.fn(),
-	getAverageApplicationsPerYearByType: jest.fn(),
+	getDashboardBenchmarkData: jest.fn(),
 }));
 
-// Mock Timer component
 vi.mock('../timer/Timer', () => ({ default: () => <div data-testid='timer'>Timer</div> }));
 
-// Mock ApplicationType
 vi.mock('../../config/data/collections', () => ({
 	ApplicationType: {
 		newApplication: 'New',
@@ -30,9 +24,7 @@ vi.mock('../../config/data/collections', () => ({
 }));
 
 const mockUseConfig = useConfig;
-const mockGetCounts = firebase.getCurrentlyEligibleApplicationsCountByType;
-const mockGetBenchmarks = firebase.getBenchmarkedAwardCounts;
-const mockGetAverage = firebase.getAverageApplicationsPerYearByType;
+const mockGetDashboardData = firebase.getDashboardBenchmarkData;
 
 describe('Featured', () => {
 	beforeEach(() => {
@@ -40,29 +32,27 @@ describe('Featured', () => {
 
 		mockUseConfig.mockReturnValue({
 			APPLICATION_DEADLINE: '2025-12-31T23:59:59Z',
+			CYCLE_YEAR: 2025,
 		});
 
-		// Use setSystemTime for modern Jest
 		jest.useFakeTimers().setSystemTime(new Date('2025-12-21T12:00:00Z'));
 
-		mockGetCounts.mockImplementation((type) => {
-			if (type === ApplicationType.newApplication) return Promise.resolve(10);
-			if (type === ApplicationType.returningGrant) return Promise.resolve(20);
-			if (type === ApplicationType.scholarship) return Promise.resolve(5);
-			return Promise.resolve(0);
-		});
-
-		mockGetBenchmarks.mockResolvedValue({
-			[ApplicationType.newApplication]: 20, // 50%
-			[ApplicationType.returningGrant]: 20, // 100%
-			[ApplicationType.scholarship]: 50, // 10%
-		});
-
-		mockGetAverage.mockImplementation((type) => {
-			if (type === ApplicationType.newApplication) return Promise.resolve(20);
-			if (type === ApplicationType.returningGrant) return Promise.resolve(20);
-			if (type === ApplicationType.scholarship) return Promise.resolve(50);
-			return Promise.resolve(0);
+		mockGetDashboardData.mockResolvedValue({
+			currentCounts: {
+				[ApplicationType.newApplication]: 10,
+				[ApplicationType.returningGrant]: 20,
+				[ApplicationType.scholarship]: 5,
+			},
+			benchmarkTargets: {
+				[ApplicationType.newApplication]: 20,
+				[ApplicationType.returningGrant]: 20,
+				[ApplicationType.scholarship]: 50,
+			},
+			awardTrends: [
+				{ year: 2022, New: 1, Returning: 2, Scholarship: 3 },
+				{ year: 2023, New: 4, Returning: 5, Scholarship: 6 },
+				{ year: 2024, New: 7, Returning: 8, Scholarship: 9 },
+			],
 		});
 	});
 
@@ -76,8 +66,8 @@ describe('Featured', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText(/Benchmark/i)).toBeInTheDocument();
-			expect(screen.getByText(/3-Year/i)).toBeInTheDocument();
+			expect(screen.getByText(/BENCHMARK PROGRESS/i)).toBeInTheDocument();
+			expect(screen.getByText(/3-Year Award Trends/i)).toBeInTheDocument();
 		});
 	});
 
@@ -97,7 +87,6 @@ describe('Featured', () => {
 
 		await waitFor(() => {
 			expect(screen.getByText(/Deadline: 12\/31\/2025/i)).toBeInTheDocument();
-			// Math.ceil diff between Dec 21 and Dec 31 is 11 days (including partials)
 			expect(screen.getByText(/11 days left/i)).toBeInTheDocument();
 		});
 	});
@@ -108,8 +97,7 @@ describe('Featured', () => {
 		});
 
 		await waitFor(() => {
-			expect(mockGetCounts).toHaveBeenCalledTimes(3);
-			expect(mockGetBenchmarks).toHaveBeenCalledTimes(3);
+			expect(mockGetDashboardData).toHaveBeenCalledWith(2025);
 
 			expect(screen.getByText('New Applicants: 10 / 20 (50%)')).toBeInTheDocument();
 			expect(screen.getByText('Returning Grants: 20 / 20 (100%)')).toBeInTheDocument();
@@ -136,4 +124,47 @@ describe('Featured', () => {
 			expect(screen.getByText('⬤ Scholarship')).toBeInTheDocument();
 		});
 	});
+	test('renders dashboard variant and near-deadline progress styling', async () => {
+		jest.useFakeTimers().setSystemTime(new Date('2025-12-28T12:00:00Z'));
+		mockGetDashboardData.mockResolvedValue({
+			currentCounts: {
+				[ApplicationType.newApplication]: 2,
+				[ApplicationType.returningGrant]: 0,
+				[ApplicationType.scholarship]: 0,
+			},
+			benchmarkTargets: {
+				[ApplicationType.newApplication]: 20,
+				[ApplicationType.returningGrant]: 20,
+				[ApplicationType.scholarship]: 50,
+			},
+			awardTrends: [],
+		});
+
+		await act(async () => {
+			render(<Featured variant='dashboard' />);
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText(/days left/i)).toBeInTheDocument();
+			expect(screen.getByText('New Applicants: 2 / 20 (10%)')).toBeInTheDocument();
+		});
+	});
+
+	test('shows today when deadline matches current timestamp', async () => {
+		const sameInstant = new Date('2025-12-31T23:59:59.000Z');
+		jest.useFakeTimers().setSystemTime(sameInstant);
+		mockUseConfig.mockReturnValue({
+			APPLICATION_DEADLINE: sameInstant.toISOString(),
+			CYCLE_YEAR: 2025,
+		});
+
+		await act(async () => {
+			render(<Featured />);
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText(/\(today\)/i)).toBeInTheDocument();
+		});
+	});
 });
+

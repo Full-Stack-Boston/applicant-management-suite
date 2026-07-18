@@ -53,6 +53,12 @@ vi.mock('./PermissionGroup', () => ({
 	default: () => <div data-testid='permission-group'>Permissions</div>,
 }));
 
+const submitForm = async () => {
+	await act(async () => {
+		fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+	});
+};
+
 describe('GenericAdminForm Component', () => {
 	const mockConfig = {
 		name: 'adminForm',
@@ -77,7 +83,7 @@ describe('GenericAdminForm Component', () => {
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-				useAlert.mockReturnValue({ showAlert: mockShowAlert });
+		useAlert.mockReturnValue({ showAlert: mockShowAlert });
 	});
 
 	test('renders form fields from config', () => {
@@ -89,7 +95,7 @@ describe('GenericAdminForm Component', () => {
 	});
 
 	test('updates standard field values', async () => {
-		const { container } = render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} onFieldChange={mockOnFieldChange} />);
+		render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} onFieldChange={mockOnFieldChange} />);
 
 		const titleInput = screen.getByTestId('input-title');
 
@@ -97,9 +103,7 @@ describe('GenericAdminForm Component', () => {
 			fireEvent.change(titleInput, { target: { value: 'New Title' } });
 		});
 
-		await act(async () => {
-			fireEvent.submit(container.querySelector('form'));
-		});
+		await submitForm();
 
 		expect(mockOnSubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -111,15 +115,13 @@ describe('GenericAdminForm Component', () => {
 	});
 
 	test('handles nested permission updates (Length 2)', async () => {
-		const { container } = render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
+		render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
 
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('trigger-perm-2-title'));
 		});
 
-		await act(async () => {
-			fireEvent.submit(container.querySelector('form'));
-		});
+		await submitForm();
 
 		expect(mockOnSubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -131,15 +133,13 @@ describe('GenericAdminForm Component', () => {
 	});
 
 	test('handles nested permission updates (Length 3)', async () => {
-		const { container } = render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
+		render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
 
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('trigger-perm-3-title'));
 		});
 
-		await act(async () => {
-			fireEvent.submit(container.querySelector('form'));
-		});
+		await submitForm();
 
 		expect(mockOnSubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -153,18 +153,15 @@ describe('GenericAdminForm Component', () => {
 	});
 
 	test('blocks submission when validation errors exist', async () => {
-		const { container } = render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
+		render(<GenericAdminForm formConfig={mockConfig} initialData={mockInitialData} onSubmit={mockOnSubmit} />);
 
 		// 1. Trigger Error
-		// This click used to submit the form accidentally! Now it won't.
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('trigger-error-title'));
 		});
 
 		// 2. Attempt Submit
-		await act(async () => {
-			fireEvent.submit(container.querySelector('form'));
-		});
+		await submitForm();
 
 		// 3. Verify Blocked
 		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Please fix the errors before submitting.', type: 'error' });
@@ -175,9 +172,7 @@ describe('GenericAdminForm Component', () => {
 			fireEvent.click(screen.getByTestId('clear-error-title'));
 		});
 
-		await act(async () => {
-			fireEvent.submit(container.querySelector('form'));
-		});
+		await submitForm();
 
 		// 5. Verify Success
 		expect(mockOnSubmit).toHaveBeenCalled();

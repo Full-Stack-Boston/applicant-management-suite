@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SIDEBAR NAVIGATION CONTEXT
  * ---------------------------------------------------------------------------
@@ -15,21 +14,25 @@
  * <Sidebar collapsed={collapsed} />
  */
 
-import React, { createContext, useContext, useState, useMemo, useEffect, useCallback } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
 
 // Context & Backend
 import { useAuth } from './AuthContext';
 import { updateUserPreferences } from '../config/data/firebase';
 import { collections } from '../config/data/collections';
 
-const SidebarContext = createContext();
+export interface SidebarContextValue {
+	collapsed: boolean;
+	setCollapsed: (newState?: boolean) => void;
+}
 
-export const SidebarProvider = ({ children }) => {
+const SidebarContext = createContext<SidebarContextValue | undefined>(undefined);
+
+export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 	// --- 1. Initialization (Local Storage) ---
 	// Initialize state from local storage immediately to ensure the UI
 	// renders correctly on the first paint (avoids "Layout Shift").
-	const [collapsed, setCollapsed] = useState(() => {
+	const [collapsed, setCollapsed] = useState<boolean>(() => {
 		const savedState = localStorage.getItem('pf_sidebar_collapsed');
 		return savedState === 'true'; // Converts string 'true' to boolean true
 	});
@@ -40,27 +43,28 @@ export const SidebarProvider = ({ children }) => {
 	// If the user's profile loads and has a preference saved, update our local state.
 	// This handles the case where a user changes settings on a different device.
 	useEffect(() => {
-		if (member?.preferences?.sidebarCollapsed !== undefined) {
-			const remoteState = member.preferences.sidebarCollapsed;
+		const preferences = member?.preferences as { sidebarCollapsed?: boolean } | undefined;
+		if (preferences?.sidebarCollapsed !== undefined) {
+			const remoteState = Boolean(preferences.sidebarCollapsed);
 
 			// Only update if different to avoid unnecessary re-renders
 			if (remoteState !== collapsed) {
 				setCollapsed(remoteState);
-				localStorage.setItem('pf_sidebar_collapsed', remoteState);
+				localStorage.setItem('pf_sidebar_collapsed', String(remoteState));
 			}
 		}
 	}, [member, collapsed]);
 
 	// --- 3. Toggle Action ---
 	const toggleSidebar = useCallback(
-		(newState) => {
+		(newState?: boolean) => {
 			// Allow passing a specific boolean or just toggling current state
 			const valueToSet = typeof newState === 'boolean' ? newState : !collapsed;
 
 			setCollapsed(valueToSet);
 
 			// A. Save to Local Storage immediately (Fast)
-			localStorage.setItem('pf_sidebar_collapsed', valueToSet);
+			localStorage.setItem('pf_sidebar_collapsed', String(valueToSet));
 
 			// B. Save to Firestore in background (Persistent)
 			if (member && user) {
@@ -70,7 +74,7 @@ export const SidebarProvider = ({ children }) => {
 		[collapsed, user, member]
 	);
 
-	const value = useMemo(
+	const value = useMemo<SidebarContextValue>(
 		() => ({
 			collapsed,
 			setCollapsed: toggleSidebar,
@@ -81,14 +85,10 @@ export const SidebarProvider = ({ children }) => {
 	return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 };
 
-SidebarProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
 /**
  * Hook to control the Sidebar state.
  */
-export const useSidebar = () => {
+export const useSidebar = (): SidebarContextValue => {
 	const context = useContext(SidebarContext);
 	if (context === undefined) {
 		throw new Error('useSidebar must be used within a SidebarProvider');

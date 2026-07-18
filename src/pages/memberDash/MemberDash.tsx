@@ -1,95 +1,125 @@
-// @ts-nocheck
 /**
  * ADMIN DASHBOARD (MemberDash)
  * ---------------------------------------------------------------------------
- * This is the main landing page for authenticated Committee Members.
- *
- * * ARCHITECTURE (THE DATA CONTROLLER):
- * This component is a "Shell" that orchestrates data fetching for child components.
- * 1. Layout Config: Reads 'memberDashContent' from 'src/config/admin'.
- * 2. Subscription Manager: Iterates through widgets/charts in the config,
- * executes their specific Firestore queries ('fetcher'), and stores the
- * results in a central state object ('dashboardData').
- * 3. Data Injection: Passes the live data down to dumb components via props.
- *
- * * CALCULATIONS:
- * - Real-time calculating of percentages (e.g. % of Total Applicants).
- * - Year-over-Year comparison logic for "Gain/Loss" indicators.
+ * Shell that orchestrates data fetching for child components.
+ * Layout tokens match PF adminPageStyles (responsive widget grid + featured row).
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { createElement, useEffect, useState, useMemo, useCallback } from 'react';
 import { Box } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material';
 
-// Contexts
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
 import { useAlert } from '../../context/AlertContext';
 
-// Config & Components
 import { memberDashContent as dashboardConfig } from '../../config/admin';
+import { dashboardPanelSx, dashboardWidgetGridSx } from '../../config/ui/adminPageStyles';
 import Widget from '../../components/widget/Widget';
 import Loader from '../../components/loader/Loader';
 
+const WIDGETS_PER_ROW = 4;
+
+type Unsubscribe = () => void;
+type MaybePromiseUnsub = Unsubscribe | Promise<Unsubscribe | void | undefined> | void | null | undefined;
+
+interface WidgetAmounts {
+	amount?: number;
+	comparisonAmount?: number;
+}
+
+type DashboardData = Record<string, WidgetAmounts | unknown>;
+
+type DashboardWidget = (typeof dashboardConfig.widgets)[number];
+type LayoutRow = (typeof dashboardConfig.layout)[number];
+type LayoutComponent = NonNullable<LayoutRow['components']>[number];
+
+const getWidgetGridSpan = (index: number, total: number): number => {
+	const remainder = total % WIDGETS_PER_ROW;
+	if (remainder === 0) return 1;
+	const lastRowStart = total - remainder;
+	if (index < lastRowStart) return 1;
+	return WIDGETS_PER_ROW / remainder;
+};
+
 const MemberDash = () => {
-	// --- Hooks & Contexts ---
 	useTitle({ title: 'Dashboard', appear: false });
 	const { boxShadow } = useTheme();
 	const config = useConfig();
 	const { showAnnouncement, handleError } = useAlert();
 
-	// --- State ---
 	const [loading, setLoading] = useState(true);
-	// Central Store: { [componentId]: fetchedData }
-	const [dashboardData, setDashboardData] = useState({});
+	const [dashboardData, setDashboardData] = useState<DashboardData>({});
 
-	// --- Helper 1: Generic Data Fetcher ---
-	// Sets up a listener for a specific component and updates local state on change.
-	const setupDataFetcher = useCallback((comp) => {
-		if (!comp.fetcher) {
-			return null;
-		}
+	const setupDataFetcher = useCallback((comp: LayoutComponent): Unsubscribe | null => {
+		if (!comp.fetcher) return null;
 
-		// Set initial state to avoid undefined errors during first render
 		setDashboardData((prev) => ({ ...prev, [comp.id]: comp.initialState }));
 
-		const handler = (data) => {
+		const handler = (data: unknown) => {
 			setDashboardData((prev) => ({ ...prev, [comp.id]: data }));
 		};
 
-		return comp.fetcher(handler);
+		const result = comp.fetcher(handler) as MaybePromiseUnsub;
+		if (result && typeof (result as Promise<unknown>).then === 'function') {
+			let asyncUnsub: Unsubscribe | undefined;
+			void (result as Promise<Unsubscribe | void | undefined>).then((unsub) => {
+				asyncUnsub = typeof unsub === 'function' ? unsub : undefined;
+			});
+			return () => {
+				if (typeof asyncUnsub === 'function') asyncUnsub();
+			};
+		}
+
+		return typeof result === 'function' ? result : null;
 	}, []);
 
-	// --- Helper 2: Widget Listener Setup ---
-	// Widgets are complex: they need Current Data AND Historical Data (Comparison)
-	const setupWidgetListeners = useCallback((widget, lastYearsDeadline, unsubs) => {
-		// 1. Current Year Data
+	const pushUnsub = (unsubs: Unsubscribe[], result: MaybePromiseUnsub) => {
+		if (!result) return;
+		if (typeof result === 'function') {
+			unsubs.push(result);
+			return;
+		}
+		if (typeof (result as Promise<unknown>).then === 'function') {
+			let asyncUnsub: Unsubscribe | undefined;
+			void (result as Promise<Unsubscribe | void | undefined>).then((unsub) => {
+				asyncUnsub = typeof unsub === 'function' ? unsub : undefined;
+			});
+			unsubs.push(() => {
+				if (typeof asyncUnsub === 'function') asyncUnsub();
+			});
+		}
+	};
+
+	const setupWidgetListeners = useCallback((widget: DashboardWidget, priorCycleYear: number, unsubs: Unsubscribe[]) => {
 		if (widget.fetcher) {
-			const unsub = widget.fetcher((count) => {
-				setDashboardData((prev) => ({
-					...prev,
-					[widget.id]: { ...prev[widget.id], amount: count },
-				}));
-			});
-			if (typeof unsub === 'function') unsubs.push(unsub);
+			pushUnsub(
+				unsubs,
+				widget.fetcher((count) => {
+					setDashboardData((prev) => ({
+						...prev,
+						[widget.id]: { ...(prev[widget.id] as WidgetAmounts | undefined), amount: count as number },
+					}));
+				}) as MaybePromiseUnsub
+			);
 		}
 
-		// 2. Prior Year Data (for +/- trends)
 		if (widget.comparisonFetcher) {
-			const unsub = widget.comparisonFetcher(lastYearsDeadline.toISOString(), (count) => {
-				setDashboardData((prev) => ({
-					...prev,
-					[widget.id]: { ...prev[widget.id], comparisonAmount: count },
-				}));
-			});
-			if (typeof unsub === 'function') unsubs.push(unsub);
+			pushUnsub(
+				unsubs,
+				widget.comparisonFetcher(priorCycleYear, (count) => {
+					setDashboardData((prev) => ({
+						...prev,
+						[widget.id]: { ...(prev[widget.id] as WidgetAmounts | undefined), comparisonAmount: count as number },
+					}));
+				}) as MaybePromiseUnsub
+			);
 		}
 	}, []);
 
-	// --- Helper 3: Custom Row Listener Setup ---
-	// Handles charts, tables, or complex layout blocks
 	const setupCustomRowListeners = useCallback(
-		(row, unsubs) => {
+		(row: LayoutRow, unsubs: Unsubscribe[]) => {
 			if (row.type === 'customRow' && row.components) {
 				for (const comp of row.components) {
 					const unsub = setupDataFetcher(comp);
@@ -100,30 +130,27 @@ const MemberDash = () => {
 		[setupDataFetcher]
 	);
 
-	// --- Effect 1: Global Announcements ---
 	useEffect(() => {
 		if (config.MEMBER_MESSAGE) {
-			showAnnouncement({ message: config.MEMBER_MESSAGE });
+			showAnnouncement({ message: String(config.MEMBER_MESSAGE) });
 		}
 	}, [config.MEMBER_MESSAGE, showAnnouncement]);
 
-	// --- Effect 2: Initialize Dashboard Data ---
 	useEffect(() => {
-		if (!config.APPLICATION_DEADLINE) return;
+		if (!config.APPLICATION_DEADLINE && config.CYCLE_YEAR === undefined) return;
 
 		setLoading(true);
-		const unsubs = [];
-
-		// Calculate "Last Year" reference date for comparisons
-		const lastYearsDeadline = new Date(new Date(config.APPLICATION_DEADLINE).setFullYear(new Date(config.APPLICATION_DEADLINE).getFullYear() - 1));
+		const unsubs: Unsubscribe[] = [];
+		const currentYear =
+			typeof config.CYCLE_YEAR === 'number' && Number.isFinite(config.CYCLE_YEAR)
+				? config.CYCLE_YEAR
+				: new Date(config.APPLICATION_DEADLINE as string).getFullYear();
+		const priorCycleYear = currentYear - 1;
 
 		try {
-			// A. Initialize Widgets
 			for (const widget of dashboardConfig.widgets) {
-				setupWidgetListeners(widget, lastYearsDeadline, unsubs);
+				setupWidgetListeners(widget, priorCycleYear, unsubs);
 			}
-
-			// B. Initialize Layout Rows (Charts/Tables)
 			for (const row of dashboardConfig.layout) {
 				setupCustomRowListeners(row, unsubs);
 			}
@@ -138,43 +165,35 @@ const MemberDash = () => {
 				unsub?.();
 			}
 		};
-	}, [config.APPLICATION_DEADLINE, handleError, setupWidgetListeners, setupCustomRowListeners]);
+	}, [config.APPLICATION_DEADLINE, config.CYCLE_YEAR, handleError, setupWidgetListeners, setupCustomRowListeners]);
 
-	// --- Computed: Widget Statistics ---
-	// Calculates percentages and trends derived from the raw data
 	const widgetCalculations = useMemo(() => {
-		const totals = {
-			potentiallyEligible: 0,
-			status: 0,
-		};
+		const totals = { potentiallyEligible: 0, status: 0 };
+		// PF parity: status % denominator is the sum of the three type widgets (pipeline volume).
+		const typeIds = new Set(['New Applicant', 'Returning Grant', 'Scholarship Check In']);
 
-		// 1. Sum Totals (Denominator)
 		for (const widget of dashboardConfig.widgets) {
-			const amount = dashboardData[widget.id]?.amount ?? 0;
-
+			const amount = (dashboardData[widget.id] as WidgetAmounts | undefined)?.amount ?? 0;
 			if (widget.category === 'potentiallyEligible') {
 				totals.potentiallyEligible += amount;
 			}
-			// Special handling for Application Status widgets
-			if (['New Application', 'Returning Grant', 'Scholarship'].includes(widget.id)) {
+			if (typeIds.has(widget.id)) {
 				totals.status += amount;
 			}
 		}
 
 		const baseForStatus = totals.status > 0 ? totals.status : 1;
+		const infoMap: Record<string, { amount: number; percent: number | string; gain?: boolean }> = {};
 
-		// 2. Calculate Individual Metrics
-		const infoMap = {};
 		for (const widget of dashboardConfig.widgets) {
-			const { amount = 0, comparisonAmount = 0 } = dashboardData[widget.id] ?? {};
-
+			const { amount = 0, comparisonAmount = 0 } = (dashboardData[widget.id] as WidgetAmounts | undefined) ?? {};
+			if (widget.category === 'live') {
+				infoMap[widget.id] = { amount, percent: 'N/A' };
+				continue;
+			}
 			const total = widget.category === 'potentiallyEligible' ? totals.potentiallyEligible : baseForStatus;
-
 			const percent = total > 0 ? Number.parseFloat(((amount / total) * 100).toFixed(2)) : 0;
-
-			// Calculate Gain/Loss if function provided in config
-			const gain = widget.isGainPositive ? widget.isGainPositive(amount, comparisonAmount) : null;
-
+			const gain = widget.isGainPositive ? widget.isGainPositive(amount, comparisonAmount) : undefined;
 			infoMap[widget.id] = { amount, percent, gain };
 		}
 
@@ -184,40 +203,78 @@ const MemberDash = () => {
 	if (loading) return <Loader />;
 
 	return (
-		<Box display='flex' flexDirection='column' gap={4} width='100%' sx={{ boxSizing: 'border-box', flex: 1 }}>
+		<Box
+			sx={{
+				display: 'flex',
+				flexDirection: 'column',
+				gap: { xs: 1.5, md: 2 },
+				width: '100%',
+				maxWidth: '100%',
+				minWidth: 0,
+				flexShrink: 0,
+				boxSizing: 'border-box',
+			}}>
 			{dashboardConfig.layout.map((row) => {
-				// RENDER STRATEGY 1: Widget Strip
 				if (row.type === 'widgets') {
+					const widgetCount = dashboardConfig.widgets.length;
 					return (
-						<Box key={row.id} sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, width: '100%', alignItems: 'stretch', boxSizing: 'border-box' }}>
-							{dashboardConfig.widgets.map((widget) => (
-								<Widget key={widget.id} title={widget.title} linkText={widget.linkText} link={widget.link} IconComponent={widget.IconComponent} color={widget.color} isMoney={widget.isMoney} info={widgetCalculations[widget.id]} />
+						<Box key={row.id} sx={dashboardWidgetGridSx}>
+							{dashboardConfig.widgets.map((widget, index) => (
+								<Box
+									key={widget.id}
+									sx={{
+										gridColumn: { md: `span ${getWidgetGridSpan(index, widgetCount)}` },
+										minWidth: 0,
+									}}>
+									<Widget title={widget.title} linkText={widget.linkText} link={widget.link} IconComponent={widget.IconComponent} color={widget.color} info={widgetCalculations[widget.id]} />
+								</Box>
 							))}
 						</Box>
 					);
 				}
 
-				// RENDER STRATEGY 2: Custom Component Row (Charts/Tables)
 				if (row.type === 'customRow') {
+					const isFeaturedRow = row.variant === 'featured';
+					const isPanelRow = row.variant === 'panel';
+
+					const rowSx = {
+						width: '100%',
+						maxWidth: '100%',
+						minWidth: 0,
+						boxSizing: 'border-box' as const,
+						...(isPanelRow ? dashboardPanelSx(boxShadow) : {}),
+						...(row.containerSx && typeof row.containerSx === 'object' && !Array.isArray(row.containerSx) ? (row.containerSx as Record<string, unknown>) : {}),
+						...(row.display ? { display: row.display } : {}),
+					} as SxProps<Theme>;
+
 					return (
-						<Box key={row.id} display={row.display || 'flex'} gap={2} width='100%' alignItems='stretch' sx={row.containerSx}>
-							{row.components.map((comp) => (
+						<Box key={row.id} sx={rowSx}>
+							{row.components?.map((comp) => {
+								const wrapperSx = (comp as LayoutComponent & { wrapperSx?: Record<string, unknown> }).wrapperSx;
+								return (
 								<Box
 									key={comp.id}
 									sx={{
 										display: 'flex',
-										borderRadius: '12px',
+										flexDirection: 'column',
+										borderRadius: isFeaturedRow ? '12px' : 0,
 										overflow: 'hidden',
-										boxShadow: boxShadow,
-										...comp.wrapperSx,
+										boxShadow: isFeaturedRow ? boxShadow : 'none',
+										bgcolor: isFeaturedRow ? 'background.paper' : 'transparent',
+										minWidth: 0,
+										width: '100%',
+										minHeight: isFeaturedRow ? { xs: 280, md: '100%' } : 0,
+										height: isFeaturedRow ? '100%' : 'auto',
+										boxSizing: 'border-box',
+										...wrapperSx,
 									}}>
-									{/* Dynamic Component Injection */}
-									{React.createElement(comp.component, {
+									{createElement(comp.component, {
 										...comp.props,
-										data: dashboardData[comp.id], // Inject fetched data here
+										data: dashboardData[comp.id],
 									})}
 								</Box>
-							))}
+								);
+							})}
 						</Box>
 					);
 				}

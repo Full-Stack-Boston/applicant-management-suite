@@ -1,23 +1,12 @@
-// @ts-nocheck
-/**
- * PDF Preview Component
- * Renders converted PDF pages (as images) for the print view.
- * Features:
- * - Handles Blob URL cleanup to prevent memory leaks.
- * - Adds print-specific CSS (page breaks).
- * - Displays a loading indicator while processing pages.
- */
-
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import { Box, Typography, CircularProgress } from '@mui/material';
+import type { PDFPreviewProps } from './types';
 
-const PDFPreview = ({ displayName, pages }) => {
-	// If pages are already present on mount, don't show loading
-	const [loading, setLoading] = useState(!pages || pages.length === 0);
+const PDFPreview = ({ displayName, pages }: PDFPreviewProps) => {
+	const [loading, setLoading] = React.useState(!pages || pages.length === 0);
 
-	// Cleanup Blob URLs on unmount or when pages change to prevent memory leaks
-	useEffect(() => {
+	React.useEffect(() => {
 		return () => {
 			if (pages && Array.isArray(pages)) {
 				pages.forEach((url) => {
@@ -29,8 +18,7 @@ const PDFPreview = ({ displayName, pages }) => {
 		};
 	}, [pages]);
 
-	// Update loading state when pages arrive
-	useEffect(() => {
+	React.useEffect(() => {
 		if (pages?.length > 0) {
 			setLoading(false);
 		}
@@ -48,7 +36,7 @@ const PDFPreview = ({ displayName, pages }) => {
 					pageBreakInside: 'avoid',
 				}}>
 				<CircularProgress size={30} />
-				<Typography variant='body2' mt={2} color='text.secondary'>
+				<Typography variant='body2' sx={{ mt: 2 }} color='text.secondary'>
 					Loading {displayName}...
 				</Typography>
 			</Box>
@@ -68,7 +56,7 @@ const PDFPreview = ({ displayName, pages }) => {
 					{displayName}
 				</Typography>
 
-				{pages.map((src, idx) => (
+				{pages.map((src: string, idx: number) => (
 					<Box
 						key={src}
 						component='img'
@@ -78,7 +66,7 @@ const PDFPreview = ({ displayName, pages }) => {
 							width: '90%',
 							maxWidth: '800px',
 							height: 'auto',
-							mb: 2, // Space between pages
+							mb: 2,
 							pageBreakInside: 'avoid',
 							border: '1px solid',
 							borderColor: 'divider',

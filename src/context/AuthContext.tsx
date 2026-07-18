@@ -1,51 +1,48 @@
-// @ts-nocheck
 /**
  * AUTHENTICATION CONTEXT & STATE MANAGER
  * ---------------------------------------------------------------------------
- * This file acts as the "Identity Hub" for the application.
+ * Identity hub: Firebase Auth + Member/Applicant profile listeners.
  *
- * * RESPONSIBILITIES:
- * 1. Wraps the Firebase Auth SDK to track the current logged-in user.
- * 2. Fetches "Profile" data (Member vs. Applicant) from Firestore in real-time.
- * 3. Determines the user's "Role" (Admin/Member or Applicant) based on which profiles exist.
- *
- * * ARCHITECTURE:
- * - AuthProvider: The global wrapper. Listens to 'onAuthStateChanged'.
- * - useAuth: The hook exposed to components to access { user, role, member, applicant }.
+ * `profilesReady` becomes true after both profile listeners have delivered a
+ * first result (data OR null OR error). Route guards must wait on that flag
+ * instead of `user && !role`, or authenticated users with missing/unreadable
+ * profiles spin forever on <Loader />.
  */
 
-import React, { createContext, useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
-import PropTypes from 'prop-types';
-import { onAuthStateChanged } from 'firebase/auth';
+import { createContext, useState, useEffect, useMemo, useCallback, useRef, useContext, type ReactNode } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 
-// Backend & Config
 import { auth, getRealTimeDocument, logoutUser } from '../config/data/firebase';
-import { UserType, collections } from '../config/data/collections';
-
-// Components
+import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
+import { UserType, collections, type UserTypeValue } from '../config/data/collections';
+import type { Applicant, Member } from '../types/domain';
 import Loader from '../components/loader/Loader';
 
-export const AuthContext = createContext();
+export interface AuthContextValue {
+	user: User | null;
+	member: Member | null;
+	applicant: Applicant | null;
+	role: UserTypeValue | null;
+	loading: boolean;
+	profilesReady: boolean;
+	logout: () => void;
+}
 
-export const AuthProvider = ({ children }) => {
-	// --- State ---
-	const [user, setUser] = useState(null); // The raw Firebase Auth User object
-	const [member, setMember] = useState(null); // Admin profile data (if applicable)
-	const [applicant, setApplicant] = useState(null); // Applicant profile data (if applicable)
-	const [loading, setLoading] = useState(true); // Global auth loading flag
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-	// --- References (Listeners) ---
-	// We store unsubscribe functions in refs so we can detach them on logout
-	const applicantUnsubscribeRef = useRef(null);
-	const memberUnsubscribeRef = useRef(null);
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+	const [user, setUser] = useState<User | null>(null);
+	const [member, setMember] = useState<Member | null>(null);
+	const [applicant, setApplicant] = useState<Applicant | null>(null);
+	/** True only until the first onAuthStateChanged fires. Never re-block the whole tree after that. */
+	const [bootstrapping, setBootstrapping] = useState(true);
+	const [profilesReady, setProfilesReady] = useState(true);
 
-	// --- Actions ---
+	const applicantUnsubscribeRef = useRef<(() => void) | null>(null);
+	const memberUnsubscribeRef = useRef<(() => void) | null>(null);
+	const profilePendingRef = useRef({ applicant: false, member: false });
 
-	/**
-	 * Resets all user state and detaches active Firestore listeners.
-	 * Called on logout or when the auth token refreshes.
-	 */
-	const clearUserData = useCallback(() => {
+	const clearProfileListeners = useCallback(() => {
 		if (applicantUnsubscribeRef.current) {
 			applicantUnsubscribeRef.current();
 			applicantUnsubscribeRef.current = null;
@@ -54,94 +51,107 @@ export const AuthProvider = ({ children }) => {
 			memberUnsubscribeRef.current();
 			memberUnsubscribeRef.current = null;
 		}
+	}, []);
+
+	const clearUserData = useCallback(() => {
+		clearProfileListeners();
 		setUser(null);
 		setMember(null);
 		setApplicant(null);
-	}, []);
+	}, [clearProfileListeners]);
 
-	/**
-	 * Signs the user out of Firebase and clears local state.
-	 */
 	const logout = useCallback(() => {
 		logoutUser();
 		clearUserData();
+		setProfilesReady(true);
 	}, [clearUserData]);
 
-	// --- Effects ---
-
-	/**
-	 * Main Auth Listener.
-	 * Fires whenever Firebase detects a login/logout event.
-	 */
 	useEffect(() => {
 		const authStateSubscription = onAuthStateChanged(auth, (currentUser) => {
-			setLoading(true);
-
-			// Always clear old listeners before setting up new ones
-			clearUserData();
+			// Tear down previous profile listeners without unmounting the app tree.
+			clearProfileListeners();
+			setMember(null);
+			setApplicant(null);
 
 			if (currentUser) {
 				setUser(currentUser);
+				setProfilesReady(false);
+				profilePendingRef.current = { applicant: true, member: true };
 
-				// Fetch Profiles in Real-Time
-				// This allows the UI to update instantly if an admin changes permissions
-				applicantUnsubscribeRef.current = getRealTimeDocument(collections.applicants, currentUser.uid, setApplicant);
-				memberUnsubscribeRef.current = getRealTimeDocument(collections.members, currentUser.uid, setMember);
+				const markProfile = (key: 'applicant' | 'member') => {
+					profilePendingRef.current[key] = false;
+					if (!profilePendingRef.current.applicant && !profilePendingRef.current.member) {
+						setProfilesReady(true);
+					}
+				};
+
+				applicantUnsubscribeRef.current =
+					getRealTimeDocument(collections.applicants, currentUser.uid, (data) => {
+						setApplicant((data as Applicant | null) ?? null);
+						markProfile('applicant');
+					}) ?? null;
+				memberUnsubscribeRef.current =
+					getRealTimeDocument(collections.members, currentUser.uid, (data) => {
+						setMember((data as Member | null) ?? null);
+						markProfile('member');
+					}) ?? null;
+
+				if (!applicantUnsubscribeRef.current) {
+					setApplicant(null);
+					markProfile('applicant');
+				}
+				if (!memberUnsubscribeRef.current) {
+					setMember(null);
+					markProfile('member');
+				}
+			} else {
+				setUser(null);
+				setProfilesReady(true);
 			}
 
-			setLoading(false);
+			setBootstrapping(false);
 		});
 
 		return () => {
 			if (authStateSubscription) authStateSubscription();
 			clearUserData();
 		};
-	}, [clearUserData]);
+	}, [clearProfileListeners, clearUserData]);
 
-	// --- Derived State ---
-
-	/**
-	 * Determines the user's role based on which profile documents exist.
-	 * - 'Member': Has a document in 'members' collection.
-	 * - 'Applicant': Has a document in 'applicants' collection.
-	 * - 'Both': Has both (rare, useful for admins testing the applicant view).
-	 */
-	const role = useMemo(() => {
+	const role = useMemo<UserTypeValue | null>(() => {
 		if (applicant && member) return UserType.both;
 		if (applicant) return UserType.applicant;
 		if (member) return UserType.member;
-		return null; // Authenticated but no profile yet (e.g. registration incomplete)
+		return null;
 	}, [applicant, member]);
 
-	const values = useMemo(
+	const loading = bootstrapping || Boolean(user && !profilesReady);
+
+	usePresenceHeartbeat(user, role, member, applicant);
+
+	const values = useMemo<AuthContextValue>(
 		() => ({
 			user,
 			member,
 			applicant,
 			role,
 			loading,
+			profilesReady,
 			logout,
 		}),
-		[user, member, applicant, role, loading, logout]
+		[user, member, applicant, role, loading, profilesReady, logout]
 	);
 
-	// Block rendering until initial auth check is complete
-	if (loading) {
+	// Only block the tree on the first auth resolution. Later sign-in/out keeps
+	// providers mounted so Login/Alerts/Router do not remount to a blank form.
+	if (bootstrapping) {
 		return <Loader />;
 	}
 
 	return <AuthContext.Provider value={values}>{children}</AuthContext.Provider>;
 };
 
-AuthProvider.propTypes = {
-	children: PropTypes.node.isRequired,
-};
-
-/**
- * Hook to access Auth Context.
- * Usage: const { user, role, logout } = useAuth();
- */
-export const useAuth = () => {
+export const useAuth = (): AuthContextValue => {
 	const context = useContext(AuthContext);
 	if (context === undefined) {
 		throw new Error('useAuth must be used within an AuthProvider');

@@ -1,9 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import MyNotes from './MyNotes';
 import { useAuth } from '../../context/AuthContext';
 import { getNotesByAuthor } from '../../config/data/firebase';
-import { useTitle } from '../../context/HelmetContext';
 // Import the mocked function so we can set its implementation
 import { generatePath } from '../../config/navigation/routeUtils';
 

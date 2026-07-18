@@ -3,7 +3,8 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { Timestamp } = require('firebase-admin/firestore');
 
 const { brand, configKeys, collections, ApplicationStatus, templates } = require('../config');
-const { processTemplate } = require('../utils');
+const { processTemplate, resolveApplicationCycleYear, siteConfigCycleYear } = require('../utils');
+const { maybeSimulateEmail } = require('../emailDelivery');
 
 // ==================================================================
 //  INTERNAL HELPER FUNCTIONS
@@ -44,13 +45,19 @@ async function queueSystemEmail(templateKey, recipients, data, configData) {
 
 		recipients.forEach((recipientEmail) => {
 			const docRef = emailsRef.doc();
-			batch.set(docRef, {
-				to: recipientEmail,
-				from: configData.SYSTEM_EMAIL,
-				replyTo: configData.SYSTEM_REPLY_TO,
-				message: { subject, text, html: finalHtml },
-				createdAt: admin.firestore.FieldValue.serverTimestamp(),
-			});
+			batch.set(
+				docRef,
+				maybeSimulateEmail(
+					{
+						to: recipientEmail,
+						from: configData.SYSTEM_EMAIL,
+						replyTo: configData.SYSTEM_REPLY_TO,
+						message: { subject, text, html: finalHtml },
+						createdAt: admin.firestore.FieldValue.serverTimestamp(),
+					},
+					configData
+				)
+			);
 		});
 
 		await batch.commit();
@@ -109,9 +116,10 @@ exports.runAutomatedTasks = onSchedule(
 					console.log('Running Member Activity Summary...');
 					const startDate = lastRun ? lastRun.toDate() : new Date(now.toMillis() - intervalHours * 60 * 60 * 1000);
 					const endDate = now.toDate();
+					const cycleYear = siteConfigCycleYear(configData);
 
-					const appsQuery = db.collection(collections.applications).where('window', '==', configData.APPLICATION_DEADLINE);
-					const appsSnap = await appsQuery.get();
+					const appsSnap = await db.collection(collections.applications).get();
+					const cycleApps = appsSnap.docs.filter((doc) => resolveApplicationCycleYear(doc.data()) === cycleYear);
 
 					// Initialize counters
 					let stats = {
@@ -127,7 +135,7 @@ exports.runAutomatedTasks = onSchedule(
 						deletedCount: 0,
 					};
 
-					appsSnap.forEach((doc) => {
+					cycleApps.forEach((doc) => {
 						const app = doc.data();
 						const createdDate = app.createdOn?.toDate ? app.createdOn.toDate() : null;
 						const updatedDate = app.lastUpdated?.toDate ? app.lastUpdated.toDate() : null;
@@ -171,10 +179,12 @@ exports.runAutomatedTasks = onSchedule(
 							case ApplicationStatus.ineligible:
 								stats.deniedCount++;
 								break; // Group ineligible with denied
+							default:
+								break;
 						}
 					});
 
-					const totalActive = appsSnap.size - stats.deniedCount - stats.deletedCount;
+					const totalActive = cycleApps.length - stats.deniedCount - stats.deletedCount;
 
 					const summaryData = {
 						startDate: startDate.toLocaleDateString('en-US'),
@@ -204,10 +214,9 @@ exports.runAutomatedTasks = onSchedule(
 
 				if (shouldRun) {
 					console.log('Running Incomplete Count Alert Check...');
-					const incompleteQuery = db.collection(collections.applications).where('window', '==', configData.APPLICATION_DEADLINE).where('status', '==', ApplicationStatus.incomplete);
-
-					const incompleteSnap = await incompleteQuery.get();
-					const incompleteCount = incompleteSnap.size;
+					const cycleYear = siteConfigCycleYear(configData);
+					const incompleteSnap = await db.collection(collections.applications).where('status', '==', ApplicationStatus.incomplete).get();
+					const incompleteCount = incompleteSnap.docs.filter((doc) => resolveApplicationCycleYear(doc.data()) === cycleYear).length;
 					const threshold = alertConfig.threshold || 0;
 
 					if (incompleteCount > threshold) {

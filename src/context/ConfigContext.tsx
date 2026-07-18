@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GLOBAL CONFIGURATION CONTEXT
  * ---------------------------------------------------------------------------
@@ -13,19 +12,21 @@
  * if (config.MAINTENANCE_MODE) return <MaintenancePage />;
  */
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from 'react';
 
 // Backend
 import { getRealTimeConfigFromDb } from '../config/data/firebase';
+import type { SiteConfig } from '../types/firebase';
 
 // Components
 import Loader from '../components/loader/Loader';
 
-export const ConfigContext = createContext();
+export type ConfigContextValue = SiteConfig;
 
-export const ConfigProvider = ({ children }) => {
-	const [config, setConfig] = useState({});
+export const ConfigContext = createContext<ConfigContextValue | undefined>(undefined);
+
+export const ConfigProvider = ({ children }: { children: ReactNode }) => {
+	const [config, setConfig] = useState<ConfigContextValue>({});
 
 	// We start with an empty object, effectively blocking the UI
 	// until the first successful fetch from Firestore.
@@ -34,7 +35,11 @@ export const ConfigProvider = ({ children }) => {
 		// Subscribe to real-time updates for the Site Config
 		const unsubscribe = getRealTimeConfigFromDb((data) => {
 			try {
-				setConfig(data || {});
+				const raw: ConfigContextValue = data || {};
+				if (raw.APPLICATION_DEADLINE && !raw.CYCLE_YEAR) {
+					raw.CYCLE_YEAR = new Date(raw.APPLICATION_DEADLINE as string).getFullYear();
+				}
+				setConfig(raw);
 			} catch (error) {
 				console.error('Error setting config:', error);
 			}
@@ -45,7 +50,7 @@ export const ConfigProvider = ({ children }) => {
 		};
 	}, []);
 
-	const value = useMemo(() => config, [config]);
+	const value = useMemo<ConfigContextValue>(() => config, [config]);
 
 	// --- Blocking Loader ---
 	// Critical: Do not render the app until we know the configuration.
@@ -58,15 +63,11 @@ export const ConfigProvider = ({ children }) => {
 	return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 };
 
-ConfigProvider.propTypes = {
-	children: PropTypes.node,
-};
-
 /**
  * Hook to access Global Configuration.
  * Usage: const { APPLICATION_DEADLINE } = useConfig();
  */
-export const useConfig = () => {
+export const useConfig = (): ConfigContextValue => {
 	const context = useContext(ConfigContext);
 	if (context === undefined) {
 		throw new Error('useConfig must be used within a ConfigProvider');

@@ -66,18 +66,26 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Live presence: users write their own doc; members read for dashboard count
+    match /presence/{userId} {
+      allow read: if isOversightMember(request.auth.uid);
+      allow create, update, delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+
     // Members: Self read/write, Admin read/write
+    // Self-create is required for /board-registration (new Auth UID is not yet an oversight member).
     match /members/{memberId} {
       allow read: if isOversightMember(request.auth.uid) || request.auth.uid == memberId;
-      allow create: if isOversightMember(request.auth.uid);
+      allow create: if isAuthenticated() && request.auth.uid == memberId;
       allow update: if isOversightMember(request.auth.uid) || request.auth.uid == memberId;
       allow delete: if isOversightMember(request.auth.uid); // Only admins can remove members
     }
 
     // Applicants: Admin read, Self read/write
+    // Self-create is required for /register after Auth account creation.
     match /applicants/{applicantId} {
       allow read: if isOversightMember(request.auth.uid) || request.auth.uid == applicantId;
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == applicantId;
       allow update: if isOversightMember(request.auth.uid) || request.auth.uid == applicantId;
       allow delete: if isOversightMember(request.auth.uid);
     }
@@ -135,6 +143,22 @@ service cloud.firestore {
     }
 
     // Mail Cache: System/Admin usage
+    match /emailTemplates/{document=**} {
+      allow read: if isOversightMember(request.auth.uid);
+      allow write: if isOversightMember(request.auth.uid);
+    }
+
+    // Video budget usage + remote status (members read; writes via Admin SDK / functions)
+    match /videoUsage/{document=**} {
+      allow read: if isOversightMember(request.auth.uid);
+      allow write: if false;
+    }
+
+    match /videoBudget/{document=**} {
+      allow read: if isOversightMember(request.auth.uid);
+      allow write: if false;
+    }
+
     match /mail_cache/{document=**} {
       allow read: if isAuthenticated();
       allow write: if isOversightMember(request.auth.uid);
@@ -145,6 +169,32 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isOversightMember(request.auth.uid);
       allow delete: if false;
+    }
+
+    // Awards: Admin manage; applicant can read own award docs
+    match /awards/{awardId} {
+      allow read: if isOversightMember(request.auth.uid)
+        || resource.data.applicantId == request.auth.uid
+        || resource.data.applicantID == request.auth.uid
+        || resource.data.completedBy == request.auth.uid;
+      allow create, update, delete: if isOversightMember(request.auth.uid);
+    }
+
+    // Legacy finances: Admin only
+    match /legacy_financials/{yearId} {
+      allow read, write: if isOversightMember(request.auth.uid);
+      allow delete: if isOversightMember(request.auth.uid);
+    }
+
+    // External recommendation / upload requests
+    match /requests/{requestId} {
+      allow read: if isOversightMember(request.auth.uid)
+        || resource.data.completedBy == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update: if isOversightMember(request.auth.uid)
+        || resource.data.completedBy == request.auth.uid
+        || canWrite(request.auth.uid, request.resource.data);
+      allow delete: if isOversightMember(request.auth.uid);
     }
 
     // User Roles: Protected

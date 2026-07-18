@@ -36,15 +36,16 @@ describe('InterviewStatusPanel', () => {
 
 	it('renders a loading spinner initially', () => {
 		getRealTimeMeetings.mockReturnValue(() => {}); // No-op unsubscribe
-		render(<StatusPanel />, { wrapper: MemoryRouter });
+		render(<MemoryRouter><StatusPanel /></MemoryRouter>);
 		expect(screen.getByRole('progressbar')).toBeInTheDocument();
 	});
 
 	it('renders interview data when available', async () => {
+		const now = Date.now();
 		const mockMeetings = [
-			{ id: 'in-progress-1', status: InterviewStatus.inProgress, displayName: 'Test User 1', startTime: toDate('2025-11-16T10:00:00') },
-			{ id: 'completed-1', status: InterviewStatus.completed, displayName: 'Test User 2', startTime: toDate('2025-11-16T09:00:00') },
-			{ id: 'confirmed-1', status: InterviewStatus.confirmed, displayName: 'Test User 3', startTime: toDate('2025-11-16T11:00:00') },
+			{ id: 'in-progress-1', status: InterviewStatus.inProgress, displayName: 'Test User 1', startTime: toDate(new Date(now - 30 * 60 * 1000).toISOString()) },
+			{ id: 'completed-1', status: InterviewStatus.completed, displayName: 'Test User 2', startTime: toDate(new Date(now - 60 * 60 * 1000).toISOString()) },
+			{ id: 'confirmed-1', status: InterviewStatus.confirmed, displayName: 'Test User 3', startTime: toDate(new Date(now + 60 * 60 * 1000).toISOString()) },
 		];
 
 		// Mock implementation of getRealTimeMeetings
@@ -53,7 +54,7 @@ describe('InterviewStatusPanel', () => {
 			return () => {}; // Return mock unsubscribe function
 		});
 
-		render(<StatusPanel />, { wrapper: MemoryRouter });
+		render(<MemoryRouter><StatusPanel /></MemoryRouter>);
 
 		await waitFor(() => {
 			// Summary
@@ -61,12 +62,12 @@ describe('InterviewStatusPanel', () => {
 			expect(screen.getByText('Completed: 1')).toBeInTheDocument();
 			
 			// In Progress Card
-			expect(screen.getByText('Interview In Progress')).toBeInTheDocument();
+			expect(screen.getByText('In Progress')).toBeInTheDocument();
 			expect(screen.getByText('Test User 1')).toBeInTheDocument();
 			expect(screen.getByRole('button', { name: 'Join Now' })).toBeInTheDocument();
 
-			// Next Up Card
-			expect(screen.getByText('Up Next')).toBeInTheDocument();
+			// On Deck Card (when an interview is live, upcoming shows as On Deck)
+			expect(screen.getByText('On Deck')).toBeInTheDocument();
 			expect(screen.getByText('Test User 3')).toBeInTheDocument();
 
 			// Deliberation Button
@@ -83,7 +84,7 @@ describe('InterviewStatusPanel', () => {
 			return () => {};
 		});
 
-		render(<StatusPanel />, { wrapper: MemoryRouter });
+		render(<MemoryRouter><StatusPanel /></MemoryRouter>);
 
 		const joinButton = await screen.findByRole('button', { name: 'Join Now' });
 		fireEvent.click(joinButton);

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * INTERVIEW ROOM (Active Stage)
  * ---------------------------------------------------------------------------
@@ -25,6 +24,7 @@ import Loader from '../../components/loader/Loader';
 import AdminDrawer from '../../components/interviews/AdminDrawer';
 import ApplicationViewer from '../../components/interviews/ApplicationViewer';
 import CallUI from '../../components/interviews/CallInterface';
+import VideoRoomUnavailable from '../../components/interviews/VideoRoomUnavailable';
 
 // Contexts
 import { useAuth } from '../../context/AuthContext';
@@ -32,10 +32,13 @@ import { useAlert } from '../../context/AlertContext';
 import { useMeeting } from '../../context/MeetingContext';
 import { useTitle } from '../../context/HelmetContext';
 import { useConfig } from '../../context/ConfigContext';
+import { useApplicantPresence } from '../../hooks/useApplicantPresence';
+import { useDailyJoin } from '../../hooks/useDailyJoin';
 
 // Backend & Config
 import { db, generateJoinToken } from '../../config/data/firebase';
 import { InterviewStatus, collections } from '../../config/data/collections';
+import { formatDailyJoinError, getInterviewReturnPath, getInterviewReturnLabel } from '../../utils/interviewUtils';
 
 // Layout Constants
 const adminDrawerWidth = 320;
@@ -48,8 +51,24 @@ const Errors = {
 	loadFail: 'Failed to load interview data.',
 };
 
+// Local shapes for Daily participants and app messages (context/hooks are untyped)
+interface DailyParticipantLike {
+	local?: boolean;
+	session_id: string;
+	user_id?: string;
+	user_name?: string;
+	owner?: boolean;
+	user_data?: { role?: string; picture_url?: string };
+}
+
+interface ParticipantDetailEntry {
+	role?: string;
+	pictureUrl?: string;
+	[key: string]: unknown;
+}
+
 // --- Helper: Exit Routing ---
-const getReturnDestination = (member, applicant) => {
+const getReturnDestination = (member: unknown, applicant: unknown) => {
 	if (member) return '/members/interviews/dashboard';
 	if (applicant) return '/apply';
 	return '/home';
@@ -98,14 +117,17 @@ export default function InterviewRoom() {
 
 	// Global State
 	const { callObject, videoDeviceId, audioDeviceId, setParticipantDetails } = useMeeting();
-	const { user, member } = useAuth();
+	const { user, member, applicant } = useAuth();
 	const { showAlert, handleError } = useAlert();
 
+	useApplicantPresence(interviewId, Boolean(applicant && interviewId));
+
 	// Local State
-	const [error, setError] = useState(null);
+	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
-	const [interviewStatus, setInterviewStatus] = useState(null);
-	const [applicationData, setApplicationData] = useState([]); // Documents to show in Right Drawer
+	const [hasJoined, setHasJoined] = useState(false);
+	const [interviewStatus, setInterviewStatus] = useState<string | null>(null);
+	const [applicationData, setApplicationData] = useState<string[]>([]); // Documents to show in Right Drawer
 
 	// UI State
 	const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
@@ -114,7 +136,7 @@ export default function InterviewRoom() {
 
 	// --- Helper 1: Fetch Applicant Documents ---
 	// Loads the application PDFs so admins can reference them during the call.
-	const fetchFullApplicantDetails = useCallback(async (applicant) => {
+	const fetchFullApplicantDetails = useCallback(async (applicant: { applications?: string[] } | null | undefined) => {
 		if (!applicant?.applications) return;
 
 		// Fetch all application documents linked to this applicant
@@ -124,7 +146,7 @@ export default function InterviewRoom() {
 
 	// --- Helper 2: Fetch Participant Profile Picture ---
 	const fetchAndSetMemberPicture = useCallback(
-		async (participant) => {
+		async (participant: DailyParticipantLike | null | undefined) => {
 			if (!participant?.user_id) return;
 
 			try {
@@ -137,8 +159,8 @@ export default function InterviewRoom() {
 						setParticipantDetails((prev) => ({
 							...prev,
 							[participant.session_id]: {
-								...prev[participant.session_id],
-								pictureUrl: pictureUrl,
+								...(prev[participant.session_id] as ParticipantDetailEntry | undefined),
+								pictureUrl,
 							},
 						}));
 					}
@@ -174,6 +196,9 @@ export default function InterviewRoom() {
 					// Logic Gate: Only load the video call if status is 'In Progress'
 					if (interviewData.status !== InterviewStatus.inProgress) {
 						setLoading(false);
+						setHasJoined(false);
+					} else {
+						setLoading(true);
 					}
 
 					// If user is an Admin, fetch the Applicant's details for the side drawer
@@ -204,86 +229,84 @@ export default function InterviewRoom() {
 	}, [interviewId, member, applicationData.length, fetchFullApplicantDetails, handleError]);
 
 	// --- Effect 2: Join Video Call ---
-	// Generates token and joins Daily.co room when status becomes 'In Progress'.
+	const fetchToken = useCallback(async () => {
+		const result = await generateJoinToken({ interviewId });
+		const { token, roomUrl } = (result.data || {}) as { token?: string; roomUrl?: string };
+		if (!token || !roomUrl) throw new Error('Invalid token or roomUrl received.');
+		return { token, roomUrl };
+	}, [interviewId]);
+
+	const handleJoined = useCallback(() => {
+		const localParticipant = callObject.participants().local;
+		fetchAndSetMemberPicture(localParticipant);
+		if (localParticipant?.owner) setIsOwner(true);
+		setHasJoined(true);
+		setLoading(false);
+	}, [callObject, fetchAndSetMemberPicture]);
+
+	const handleJoinError = useCallback((err: unknown) => {
+		console.error('Setup and join failed:', err);
+		setError(formatDailyJoinError(err, 'interview room'));
+		setLoading(false);
+	}, []);
+
+	useDailyJoin({
+		callObject,
+		enabled: Boolean(callObject && user && interviewId && interviewStatus === InterviewStatus.inProgress),
+		fetchToken,
+		videoDeviceId,
+		audioDeviceId,
+		onJoined: handleJoined,
+		onError: handleJoinError,
+	});
+
 	useEffect(() => {
-		if (!callObject || !user || !interviewId || interviewStatus !== InterviewStatus.inProgress) {
-			return;
-		}
+		setHasJoined(false);
+	}, [videoDeviceId, audioDeviceId]);
 
-		const setupAndJoin = async () => {
-			setLoading(true);
-			try {
-				// Request signed JWT from backend
-				const result = await generateJoinToken({ interviewId });
-				const { token, roomUrl } = result.data;
-
-				if (!token || !roomUrl) throw new Error('Invalid token or roomUrl received.');
-
-				callObject.on('joined-meeting', () => {
-					const localParticipant = callObject.participants().local;
-					fetchAndSetMemberPicture(localParticipant);
-
-					if (localParticipant?.owner) {
-						setIsOwner(true);
-					}
-					setLoading(false);
-				});
-
-				// Cleanup any stale state before joining
-				if (callObject.meetingState() !== 'left-meeting') {
-					await callObject.leave();
-				}
-
-				await callObject.join({
-					url: roomUrl,
-					token: token,
-					videoSource: videoDeviceId || true,
-					audioSource: audioDeviceId || true,
-				});
-			} catch (err) {
-				console.error('Setup and join failed:', err);
-				setError(err.message);
-				setLoading(false);
-			}
+	useEffect(() => {
+		if (!callObject || interviewStatus !== InterviewStatus.inProgress) return;
+		const handleLeftMeeting = () => setHasJoined(false);
+		callObject.on('left-meeting', handleLeftMeeting);
+		return () => {
+			callObject.off('left-meeting', handleLeftMeeting);
 		};
-
-		setupAndJoin();
-	}, [callObject, user, interviewId, interviewStatus, videoDeviceId, audioDeviceId, setParticipantDetails, fetchAndSetMemberPicture]);
+	}, [callObject, interviewStatus]);
 
 	// --- Effect 3: Participant Event Listeners ---
 	useEffect(() => {
 		if (!callObject) return;
 
-		const handleParticipantJoined = (event) => {
+		const handleParticipantJoined = (event: { participant: DailyParticipantLike }) => {
 			if (event.participant.local) return;
 			fetchAndSetMemberPicture(event.participant);
 		};
 
-		const handleAppMessage = (event) => {
+		const handleAppMessage = (event: { data: { type?: string; payload?: ParticipantDetailEntry }; fromId: string }) => {
 			const { data, fromId } = event;
 			if (data.type === 'USER_DETAILS') {
 				setParticipantDetails((prev) => ({
 					...prev,
-					[fromId]: data.payload,
+					[fromId]: data.payload ?? {},
 				}));
 			}
 		};
 
-		const handleParticipantUpdated = (event) => {
+		const handleParticipantUpdated = (event: { participant: DailyParticipantLike }) => {
 			const participant = event.participant;
 			if (participant.user_name) {
 				setParticipantDetails((prev) => ({
 					...prev,
 					[participant.session_id]: {
-						...prev[participant.session_id],
-						role: participant.user_data?.role || prev[participant.session_id]?.role,
-						pictureUrl: participant.user_data?.picture_url || prev[participant.session_id]?.pictureUrl,
+						...(prev[participant.session_id] as ParticipantDetailEntry | undefined),
+						role: participant.user_data?.role || (prev[participant.session_id] as ParticipantDetailEntry | undefined)?.role,
+						pictureUrl: participant.user_data?.picture_url || (prev[participant.session_id] as ParticipantDetailEntry | undefined)?.pictureUrl,
 					},
 				}));
 			}
 		};
 
-		const handleParticipantLeft = (event) => {
+		const handleParticipantLeft = (event: { participant: DailyParticipantLike }) => {
 			setParticipantDetails((prev) => {
 				const newDetails = { ...prev };
 				delete newDetails[event.participant.session_id];
@@ -306,7 +329,7 @@ export default function InterviewRoom() {
 
 	// --- Effect 4: End of Interview Handler ---
 	useEffect(() => {
-		let navigationTimer;
+		let navigationTimer: ReturnType<typeof setTimeout> | undefined;
 
 		const handleInterviewEnd = async () => {
 			if (callObject && callObject.meetingState() !== 'left-meeting') {
@@ -331,8 +354,8 @@ export default function InterviewRoom() {
 			}
 		};
 
-		const terminalStates = [InterviewStatus.completed, InterviewStatus.cancelled, InterviewStatus.missed];
-		if (terminalStates.includes(interviewStatus)) {
+		const terminalStates: string[] = [InterviewStatus.completed, InterviewStatus.cancelled, InterviewStatus.missed];
+		if (interviewStatus && terminalStates.includes(interviewStatus)) {
 			handleInterviewEnd();
 		}
 
@@ -343,30 +366,31 @@ export default function InterviewRoom() {
 
 	// --- Render States ---
 
-	if (loading) {
-		return <Loader label='Joining interview room...' />;
-	}
-
-	if ([InterviewStatus.completed, InterviewStatus.cancelled, InterviewStatus.missed].includes(interviewStatus)) {
-		return <InterviewEnded />;
-	}
-
 	if (error) {
 		return (
-			<Box width='100%' height='100vh' boxSizing='border-box' display='flex' flexDirection='column' justifyContent='center' alignItems='center' p={3} textAlign='center'>
-				<Typography variant='h6' color='error'>
-					Could not join meeting
-				</Typography>
-				<Typography color='text.active'>{error}</Typography>
-			</Box>
+			<VideoRoomUnavailable
+				title='Interview Room Unavailable'
+				message={error}
+				onLeave={() => navigate(getInterviewReturnPath(member, applicant))}
+				leaveLabel={getInterviewReturnLabel(member, applicant)}
+			/>
 		);
+	}
+
+	if (loading || (interviewStatus === InterviewStatus.inProgress && !hasJoined)) {
+		return <Loader />;
+	}
+
+	const endedStates: string[] = [InterviewStatus.completed, InterviewStatus.cancelled, InterviewStatus.missed];
+	if (interviewStatus && endedStates.includes(interviewStatus)) {
+		return <InterviewEnded />;
 	}
 
 	return (
 		<DailyProvider callObject={callObject}>
 			<Box sx={{ display: 'flex' }}>
 				{/* LEFT: Admin Controls */}
-				<AdminDrawer open={isAdminDrawerOpen} onClose={() => setIsAdminDrawerOpen(false)} interviewId={interviewId} isAdmin={isOwner} onViewApplication={() => {}} onStartNextInterview={() => {}} isDeliberation={false} />
+				<AdminDrawer open={isAdminDrawerOpen} onClose={() => setIsAdminDrawerOpen(false)} interviewId={interviewId} isAdmin={isOwner} onStartNextInterview={() => {}} isDeliberation={false} />
 
 				{/* CENTER: Video Call */}
 				<Box

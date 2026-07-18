@@ -2,8 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import AdminDrawer from './AdminDrawer';
 import { useParticipantIds, useDaily } from '@daily-co/daily-react';
-import { httpsCallable } from 'firebase/functions';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { onSnapshot } from 'firebase/firestore';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useAuth } from '../../context/AuthContext';
@@ -38,11 +37,9 @@ describe('AdminDrawer Component', () => {
 	const mockOnClose = jest.fn();
 	const mockOnRelevantAppsChange = jest.fn();
 	const mockOnStartNextInterview = jest.fn();
-	const mockOnJoinInterview = jest.fn();
 	const mockShowAlert = jest.fn();
 	const mockHandleError = jest.fn();
 	const mockSendAppMessage = jest.fn();
-	const mockApiCall = jest.fn();
 
 	const mockMember = { permissions: { site: true } };
 	const mockConfig = { CONFIG_ID: 'config123' };

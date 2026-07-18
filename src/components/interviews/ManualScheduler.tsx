@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Manual Scheduler Component
  * Allows administrators to manually book a single interview slot.
@@ -6,7 +5,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import dayjs from 'dayjs';
 import { Button, DialogContent, DialogActions, DialogTitle, Autocomplete, TextField, FormControl, InputLabel, Select, MenuItem, CircularProgress } from '@mui/material';
 
@@ -16,16 +14,33 @@ import { useAlert } from '../../context/AlertContext';
 // Backend
 import { getAllApplicantsSimple, getApplicationsForApplicant, scheduleSingleInterview } from '../../config/data/firebase';
 
-const ManualScheduler = ({ onSuccess, onClose }) => {
+interface ApplicantOption {
+	id: string;
+	name: string;
+}
+
+interface ApplicationOption {
+	id: string;
+	type?: string;
+	window?: string;
+	[key: string]: unknown;
+}
+
+interface ManualSchedulerProps {
+	onSuccess: () => void;
+	onClose: () => void;
+}
+
+const ManualScheduler = ({ onSuccess, onClose }: ManualSchedulerProps) => {
 	const { showAlert, handleError } = useAlert();
 	const [loading, setLoading] = useState(false);
 
 	// Data states
-	const [allApplicants, setAllApplicants] = useState([]);
-	const [applicantApps, setApplicantApps] = useState([]);
+	const [allApplicants, setAllApplicants] = useState<ApplicantOption[]>([]);
+	const [applicantApps, setApplicantApps] = useState<ApplicationOption[]>([]);
 
 	// Form states
-	const [selectedApplicant, setSelectedApplicant] = useState(null);
+	const [selectedApplicant, setSelectedApplicant] = useState<ApplicantOption | null>(null);
 	const [selectedAppId, setSelectedAppId] = useState('');
 	const [startTime, setStartTime] = useState('');
 
@@ -82,7 +97,7 @@ const ManualScheduler = ({ onSuccess, onClose }) => {
 				endTime: interviewEnd.toISOString(),
 			});
 
-			showAlert({ message: result.data.message, type: 'success' });
+			showAlert({ message: (result.data as { message: string }).message, type: 'success' });
 			onSuccess();
 		} catch (error) {
 			handleError(error, 'Manual schedule submission failed.');
@@ -108,7 +123,7 @@ const ManualScheduler = ({ onSuccess, onClose }) => {
 					</Select>
 				</FormControl>
 
-				<TextField label='Interview Start Time' type='datetime-local' fullWidth margin='normal' value={startTime} onChange={(e) => setStartTime(e.target.value)} InputLabelProps={{ shrink: true }} disabled={!selectedAppId} />
+				<TextField label='Interview Start Time' type='datetime-local' fullWidth margin='normal' value={startTime} onChange={(e) => setStartTime(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} disabled={!selectedAppId} />
 			</DialogContent>
 
 			<DialogActions sx={{ p: '0 24px 24px' }}>
@@ -121,11 +136,6 @@ const ManualScheduler = ({ onSuccess, onClose }) => {
 			</DialogActions>
 		</>
 	);
-};
-
-ManualScheduler.propTypes = {
-	onSuccess: PropTypes.func.isRequired,
-	onClose: PropTypes.func.isRequired,
 };
 
 export default ManualScheduler;

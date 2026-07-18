@@ -3,15 +3,18 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Redirect from './Redirect';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useTitle } from '../../context/HelmetContext';
 import { useNavigate } from 'react-router-dom';
 import { generatePath } from '../../config/navigation/routeUtils';
 import { paths } from '../../config/navigation/paths';
 import { UserType } from '../../config/data/collections';
 
-// 1. MOCK DEPENDENCIES
 vi.mock('react-router-dom', () => ({
 	useNavigate: jest.fn(),
+	Link: ({ to, children, ...rest }) => (
+		<a href={to} {...rest}>
+			{children}
+		</a>
+	),
 }));
 
 vi.mock('../../context/AuthContext', () => ({
@@ -26,8 +29,6 @@ vi.mock('../../context/HelmetContext', () => ({
 	useTitle: jest.fn(),
 }));
 
-// 2. MOCK CONFIGURATION FILES
-// We mock these to ensure our tests don't break if the actual path strings change
 vi.mock('../../config/data/collections', () => ({
 	UserType: {
 		applicant: 'applicant',
@@ -41,31 +42,42 @@ vi.mock('../../config/navigation/paths', () => ({
 		apply: '/apply-path',
 		memberDash: '/dashboard-path',
 		logout: '/logout-path',
+		home: '/home-path',
 	},
 }));
 
 vi.mock('../../config/navigation/routeUtils', () => ({
-	generatePath: jest.fn((path) => path), // Simple pass-through mock
+	generatePath: jest.fn((path) => path),
 }));
 
-// 3. MOCK CHILD COMPONENTS
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
-vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div data-testid='copyright'>Copyright</div> }));
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	default: ({ children, title, subtitle }) => (
+		<div data-testid='auth-form-card'>
+			<h1>{title}</h1>
+			{subtitle && <p>{subtitle}</p>}
+			{children}
+		</div>
+	),
+}));
+vi.mock('../../components/home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+}));
 
 describe('Redirect Component', () => {
 	const mockNavigate = jest.fn();
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-
-		// Setup default mock implementations
 		useNavigate.mockReturnValue(mockNavigate);
-
 		useTheme.mockReturnValue({
 			boxShadow: 'mock-shadow',
+			primaryColor: '#1976d2',
 		});
-
-		// Default generatePath just returns the path string passed to it
 		generatePath.mockImplementation((path) => path);
 	});
 
@@ -87,8 +99,6 @@ describe('Redirect Component', () => {
 		});
 
 		render(<Redirect />);
-
-		// Should call navigate with the apply path and replace: true
 		expect(mockNavigate).toHaveBeenCalledWith(paths.apply, { replace: true });
 	});
 
@@ -99,7 +109,6 @@ describe('Redirect Component', () => {
 		});
 
 		render(<Redirect />);
-
 		expect(mockNavigate).toHaveBeenCalledWith(paths.memberDash, { replace: true });
 	});
 
@@ -107,17 +116,14 @@ describe('Redirect Component', () => {
 		useAuth.mockReturnValue({
 			loading: false,
 			role: UserType.both,
+			logout: jest.fn(),
 		});
 
 		render(<Redirect />);
-
-		// Should NOT navigate immediately
 		expect(mockNavigate).not.toHaveBeenCalled();
-
-		// Should render the selection interface
 		expect(screen.getByText('Which account?')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /Applicant/i })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /Member/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /^Applicant$/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /^Member$/i })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument();
 	});
 
@@ -125,14 +131,12 @@ describe('Redirect Component', () => {
 		useAuth.mockReturnValue({
 			loading: false,
 			role: UserType.both,
+			logout: jest.fn(),
 		});
 
 		render(<Redirect />);
+		fireEvent.click(screen.getByRole('button', { name: /^Applicant$/i }));
 
-		// Click Applicant
-		fireEvent.click(screen.getByRole('button', { name: /Applicant/i }));
-
-		// State update triggers the useEffect, which triggers navigate
 		await waitFor(() => {
 			expect(mockNavigate).toHaveBeenCalledWith(paths.apply, { replace: true });
 		});
@@ -142,12 +146,11 @@ describe('Redirect Component', () => {
 		useAuth.mockReturnValue({
 			loading: false,
 			role: UserType.both,
+			logout: jest.fn(),
 		});
 
 		render(<Redirect />);
-
-		// Click Member
-		fireEvent.click(screen.getByRole('button', { name: /Member/i }));
+		fireEvent.click(screen.getByRole('button', { name: /^Member$/i }));
 
 		await waitFor(() => {
 			expect(mockNavigate).toHaveBeenCalledWith(paths.memberDash, { replace: true });
@@ -155,23 +158,34 @@ describe('Redirect Component', () => {
 	});
 
 	test('navigates to logout when Logout button is clicked (Role: both)', () => {
+		const logout = jest.fn();
 		useAuth.mockReturnValue({
 			loading: false,
 			role: UserType.both,
+			logout,
 		});
 
 		render(<Redirect />);
-
-		// Click Logout
 		fireEvent.click(screen.getByRole('button', { name: /Logout/i }));
-
-		// Logout navigation does not typically use { replace: true } in this component
+		expect(logout).toHaveBeenCalled();
 		expect(mockNavigate).toHaveBeenCalledWith(paths.logout);
 	});
 
-	test('updates document title on mount', () => {
-		useAuth.mockReturnValue({ loading: true, role: null });
+	test('shows recoverable UI when authenticated with no profile role', () => {
+		const logout = jest.fn();
+		useAuth.mockReturnValue({
+			loading: false,
+			user: { uid: 'u1' },
+			role: null,
+			profilesReady: true,
+			logout,
+		});
+
 		render(<Redirect />);
-		expect(useTitle).toHaveBeenCalledWith({ title: 'Redirecting...', appear: false });
+		expect(screen.getByText(/No profile found/i)).toBeInTheDocument();
+		expect(screen.getByTestId('public-page-layout')).toBeInTheDocument();
+		expect(mockNavigate).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole('button', { name: /Logout/i }));
+		expect(logout).toHaveBeenCalled();
 	});
 });

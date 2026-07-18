@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EMAIL TEMPLATE CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -22,6 +21,8 @@ export const emailTemplates = {
 	// 1. User Onboarding
 	// -------------------------
 	welcome: {
+		label: 'Welcome Email',
+		group: 'Canned Notifications',
 		subject: 'Welcome to the {{brand.organizationShortName}}!',
 		placeholders: ['name'],
 		html: `
@@ -32,10 +33,10 @@ export const emailTemplates = {
                 <li><strong>Personalized Dashboard:</strong> Manage your applications, track their progress, and review key deadlines all in one place.</li>
                 <li><strong>Application Submissions:</strong> Apply for financial assistance up to four times throughout your undergraduate studies.</li>
                 <li><strong>Supplemental Portal:</strong> Easily upload letters of recommendation directly from your referees to your account.</li>
-                <li><strong>Interview Portal:</strong> If selected for an interview, no need for additional tools—everything will take place right in your account!</li>
+									<li><strong>Interview Portal:</strong> If selected for an interview, no need for additional tools. Everything will take place right in your account!</li>
             </ul>
             <p>Feel free to log in at any time. If you have any questions, our team is here to assist you. You can reach us at <a href="mailto:{{brand.contactEmail}}">{{brand.contactEmail}}</a>.</p>
-            <p>Once again, welcome—we look forward to receiving your applications and supporting your future success!</p>
+            <p>Once again, welcome. We look forward to receiving your applications and supporting your future success!</p>
         `,
 	},
 
@@ -43,6 +44,8 @@ export const emailTemplates = {
 	// 2. Application Window Alerts
 	// -------------------------
 	windowOpen: {
+		label: 'Window Open',
+		group: 'Deadline',
 		subject: 'The Application Window is Now Open!',
 		placeholders: ['name'],
 		html: `
@@ -58,6 +61,8 @@ export const emailTemplates = {
         `,
 	},
 	windowClosing: {
+		label: 'Window Closing',
+		group: 'Deadline',
 		subject: 'The Application Window is Closing Soon!',
 		placeholders: ['name'],
 		html: `
@@ -73,6 +78,8 @@ export const emailTemplates = {
         `,
 	},
 	windowClosed: {
+		label: 'Window Closed',
+		group: 'Deadline',
 		subject: 'The Application Window Has Closed',
 		placeholders: ['name'],
 		html: `
@@ -88,6 +95,8 @@ export const emailTemplates = {
 	// 3. Application Lifecycle Updates
 	// -------------------------
 	appSubmitted: {
+		label: 'App Submitted',
+		group: 'Application Status',
 		subject: 'Your Application Has Been Submitted!',
 		placeholders: ['name'],
 		html: `
@@ -99,6 +108,8 @@ export const emailTemplates = {
         `,
 	},
 	appCompleted: {
+		label: 'App Completed',
+		group: 'Application Status',
 		subject: 'Your Application Is Complete!',
 		placeholders: ['name'],
 		html: `
@@ -110,6 +121,8 @@ export const emailTemplates = {
         `,
 	},
 	appIncomplete: {
+		label: 'App Incomplete',
+		group: 'Application Status',
 		subject: 'Your Application Is Incomplete',
 		placeholders: ['name'],
 		html: `
@@ -121,6 +134,8 @@ export const emailTemplates = {
         `,
 	},
 	incompleteReminder: {
+		label: 'App Incomplete Reminder',
+		group: 'Reminders',
 		subject: 'Reminder: Your Application Is Incomplete',
 		placeholders: ['name'],
 		html: `
@@ -131,11 +146,26 @@ export const emailTemplates = {
             <p>If you have any questions or need help, don't hesitate to reach out to us at <a href="mailto:{{brand.contactEmail}}">{{brand.contactEmail}}</a>.</p>
         `,
 	},
+	reminderToApply: {
+		label: 'Reminder to Apply',
+		group: 'Reminders',
+		subject: 'Reminder: Application Window Is Open',
+		placeholders: ['name'],
+		html: `
+            <h3>Reminder: Application Window Is Open</h3>
+            <p>Dear {{name}},</p>
+            <p>This is a friendly reminder that the application window for the {{brand.organizationShortName}} is currently open. If you have not yet submitted an application for this cycle, now is a great time to get started.</p>
+            <p>Log in to your dashboard to begin or continue your application before the deadline.</p>
+            <p>If you have any questions, contact us at <a href="mailto:{{brand.contactEmail}}">{{brand.contactEmail}}</a>.</p>
+        `,
+	},
 
 	// -------------------------
 	// 4. Decision & Status
 	// -------------------------
 	appAdvancedToInterview: {
+		label: 'App Advanced To Interview',
+		group: 'Application Status',
 		subject: 'Application Advanced for Interviews',
 		placeholders: ['name'],
 		html: `
@@ -147,6 +177,8 @@ export const emailTemplates = {
         `,
 	},
 	appApproved: {
+		label: 'App Approved',
+		group: 'Application Status',
 		subject: 'Your Application Status',
 		placeholders: ['name', 'award.type', 'award.amount', 'award.followUp'],
 		html: `
@@ -159,10 +191,12 @@ export const emailTemplates = {
             <p>We recognize the hard work and dedication you've put into this process, and we're excited to support your educational journey.</p>
             <p>Please log in to your account to review the details of your funding award.</p>
             <p>If you have any questions, don't hesitate to reach out to us at <a href="mailto:{{brand.contactEmail}}">{{brand.contactEmail}}</a>.</p>
-            <p>Once again, congratulations—we're proud to be part of your story!</p>
+            <p>Once again, congratulations. We're proud to be part of your story!</p>
         `,
 	},
 	appDenied: {
+		label: 'App Denied',
+		group: 'Application Status',
 		subject: 'Your Application Status',
 		placeholders: ['name', 'reason'],
 		html: `
@@ -179,6 +213,8 @@ export const emailTemplates = {
 	// 5. Interviews
 	// -------------------------
 	interviewInvitation: {
+		label: 'Interview Invitation',
+		group: 'Reminders',
 		subject: 'Interview Invite - {{brand.organizationShortName}}',
 		placeholders: ['name', 'interviewDate', 'interviewTime', 'interviewId'],
 		html: `
@@ -186,29 +222,29 @@ export const emailTemplates = {
             <p>Dear {{name}},</p>
             <p>The committee was very impressed with your application, and after careful consideration, we are delighted to invite you to the final step in our selection process: a virtual interview.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <h4 style="color: #006B3F;">Interview Details</h4>
+            <h4 style="color: #0288D1;">Interview Details</h4>
             <p>Your interview is scheduled for:</p>
             <p><strong>Date:</strong> {{interviewDate}}</p>
             <p><strong>Time:</strong> {{interviewTime}}</p>
             <p><strong>Action Required:</strong> Please reply to this email as soon as possible to confirm your attendance. If you have an unavoidable conflict, please let us know immediately so we can try to explore alternative options. An interview is required to be awarded any funding so please try to make your scheduled interview work. Communication is key.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <h4 style="color: #006B3F;">How to Prepare for Success</h4>
+            <h4 style="color: #0288D1;">How to Prepare for Success</h4>
             <p>The goal of this interview is for us to get to know you beyond your application. To help you prepare, we suggest you be ready to discuss:</p>
             <ul>
                 <li>Your goals and aspirations.</li>
                 <li>Your experiences and positions.</li>
-                <li>Your understanding of the background and values our fund seeks to promote.</li>
+                <li>Your understanding of the program goals and review process.</li>
             </ul>
             <p>We recommend finding a quiet, well-lit space for the call and testing your camera and microphone beforehand.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <h4 style="color: #006B3F;">What to Expect</h4>
+            <h4 style="color: #0288D1;">What to Expect</h4>
             <ul>
                 <li>The interview will be a <strong>15-minute conversation</strong> with members of our review committee.</li>
                 <li>It will take place on our secure video portal; no downloads or other software will be necessary.</li>
                 <li>Please click the button below to enter your private virtual waiting room <strong>5 minutes before</strong> your scheduled time. We will admit you to the interview once we are ready.</li>
             </ul>
             <p style="text-align: center; margin: 25px 0;">
-                <a href="{{brand.url}}/interviews/waiting-room/{{interviewId}}" style="background-color: #006B3F; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Join Interview Waiting Room</a>
+                <a href="{{brand.url}}/interviews/waiting-room/{{interviewId}}" style="background-color: #0288D1; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Join Interview Waiting Room</a>
             </p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p>We sincerely look forward to speaking with you and learning more about your story.</p>
@@ -219,6 +255,8 @@ export const emailTemplates = {
 	// 6. Admin Alerts
 	// -------------------------
 	memberActivitySummary: {
+		label: 'Activity Summary',
+		group: 'Canned Notifications',
 		subject: '{{brand.internalName}} Activity Summary',
 		placeholders: ['newCount', 'submittedCount', 'completedCount', 'incompleteCount', 'eligibleCount', 'invitedCount', 'awardedCount', 'deniedCount', 'deletedCount', 'totalActive'],
 		html: `
@@ -241,6 +279,8 @@ export const emailTemplates = {
         `,
 	},
 	incompleteCountAlert: {
+		label: 'Incomplete App Summary Alert',
+		group: 'Reminders',
 		subject: 'ALERT: High Number of Incomplete Applications',
 		placeholders: ['incompleteCount', 'threshold'],
 		html: `

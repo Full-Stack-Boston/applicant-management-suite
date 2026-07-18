@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * DIALOG & MODAL CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -52,9 +51,9 @@ export const dialogConfig = {
 				type: 'select',
 				label: 'App Status',
 				name: 'status',
-				options: Object.keys(ApplicationStatus).map((key) => ({
-					value: ApplicationStatus[key],
-					label: ApplicationStatus[key],
+				options: Object.values(ApplicationStatus).map((status) => ({
+					value: status,
+					label: status,
 				})),
 				defaultValue: '',
 			},
@@ -104,7 +103,7 @@ export const dialogConfig = {
 			{ type: 'switch', label: 'SMS Notifications', name: 'sms' },
 			{ type: 'text', label: 'Display Name', name: 'callMe' },
 			// Only show forwarding option for Admins (Members), not Applicants
-			{ type: 'switch', label: 'Forward Emails', name: 'forwardingEnabled', condition: (data) => data.userType !== UserType.applicant },
+			{ type: 'switch', label: 'Forward Emails', name: 'forwardingEnabled', condition: (data: Record<string, unknown>) => data.userType !== UserType.applicant },
 		],
 		actionLabel: 'Save Settings',
 	},
@@ -193,6 +192,18 @@ export const dialogConfig = {
 	templatedMessage: {
 		title: 'Complete Message Template',
 		actionLabel: 'Send Templated Message',
+	},
+	emailLogs: {
+		title: 'Email Delivery Logs',
+		// Body rendered by EmailLogsDialog (custom component)
+	},
+	templateManager: {
+		title: 'Manage Email Templates',
+		// Body rendered by TemplateManagerDialog (custom component)
+	},
+	mergeApplicantAccountsDialog: {
+		title: 'Merge Applicant Accounts',
+		// Body rendered by MergeApplicantAccountsDialog (custom component)
 	},
 
 	// --- 6. System & Maintenance (Destructive) ---

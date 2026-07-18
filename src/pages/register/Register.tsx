@@ -1,120 +1,98 @@
-// @ts-nocheck
-/**
- * APPLICANT REGISTRATION PAGE
- * ---------------------------------------------------------------------------
- * This is the public sign-up page for students/applicants.
- *
- * * WORKFLOW:
- * 1. User Input: Gathers basic identity info (Name, Email, Password).
- * 2. Firebase Auth: Creates the secure credential.
- * 3. Profile Creation: Creates a document in the 'applicants' collection.
- * 4. Welcome Automation: Triggers the 'welcome' notification template.
- *
- * * DIFFERENCE FROM ONBOARD.JSX:
- * - Onboard.jsx -> Creates 'Member' (Staff) profiles with permissions.
- * - Register.jsx -> Creates 'Applicant' profiles with no administrative access.
- */
-
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { v4 as uuid } from 'uuid';
-
-// UI Components
-import { Avatar, Button, CssBaseline, TextField, Typography, Box } from '@mui/material';
-import { Camera } from '@mui/icons-material';
-import Copyright from '../../components/footer/CopyrightFooter';
-import Loader from '../../components/loader/Loader';
-import { VisuallyHiddenInput } from '../../components/visuallyHiddenInput/VisuallyHiddenInput';
-
-// Contexts
-import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
-import { useTitle } from '../../context/HelmetContext';
-import { useAlert } from '../../context/AlertContext';
-
-// Backend & Config
-import { registerUser, saveApplicantData, saveFile, getDownloadLinkForFile } from '../../config/data/firebase';
-import { generatePath } from '../../config/navigation/routeUtils';
-import { ContactTemplate, pushNotice } from '../../config/content/push';
-import { UploadType } from '../../config/data/collections';
-import { applicantRegistrationContent as registerConfig } from '../../config/content/content';
-
+import { Button, TextField, Box, Stack, Avatar, Grid } from '@mui/material';
+import { registerUser, saveApplicantData, saveFile, getDownloadLinkForFile, findApplicantAccountsByEmail } from '../../config/data/firebase';
 import { serverTimestamp } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { useState } from 'react';
+import { v4 as uuid } from 'uuid';
+import { useTheme } from '../../context/ThemeContext';
+import Loader from '../../components/loader/Loader';
+import { useTitle } from '../../context/HelmetContext';
+import { generatePath } from '../../config/navigation/routeUtils';
+import { paths } from '../../config/navigation/paths';
+import { pushNotice } from '../../config/content/push';
+import { useAlert } from '../../context/AlertContext';
+import { useConfig } from '../../context/ConfigContext';
+import { UploadType } from '../../config/data/collections';
+import { Camera } from '@mui/icons-material';
+import { VisuallyHiddenInput } from '../../components/visuallyHiddenInput/VisuallyHiddenInput';
+import { applicantRegistrationContent as registerConfig, homePageContent } from '../../config/content';
+import PublicPageLayout from '../../components/home/PublicPageLayout';
+import AuthFormCard from '../../components/auth/AuthFormCard';
+import { authFieldGridSize } from '../../components/auth/authFieldLayout';
+import { homeAuthActionRowSx, homeAuthProfileUploadRowSx, homeAuthSecondaryButtonSx, homeAuthSubmitButtonSx } from '../../components/home/homePageStyles';
+
+interface RegisterField {
+	component: string;
+	name: string;
+	[key: string]: unknown;
+}
+
+interface RegisterButton {
+	id: string;
+	type?: string;
+	variant?: string;
+	label: string;
+	navigationPath?: string;
+}
+
+interface RegisterLink {
+	id: string;
+	label: string;
+	navigationPath: string;
+}
+
+interface RegisterConfig {
+	fields: RegisterField[];
+	buttons: RegisterButton[];
+	links: RegisterLink[];
+	icon: React.ReactNode;
+	title: React.ReactNode;
+}
 
 export default function Register() {
-	// --- Hooks & State ---
 	const navigate = useNavigate();
 	const { loading } = useAuth();
-	const { boxShadow } = useTheme();
+	const config = useConfig();
+	const { primaryColor } = useTheme();
+	const [picture, setPicture] = useState<Record<string, unknown>>({});
+	const [uploading, setUploading] = useState<boolean>(false);
+	const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+	useTitle({ title: 'Sign Up', appear: true });
 	const { showAlert, handleError } = useAlert();
 
-	const [picture, setPicture] = useState({});
-	const [uploading, setUploading] = useState(false);
-	const [isSubmitting, setIsSubmitting] = useState(false);
+	const typedConfig = registerConfig as unknown as RegisterConfig;
+	const registerLinks = [
+		...typedConfig.links,
+		...(config.MEMBER_ONBOARDING_PAGE_ENABLED
+			? [
+					{
+						id: 'boardRegister',
+						label: homePageContent.demoBoardAccess.registerLinkLabel,
+						navigationPath: homePageContent.demoBoardAccess.path || paths.registerMember,
+					},
+				]
+			: []),
+	];
 
-	useTitle({ title: 'Sign Up', appear: true });
-
-	// Initialize form state dynamically from config
-	const initialFormState = registerConfig.fields.reduce((acc, field) => {
+	const initialFormState = typedConfig.fields.reduce<Record<string, string>>((acc, field) => {
 		if (field.component !== 'ProfilePictureUpload') {
 			acc[field.name] = '';
 		}
 		return acc;
 	}, {});
-	const [formData, setFormData] = useState(initialFormState);
+	const [formData, setFormData] = useState<Record<string, string>>(initialFormState);
 
-	// --- Handlers ---
-
-	const handleInputChange = (event) => {
+	const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, value } = event.target;
 		setFormData((prev) => ({ ...prev, [name]: value }));
 	};
 
-	const handleUpload = async (event) => {
-		event.preventDefault();
-		const name = event.target.name;
-		const file = event.target.files[0];
-
-		// 1. Validation
-		if (!file?.type.match('image/.*')) {
-			showAlert({ message: 'Please select a valid image file.', type: 'error' });
-			return;
-		}
-
-		const maxSizeInBytes = 25 * 1024 * 1024; // 25MB
-		if (file.size > maxSizeInBytes) {
-			showAlert({ message: 'File size exceeds the 25MB limit.', type: 'error' });
-			return;
-		}
-
-		setUploading(true);
-		try {
-			// 2. Upload to Firebase Storage
-			const uploadID = uuid();
-			const savedFileRef = await saveFile(UploadType.memberAvatar, uploadID, name, file);
-
-			// 3. Get Public URL
-			const downloadLink = await getDownloadLinkForFile(savedFileRef);
-
-			if (downloadLink) {
-				setPicture({ displayName: file.name, home: downloadLink, refLoc: savedFileRef });
-				showAlert({ message: 'Profile picture uploaded!', type: 'success' });
-			} else {
-				throw new Error('Failed to get the download link for the uploaded file.');
-			}
-		} catch (error) {
-			showAlert({ message: error.message, type: 'error' });
-		} finally {
-			setUploading(false);
-		}
-	};
-
-	const handleSubmit = async (event) => {
+	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		event.stopPropagation();
 		setIsSubmitting(true);
 
-		// 1. Validation
 		if (formData.password !== formData.confirmPassword) {
 			showAlert('register', 'notmatching');
 			setIsSubmitting(false);
@@ -127,9 +105,31 @@ export default function Register() {
 		}
 
 		try {
-			// 2. Create Authentication Credential
+			const existingApplicants = await findApplicantAccountsByEmail(formData.email, undefined);
+			if (existingApplicants.length > 0) {
+				showAlert({
+					message: 'An account with this email already exists. Sign in instead, or contact an administrator if you need help.',
+					type: 'error',
+				});
+				setIsSubmitting(false);
+				return;
+			}
+
 			const result = await registerUser(formData.email, formData.password);
 			const user = result.user;
+
+			const applicantData = {
+				id: user.uid,
+				firstName: formData.firstName,
+				lastName: formData.lastName,
+				name: `${formData.firstName} ${formData.lastName}`,
+				callMe: formData.callMe,
+				email: formData.email,
+				auth: user.uid,
+				picture,
+				notifications: { email: true, sms: false },
+				accountCreated: serverTimestamp(),
+			};
 
 			if (!user) {
 				showAlert('register', 'error');
@@ -137,21 +137,6 @@ export default function Register() {
 				return;
 			}
 
-			// 3. Prepare Profile Data
-			const applicantData = {
-				id: user.uid,
-				auth: user.uid,
-				firstName: formData.firstName,
-				lastName: formData.lastName,
-				name: `${formData.firstName} ${formData.lastName}`, // Full Searchable Name
-				callMe: formData.callMe, // Preferred Nickname
-				email: formData.email,
-				picture,
-				notifications: { email: true, sms: false }, // Default notification settings
-				accountCreated: serverTimestamp(),
-			};
-
-			// 4. Save to Firestore
 			const isApplicantSaved = await saveApplicantData(user.uid, applicantData);
 			if (!isApplicantSaved) {
 				showAlert('register', 'error');
@@ -159,15 +144,48 @@ export default function Register() {
 				return;
 			}
 
-			// 5. Send Welcome Notification (Async)
-			await pushNotice(ContactTemplate.welcome, applicantData, {});
+			await pushNotice('welcome', applicantData, {});
 
 			showAlert('register', 'success');
-			// AuthContext will detect the login and Redirect.jsx will handle navigation
+			navigate(generatePath(paths.redirect), { replace: true });
 		} catch (error) {
 			handleError(error, 'register-handleSubmit', true);
 		} finally {
 			setIsSubmitting(false);
+		}
+	};
+
+	const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+		event.preventDefault();
+		const name = event.target.name;
+		const file = event.target.files?.[0];
+
+		if (!file?.type.match('image/.*')) {
+			showAlert({ message: 'Please select a valid image file.', type: 'error' });
+			return;
+		}
+
+		const maxSizeInBytes = 25 * 1024 * 1024;
+		if (file.size > maxSizeInBytes) {
+			showAlert({ message: 'File size exceeds the 25MB limit.', type: 'error' });
+			return;
+		}
+
+		setUploading(true);
+		try {
+			const uploadID = uuid();
+			const savedFileRef = await saveFile(UploadType.memberAvatar, uploadID, name, file);
+			const downloadLink = await getDownloadLinkForFile(savedFileRef);
+			if (downloadLink) {
+				setPicture({ displayName: file.name, home: downloadLink, refLoc: savedFileRef });
+				showAlert({ message: 'Profile picture uploaded!', type: 'success' });
+			} else {
+				throw new Error('Failed to get the download link for the uploaded file.');
+			}
+		} catch (error) {
+			showAlert({ message: (error as Error).message, type: 'error' });
+		} finally {
+			setUploading(false);
 		}
 	};
 
@@ -176,53 +194,76 @@ export default function Register() {
 	}
 
 	return (
-		<Box display='flex' flexDirection='column' justifyContent='center' alignItems='center' bgcolor='background.passive' color='secondary.main' sx={{ height: { xs: '100%', md: '100vh' } }}>
-			<Box width={{ xs: '100%', sm: '75%', md: '50%', lg: '35%' }} height={{ xs: '100%', md: '85vh' }} padding={3} bgcolor='background.main' color='secondary.main' sx={{ borderRadius: { xs: 0, md: 4 }, boxShadow: boxShadow }}>
-				<CssBaseline />
-				<Box sx={{ paddingTop: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', overflowY: 'auto', maxHeight: '100%' }}>
-					{/* Header */}
-					<Avatar sx={{ m: 1, mb: 2, bgcolor: 'secondary' }}>{registerConfig.icon}</Avatar>
-					<Typography component='h1' variant='h5'>
-						{registerConfig.title}
-					</Typography>
-
-					{/* Dynamic Form */}
-					<Box component='form' display='flex' flexDirection='column' justifyContent='center' width='90%' onSubmit={handleSubmit} noValidate sx={{ mt: 2 }}>
-						{registerConfig.fields.map(({ component, name, ...rest }) => {
+		<PublicPageLayout maxWidth='lg' compact tightMobile>
+			<AuthFormCard
+				layout='split'
+				tightMobile
+				title={typedConfig.title}
+				icon={typedConfig.icon}
+				eyebrow='Get Started'
+				subtitle='Create an applicant account to submit materials and track your application.'>
+				<Box component='form' onSubmit={handleSubmit} noValidate>
+					<Grid container spacing={1.5}>
+						{typedConfig.fields.map(({ component, name, ...rest }) => {
 							if (component === 'TextField') {
-								return <TextField key={name} margin='dense' fullWidth variant='outlined' name={name} value={formData[name]} onChange={handleInputChange} {...rest} />;
+								return (
+									<Grid key={name} size={authFieldGridSize(name)}>
+										<TextField
+											margin='dense'
+											fullWidth
+											variant='outlined'
+											name={name}
+											value={formData[name]}
+											onChange={handleInputChange}
+											{...rest}
+										/>
+									</Grid>
+								);
 							}
 							if (component === 'ProfilePictureUpload') {
 								return (
-									<Box key={name} display='flex' flexDirection='row' justifyContent='space-around' alignItems='center' width='100%' my={2}>
-										<Avatar sx={{ width: 56, height: 56 }} alt={picture?.displayName || ''} src={picture?.home} />
-										<Button size='small' component='label' variant='contained' color='secondary' startIcon={<Camera />}>
-											Upload Profile Picture
-											<VisuallyHiddenInput name={name} onChange={handleUpload} type='file' />
-										</Button>
-									</Box>
+									<Grid key={name} size={{ xs: 12 }}>
+										<Box sx={homeAuthProfileUploadRowSx}>
+											<Avatar sx={{ width: 56, height: 56 }} alt={(picture?.displayName as string) || ''} src={picture?.home as string} />
+											<Button size='small' component={'label' as any} variant='outlined' startIcon={<Camera />} sx={homeAuthSecondaryButtonSx}>
+												Upload Profile Picture
+												<VisuallyHiddenInput name={name} onChange={handleUpload} type='file' />
+											</Button>
+										</Box>
+									</Grid>
 								);
 							}
 							return null;
 						})}
 
-						{/* Action Buttons */}
-						{registerConfig.buttons.map((button) => (
-							<Button key={button.id} type={button.type || 'button'} fullWidth variant={button.variant} onClick={button.navigationPath ? () => navigate(generatePath(button.navigationPath)) : null} disabled={isSubmitting} sx={{ my: 0.5 }}>
-								{button.label}
-							</Button>
-						))}
+						<Grid size={{ xs: 12 }}>
+							<Box sx={homeAuthActionRowSx}>
+								{typedConfig.buttons.map((button) => (
+									<Button
+										key={button.id}
+										type={(button.type || 'button') as 'button' | 'submit' | 'reset'}
+										variant={button.type === 'submit' ? 'contained' : (button.variant as 'text' | 'outlined' | 'contained')}
+										onClick={button.navigationPath ? () => navigate(generatePath(button.navigationPath!)) : undefined}
+										disabled={isSubmitting}
+										sx={button.type === 'submit' ? homeAuthSubmitButtonSx(primaryColor) : homeAuthSecondaryButtonSx}>
+										{button.label}
+									</Button>
+								))}
+							</Box>
+						</Grid>
 
-						{/* Navigation Links */}
-						{registerConfig.links.map((link) => (
-							<Button key={link.id} variant='text' onClick={() => navigate(generatePath(link.navigationPath))} disabled={isSubmitting}>
-								{link.label}
-							</Button>
-						))}
-					</Box>
-					<Copyright sx={{ mt: 4, mb: 4 }} />
+						<Grid size={{ xs: 12 }}>
+							<Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} sx={{ justifyContent: 'center' }}>
+								{registerLinks.map((link) => (
+									<Button key={link.id} variant='text' size='small' onClick={() => navigate(generatePath(link.navigationPath))} disabled={isSubmitting}>
+										{link.label}
+									</Button>
+								))}
+							</Stack>
+						</Grid>
+					</Grid>
 				</Box>
-			</Box>
-		</Box>
+			</AuthFormCard>
+		</PublicPageLayout>
 	);
 }

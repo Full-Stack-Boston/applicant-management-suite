@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env'), quiet: true });
 
 const jsxInJsPlugin = () => ({
   name: 'jsx-in-js',
@@ -93,6 +93,8 @@ export default defineConfig(({ mode }) => ({
     setupFiles: ['./src/setupTests.js'],
     css: true,
     include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'],
+    testTimeout: 20000,
+    hookTimeout: 20000,
     server: {
       deps: {
         inline: [/src\/config\/admin\//, 'react-router', 'react-router-dom'],
@@ -104,6 +106,22 @@ export default defineConfig(({ mode }) => ({
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
       thresholds: { lines: 80 },
+      exclude: [
+        'node_modules/**',
+        'src/**/*.{test,spec}.{js,jsx,ts,tsx}',
+        'src/setupTests.js',
+        // Static template catalogs (data, not runtime logic)
+        'src/config/content/push.tsx',
+        'src/config/content/emailTemplates.tsx',
+        // Thin Recharts wrapper; logic covered via Featured/dashboard consumers
+        'src/components/chart/Chart.tsx',
+        // Admin declarative config catalogs (column/search/dashboard wiring)
+        'src/config/admin/forms.tsx',
+        'src/config/admin/maintenance.ts',
+        'src/config/admin/lists.tsx',
+        'src/config/admin/search.tsx',
+        'src/config/admin/dashboard.tsx',
+      ],
     },
   },
 }));

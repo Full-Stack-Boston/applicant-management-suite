@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { Applicant } from './Applicant';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
@@ -38,6 +38,7 @@ vi.mock('../../config/navigation/paths', () => ({
 vi.mock('../../config/data/collections', () => ({
 	__esModule: true,
 	collections: { applicants: 'applicants' },
+	ApplicationStatus: { submitted: 'Submitted', awarded: 'Awarded' },
 }));
 
 vi.mock('../../config/ui/buttonActions', () => ({
@@ -65,11 +66,24 @@ vi.mock('../assets/Header', () => ({ default: ({ children, title }) => (
 ) }));
 
 vi.mock('../assets/InfoTable', () => ({ default: () => <div>InfoTable</div> }));
+vi.mock('../assets/AssetProfileSection', () => ({
+	__esModule: true,
+	default: ({ displayName, footerMeta, children }) => (
+		<div>
+			<h1>{displayName}</h1>
+			{footerMeta}
+			{children}
+			<div>InfoTable</div>
+		</div>
+	),
+}));
+vi.mock('../assets/AssetSectionHeader', () => ({ default: ({ title }) => <h2>{title}</h2> }));
 vi.mock('../notes/NotesSection', () => ({ default: () => <div>NotesSection</div> }));
 vi.mock('../table/Table', () => ({ default: () => <div>CollapsableTable</div> }));
 vi.mock('../dynamicButtons/DynamicButtons', () => ({ default: () => <div>DynamicButtons</div> }));
 vi.mock('../../config/ui/tableConfig', () => ({
 	UserLastLogin: () => <span>Last Login Date</span>,
+	UserLastSeen: () => <span>Recently</span>,
 }));
 
 describe('Applicant Card', () => {
@@ -81,7 +95,7 @@ describe('Applicant Card', () => {
 		major: 'Computer Science',
 		school: 'MIT',
 		gradYear: '2025-05-01',
-		unit: 'Troop 101',
+		unit: 'Chapter 101',
 		email: 'john@example.com',
 		cell: '555-1234',
 		picture: { home: 'pic.jpg' },
@@ -106,7 +120,8 @@ describe('Applicant Card', () => {
 		// InfoTable mock is present
 		expect(screen.getByText('InfoTable')).toBeInTheDocument();
 		// Last Login component
-		expect(screen.getByText('Last Login:')).toBeInTheDocument();
+		expect(screen.getByText('Recently')).toBeInTheDocument();
+		expect(screen.getByText('Last Login Date')).toBeInTheDocument();
 	});
 
 	test('renders Fallback name if callMe is missing', () => {

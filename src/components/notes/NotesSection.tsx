@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Notes Section Widget
  * A reusable component to display and manage comments on any entity (Application, Applicant, etc.).
@@ -8,8 +7,7 @@
  * - Inline editing and "Redaction" (soft delete) capabilities.
  */
 
-import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Box, Typography, TextField, Button, Switch, FormControlLabel, Card, CardContent, CardActions, IconButton, Chip, Grid } from '@mui/material';
@@ -26,11 +24,33 @@ import { getRealTimeNotes, addNote, updateNote, redactNote } from '../../config/
 // Init DayJS
 dayjs.extend(relativeTime);
 
-const NotesSection = ({ targetId, targetCollection }) => {
-	const [notes, setNotes] = useState([]);
+interface NotesSectionProps {
+	targetId: string;
+	targetCollection: string;
+}
+
+interface Note {
+	id: string;
+	text: string;
+	authorName: string;
+	authorId: string;
+	visibility: 'private' | 'committee';
+	redacted?: boolean;
+	redactedOn?: { toDate?: () => Date };
+	createdAt?: { toDate?: () => Date };
+	[key: string]: unknown;
+}
+
+interface EditingNote {
+	id: string;
+	text: string;
+}
+
+const NotesSection = ({ targetId, targetCollection }: NotesSectionProps) => {
+	const [notes, setNotes] = useState<Note[]>([]);
 	const [newNote, setNewNote] = useState('');
 	const [isPrivate, setIsPrivate] = useState(false);
-	const [editingNote, setEditingNote] = useState(null);
+	const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
 
 	const { member } = useAuth();
 	const { showAlert, handleError } = useAlert();
@@ -39,7 +59,7 @@ const NotesSection = ({ targetId, targetCollection }) => {
 	// Subscribe to notes in real-time
 	useEffect(() => {
 		if (!targetId || !targetCollection) return;
-		const unsubscribe = getRealTimeNotes(targetCollection, targetId, setNotes);
+		const unsubscribe = getRealTimeNotes(targetCollection, targetId, (data) => setNotes((data as Note[]) || []));
 		return () => unsubscribe();
 	}, [targetId, targetCollection]);
 
@@ -73,7 +93,7 @@ const NotesSection = ({ targetId, targetCollection }) => {
 		}
 	};
 
-	const handleRedactNote = async (noteId) => {
+	const handleRedactNote = async (noteId: string) => {
 		// Native confirm is acceptable for critical destructive actions like redaction
 		if (globalThis.confirm('Are you sure you want to redact this note? This cannot be undone.')) {
 			try {
@@ -93,13 +113,13 @@ const NotesSection = ({ targetId, targetCollection }) => {
 
 			<Grid container spacing={2}>
 				{/* Input Area */}
-				<Grid item xs={12} md={notes.length > 0 ? 5 : 12}>
+				<Grid size={{ xs: 12, md: notes.length > 0 ? 5 : 12 }}>
 					<Card variant='outlined' sx={{ mb: 2 }}>
 						<CardContent>
-							<TextField label='Add a new note...' multiline rows={4} fullWidth value={newNote} onChange={(e) => setNewNote(e.target.value)} />
+							<TextField label='Add a new note...' multiline rows={4} fullWidth value={newNote} onChange={(e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setNewNote(e.target.value)} />
 						</CardContent>
 						<CardActions sx={{ justifyContent: 'space-between', p: 2, pt: 0 }}>
-							<FormControlLabel control={<Switch checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />} label={isPrivate ? 'Private (Only Me)' : 'Committee Wide'} />
+							<FormControlLabel control={<Switch checked={isPrivate} onChange={(e: ChangeEvent<HTMLInputElement>) => setIsPrivate(e.target.checked)} />} label={isPrivate ? 'Private (Only Me)' : 'Committee Wide'} />
 							<Button sx={{ bgcolor: 'background.passive' }} variant={darkMode ? 'outlined' : 'contained'} onClick={handleAddNote}>
 								Add Note
 							</Button>
@@ -110,14 +130,12 @@ const NotesSection = ({ targetId, targetCollection }) => {
 				{/* List Area */}
 				{notes.length > 0 && (
 					<Grid
-						item
-						xs={12}
-						md={7}
+						size={{ xs: 12, md: 7 }}
 						sx={{
 							maxHeight: '300px',
 							overflowY: 'auto',
 						}}>
-						<Box display='flex' flexDirection='column' gap={2} sx={{ pr: 1 }}>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pr: 1 }}>
 							{notes.map((note) => (
 								<Card
 									key={note.id}
@@ -129,21 +147,21 @@ const NotesSection = ({ targetId, targetCollection }) => {
 									}}>
 									<CardContent>
 										{note.redacted ? (
-											<Box display='flex' alignItems='center' gap={1} color='text.disabled'>
+											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.disabled' }}>
 												<BlockIcon />
-												<Typography variant='body2' fontStyle='italic'>
+												<Typography variant='body2' sx={{ fontStyle: 'italic' }}>
 													Note redacted on {note.redactedOn?.toDate ? dayjs(note.redactedOn.toDate()).format('MM/DD/YYYY') : 'Unknown Date'}
 												</Typography>
 											</Box>
 										) : (
 											<>
 												{/* Note Header */}
-												<Box display='flex' justifyContent='space-between' alignItems='center' mb={1}>
-													<Box display='flex' alignItems='center' gap={1} flexWrap='wrap'>
-														<Typography variant='subtitle2' fontWeight='bold'>
+												<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+														<Typography variant='subtitle2' sx={{ fontWeight: 'bold' }}>
 															{note.authorName}
 														</Typography>
-														<Typography variant='caption' color='text.secondary'>
+														<Typography variant='caption' sx={{ color: 'text.secondary' }}>
 															{note.createdAt?.toDate ? dayjs(note.createdAt.toDate()).fromNow() : 'Just now'}
 														</Typography>
 														{note.visibility === 'private' ? <Chip icon={<Lock />} label='Private' size='small' variant='outlined' color='secondary' /> : <Chip icon={<Group />} label='Committee' size='small' variant='outlined' color='primary' />}
@@ -164,8 +182,8 @@ const NotesSection = ({ targetId, targetCollection }) => {
 												{/* Note Body (View vs Edit Mode) */}
 												{editingNote?.id === note.id ? (
 													<Box>
-														<TextField multiline rows={3} fullWidth value={editingNote.text} onChange={(e) => setEditingNote((prev) => ({ ...prev, text: e.target.value }))} />
-														<Box mt={1} display='flex' gap={1}>
+														<TextField multiline rows={3} fullWidth value={editingNote.text} onChange={(e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setEditingNote((prev) => (prev ? { ...prev, text: e.target.value } : prev))} />
+														<Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
 															<Button size='small' variant='contained' onClick={handleUpdateNote}>
 																Save
 															</Button>
@@ -190,11 +208,6 @@ const NotesSection = ({ targetId, targetCollection }) => {
 			</Grid>
 		</Box>
 	);
-};
-
-NotesSection.propTypes = {
-	targetId: PropTypes.string.isRequired,
-	targetCollection: PropTypes.string.isRequired,
 };
 
 export default NotesSection;

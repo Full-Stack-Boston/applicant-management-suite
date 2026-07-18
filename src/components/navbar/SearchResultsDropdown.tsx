@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Search Results Dropdown
  * Displays global search results anchored to the Navbar search input.
@@ -8,25 +7,43 @@
  * - visual loading state.
  */
 
-import React from 'react';
-import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Paper, CircularProgress, Divider, List, ListItem, ListItemButton, ListItemText, ListItemIcon, Popper, Grow } from '@mui/material';
 
 // Config
 import { searchConfig } from '../../config/admin';
 
-const SearchResultsDropdown = ({ results, loading, anchorEl, onClose, searchTerm }) => {
+type SearchResultItem = Record<string, unknown> & { id?: string };
+
+export interface SearchResults {
+	error?: string;
+	[category: string]: unknown;
+}
+
+interface SearchResultsDropdownProps {
+	results?: SearchResults | null;
+	loading: boolean;
+	anchorEl?: HTMLElement | null;
+	onClose: () => void;
+	searchTerm?: string;
+}
+
+const getCategoryItems = (results: SearchResults | null | undefined, key: string): SearchResultItem[] | undefined => {
+	const items = results?.[key];
+	return Array.isArray(items) ? (items as SearchResultItem[]) : undefined;
+};
+
+const SearchResultsDropdown = ({ results, loading, anchorEl, onClose, searchTerm }: SearchResultsDropdownProps) => {
 	const navigate = useNavigate();
 
-	const handleItemClick = (path) => {
+	const handleItemClick = (path: string | null) => {
 		if (path) {
 			navigate(path);
 			onClose();
 		}
 	};
 
-	const renderResultGroup = (items, type) => {
+	const renderResultGroup = (items: SearchResultItem[] | undefined, type: string) => {
 		const config = searchConfig[type];
 		if (!config || !items || items.length === 0) return null;
 
@@ -39,10 +56,10 @@ const SearchResultsDropdown = ({ results, loading, anchorEl, onClose, searchTerm
 				</Typography>
 				<List dense>
 					{items.map((item) => {
-						const { primary, secondary } = getText(item, searchTerm);
+						const { primary, secondary } = getText(item, searchTerm ?? '');
 						const path = getPath(item);
 						return (
-							<ListItem key={item.id} disablePadding>
+							<ListItem key={String(item.id)} disablePadding>
 								<ListItemButton onClick={() => handleItemClick(path)} disabled={!path}>
 									{icon && <ListItemIcon sx={{ minWidth: '32px' }}>{icon}</ListItemIcon>}
 									<ListItemText primary={primary} secondary={secondary} />
@@ -56,7 +73,7 @@ const SearchResultsDropdown = ({ results, loading, anchorEl, onClose, searchTerm
 		);
 	};
 
-	const hasResults = results && !results.error && Object.keys(searchConfig).some((key) => results[key] && results[key].length > 0);
+	const hasResults = results && !results.error && Object.keys(searchConfig).some((key) => (getCategoryItems(results, key)?.length ?? 0) > 0);
 	const isOpen = Boolean(loading || results);
 
 	return (
@@ -99,20 +116,12 @@ const SearchResultsDropdown = ({ results, loading, anchorEl, onClose, searchTerm
 							</Typography>
 						)}
 
-						{!loading && hasResults && Object.keys(searchConfig).map((key) => renderResultGroup(results[key], key))}
+						{!loading && hasResults && Object.keys(searchConfig).map((key) => renderResultGroup(getCategoryItems(results, key), key))}
 					</Paper>
 				</Grow>
 			)}
 		</Popper>
 	);
-};
-
-SearchResultsDropdown.propTypes = {
-	results: PropTypes.object,
-	loading: PropTypes.bool.isRequired,
-	anchorEl: PropTypes.oneOfType([PropTypes.func, PropTypes.shape({ current: PropTypes.any })]),
-	onClose: PropTypes.func.isRequired,
-	searchTerm: PropTypes.string,
 };
 
 export default SearchResultsDropdown;

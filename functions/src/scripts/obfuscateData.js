@@ -19,15 +19,14 @@ const getRandomAmount = (min, max, step = 500) => {
     return min + (Math.floor(Math.random() * (steps + 1)) * step);
 };
 
-// Generic replacements for program names
+// Generic replacements for demo/program labels (no client-specific source names)
 const programReplacements = {
-    'Parker Fund': 'Annual Scholarship',
-    'TL Storer': 'Camp Alpha',
-    'Brownsea': 'Leadership Training',
-    'Roland Gauthier': 'Founders',
-    'Kevin': 'Director',
-    'Lowell': 'City',
-    'NE Base Camp': 'Regional Camp'
+    'Legacy Program Label': 'Annual Scholarship',
+    'Leadership Seminar': 'Leadership Training',
+    'Summer Intensive': 'Camp Alpha',
+    'Founders Award': 'Founders',
+    'City Program': 'City',
+    'Regional Retreat': 'Regional Camp'
 };
 
 const obfuscateProgramName = (name) => {
@@ -82,7 +81,7 @@ const obfuscateData = () => {
 
             return {
                 ...item,
-                scout_name: getRandomName(),
+                recipient_name: getRandomName(),
                 grade: gradeStr,
                 committed_renewal: committed,
                 one_time_grant: oneTime,
@@ -102,7 +101,7 @@ const obfuscateData = () => {
 
             return {
                 ...item,
-                scout_name: getRandomName(),
+                recipient_name: getRandomName(),
                 grade: gradeStr,
                 grant_amount: grant
             };

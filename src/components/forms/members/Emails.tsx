@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Email Composition Form
  * Allows members to send emails (New, Reply, Forward) using the Zoho Mail API.
@@ -47,9 +46,9 @@ export const EmailForm = () => {
 
 	// Form Data
 	const [fromAddress, setFromAddress] = useState(defaultFrom);
-	const [to, setTo] = useState(navState?.to ? [navState.to].flat() : []);
-	const [cc, setCc] = useState(navState?.cc ? [navState.cc].flat() : []);
-	const [bcc, setBcc] = useState([]);
+	const [to, setTo] = useState<string[]>(navState?.to ? [navState.to].flat() : []);
+	const [cc, setCc] = useState<string[]>(navState?.cc ? [navState.cc].flat() : []);
+	const [bcc, setBcc] = useState<string[]>([]);
 	const [subject, setSubject] = useState(navState?.subject || '');
 	const [body, setBody] = useState('');
 	const [signature, setSignature] = useState('none');
@@ -60,7 +59,7 @@ export const EmailForm = () => {
 		setFromAddress(defaultFrom);
 	}, [defaultFrom]);
 
-	const handleSendEmail = async (e) => {
+	const handleSendEmail = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 
 		if (!fromAddress || to.length === 0 || !subject) {
@@ -102,9 +101,9 @@ export const EmailForm = () => {
 	// Guard: Wait for permissions to load
 	if (!permittedAliases || permittedAliases.length === 0) {
 		return (
-			<Box display='flex' justifyContent='center' alignItems='center' height='300px'>
+			<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px' }}>
 				<CircularProgress />
-				<Typography ml={2}>Loading email configuration...</Typography>
+				<Typography sx={{ ml: 2 }}>Loading email configuration...</Typography>
 			</Box>
 		);
 	}
@@ -133,7 +132,10 @@ export const EmailForm = () => {
 
 			{/* --- TO (with toggles for CC/BCC) --- */}
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-				<Autocomplete multiple freeSolo options={[]} value={to} onChange={(event, newValue) => setTo(newValue)} renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant='outlined' label={option} {...getTagProps({ index })} />)} renderInput={(params) => <TextField {...params} variant='outlined' label='To' placeholder='Add email addresses' />} sx={{ flexGrow: 1 }} />
+				<Autocomplete multiple freeSolo options={[]} value={to} onChange={(event, newValue) => setTo(newValue)} renderValue={(value, getItemProps) => value.map((option, index) => {
+					const { key, ...itemProps } = getItemProps({ index });
+					return <Chip key={key} variant='outlined' label={option} {...itemProps} />;
+				})} renderInput={(params) => <TextField {...params} variant='outlined' label='To' placeholder='Add email addresses' />} sx={{ flexGrow: 1 }} />
 				<Stack direction='row' spacing={0.5} sx={{ flexShrink: 0 }}>
 					{!showCc && (
 						<Button size='small' onClick={() => setShowCc(true)} sx={{ textTransform: 'none' }}>
@@ -150,12 +152,18 @@ export const EmailForm = () => {
 
 			{/* --- CC (Conditionally Rendered) --- */}
 			<Collapse in={showCc}>
-				<Autocomplete multiple freeSolo options={[]} value={cc} onChange={(event, newValue) => setCc(newValue)} renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant='outlined' label={option} {...getTagProps({ index })} />)} renderInput={(params) => <TextField {...params} variant='outlined' label='Cc' placeholder='Add email addresses' />} />
+				<Autocomplete multiple freeSolo options={[]} value={cc} onChange={(event, newValue) => setCc(newValue)} renderValue={(value, getItemProps) => value.map((option, index) => {
+					const { key, ...itemProps } = getItemProps({ index });
+					return <Chip key={key} variant='outlined' label={option} {...itemProps} />;
+				})} renderInput={(params) => <TextField {...params} variant='outlined' label='Cc' placeholder='Add email addresses' />} />
 			</Collapse>
 
 			{/* --- BCC (Conditionally Rendered) --- */}
 			<Collapse in={showBcc}>
-				<Autocomplete multiple freeSolo options={[]} value={bcc} onChange={(event, newValue) => setBcc(newValue)} renderTags={(value, getTagProps) => value.map((option, index) => <Chip variant='outlined' label={option} {...getTagProps({ index })} />)} renderInput={(params) => <TextField {...params} variant='outlined' label='Bcc' placeholder='Add email addresses' />} />
+				<Autocomplete multiple freeSolo options={[]} value={bcc} onChange={(event, newValue) => setBcc(newValue)} renderValue={(value, getItemProps) => value.map((option, index) => {
+					const { key, ...itemProps } = getItemProps({ index });
+					return <Chip key={key} variant='outlined' label={option} {...itemProps} />;
+				})} renderInput={(params) => <TextField {...params} variant='outlined' label='Bcc' placeholder='Add email addresses' />} />
 			</Collapse>
 
 			{/* --- SUBJECT --- */}
@@ -165,7 +173,7 @@ export const EmailForm = () => {
 			<TextField fullWidth label='Message' value={body} onChange={(e) => setBody(e.target.value)} variant='outlined' multiline rows={10} placeholder='Compose your message...' />
 
 			{/* --- OPTIONS: SIGNATURE & BRANDING --- */}
-			<Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems='center'>
+			<Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
 				<FormControl sx={{ flexGrow: 1, width: '100%' }}>
 					<InputLabel>Include Signature</InputLabel>
 					<Select name='signature' value={signature} label='Include Signature' onChange={(e) => setSignature(e.target.value)}>
@@ -182,18 +190,18 @@ export const EmailForm = () => {
 
 			{/* --- QUOTED REPLY PREVIEW --- */}
 			{navState?.htmlPreview && (
-				<Box mt={0}>
+				<Box sx={{ mt: 0 }}>
 					<Typography variant='caption' color='text.secondary'>
 						Replying to:
 					</Typography>
-					<Box px={2} py={1} border='1px solid' borderColor='divider' borderRadius={1} sx={{ maxHeight: 200, overflowY: 'auto', opacity: 0.7 }}>
+					<Box sx={{ px: 2, py: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, maxHeight: 200, overflowY: 'auto', opacity: 0.7 }}>
 						<div dangerouslySetInnerHTML={{ __html: navState.htmlPreview }} />
 					</Box>
 				</Box>
 			)}
 
 			{/* --- ACTIONS --- */}
-			<Stack direction='row' spacing={2} alignItems='center' justifyContent='flex-end' mt={1}>
+			<Stack direction='row' spacing={2} sx={{ alignItems: 'center', justifyContent: 'flex-end', mt: 1 }}>
 				<Button variant='outlined' onClick={() => navigate(-1)} disabled={isSending}>
 					Cancel
 				</Button>

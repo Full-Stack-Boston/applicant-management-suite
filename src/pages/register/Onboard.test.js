@@ -17,7 +17,27 @@ vi.mock('../../context/AuthContext', () => ({
 }));
 
 vi.mock('../../context/ThemeContext', () => ({
-	useTheme: () => ({ boxShadow: 'mock-shadow' }),
+	useTheme: () => ({ boxShadow: 'mock-shadow', primaryColor: '#1976d2' }),
+}));
+
+vi.mock('../../components/home/PublicPageLayout', () => ({
+	default: ({ children }) => <div data-testid='public-page-layout'>{children}</div>,
+}));
+
+vi.mock('../../components/home/homePageStyles', () => ({
+	homeAuthSubmitButtonSx: () => ({}),
+	homeAuthSecondaryButtonSx: {},
+	homeAuthActionRowSx: {},
+	homeAuthProfileUploadRowSx: {},
+}));
+
+vi.mock('../../components/auth/AuthFormCard', () => ({
+	default: ({ children, title }) => (
+		<div data-testid='auth-form-card'>
+			<div>{title}</div>
+			{children}
+		</div>
+	),
 }));
 
 vi.mock('../../context/HelmetContext', () => ({
@@ -76,10 +96,9 @@ vi.mock('../../components/visuallyHiddenInput/VisuallyHiddenInput', () => ({
 }));
 
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
-vi.mock('../../components/footer/CopyrightFooter', () => ({ default: () => <div>Copyright</div> }));
 
 // Mock Admin Config
-vi.mock('../../config/admin/forms', () => ({
+vi.mock('../../config/admin', () => ({
 	memberRegistrationContent: {
 		title: 'Mock Onboard',
 		icon: 'Icon',

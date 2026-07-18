@@ -27,9 +27,9 @@ describe('InfoTable Component', () => {
 		];
 		render(<InfoTable data={testData} />);
 
-		expect(screen.getByText('Name:')).toBeInTheDocument();
+		expect(screen.getByText('Name')).toBeInTheDocument();
 		expect(screen.getByText('John')).toBeInTheDocument();
-		expect(screen.getByText('Age:')).toBeInTheDocument();
+		expect(screen.getByText('Age')).toBeInTheDocument();
 		expect(screen.getByText('30')).toBeInTheDocument();
 	});
 
@@ -42,9 +42,9 @@ describe('InfoTable Component', () => {
 		];
 		render(<InfoTable data={testData} />);
 
-		expect(screen.getByText('Name:')).toBeInTheDocument();
-		expect(screen.queryByText('Empty:')).not.toBeInTheDocument();
-		expect(screen.queryByText('Undefined:')).not.toBeInTheDocument();
-		expect(screen.queryByText('BlankString:')).not.toBeInTheDocument();
+		expect(screen.getByText('Name')).toBeInTheDocument();
+		expect(screen.queryByText('Empty')).not.toBeInTheDocument();
+		expect(screen.queryByText('Undefined')).not.toBeInTheDocument();
+		expect(screen.queryByText('BlankString')).not.toBeInTheDocument();
 	});
 });

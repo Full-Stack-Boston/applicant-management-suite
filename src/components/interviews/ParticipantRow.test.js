@@ -50,9 +50,10 @@ describe('ParticipantRow', () => {
 		expect(screen.getByText('Test User')).toBeInTheDocument();
 		expect(screen.getByText('You')).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: /Mute Audio/i })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /Eject from Call/i })).not.toBeInTheDocument();
 	});
 
-	it('shows no controls for a non-admin viewing a remote participant', () => {
+	it('shows status icons without admin buttons for a non-admin viewing a remote participant', () => {
 		render(<ParticipantRow id="remote-id" isAdmin={false} />);
 
 		expect(screen.getByText('Test User')).toBeInTheDocument();

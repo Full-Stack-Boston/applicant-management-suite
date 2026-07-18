@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SITE MANIFEST & ROUTE DEFINITIONS
  * ---------------------------------------------------------------------------
@@ -15,7 +14,9 @@
  * - index: (Optional) Boolean. If true, matches the parent route's root.
  */
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
+import type { ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
 
 // Pages
 import New from '../../pages/new/New';
@@ -39,8 +40,6 @@ import ApplicationController from '../../components/forms/applications/Applicati
 import UploadCenter from '../../pages/uploadCenter/UploadCenter';
 import Onboard from '../../pages/register/Onboard';
 import WaitingRoom from '../../pages/interviews/WaitingRoom';
-import InterviewRoom from '../../pages/interviews/InterviewRoom';
-import DeliberationRoom from '../../pages/interviews/DeliberationRoom';
 
 // Layouts & Wrappers
 import AdminLayout from '../../components/layout/AdminLayout';
@@ -54,9 +53,23 @@ import { PDFApplication } from '../../components/pdf/PDFApplication';
 import { UserType, ApplicationType, ApplicationStatus } from '../data/collections';
 import { Pages } from '../Constants';
 import { paths } from './paths';
+import { generatePath } from './routeUtils';
 import { RouteGuard } from './router';
 
-export const siteManifest = [
+// Daily rooms pull @daily-co/daily-react (jotai atomFamily); load only when needed
+const InterviewRoom = lazy(() => import('../../pages/interviews/InterviewRoom'));
+const DeliberationRoom = lazy(() => import('../../pages/interviews/DeliberationRoom'));
+const withRoomSuspense = (node: ReactNode) => <Suspense fallback={null}>{node}</Suspense>;
+
+export interface SiteManifestEntry {
+	urlKey?: string;
+	path: string;
+	element: ReactNode;
+	index?: boolean;
+	children?: SiteManifestEntry[];
+}
+
+export const siteManifest: SiteManifestEntry[] = [
 	// -------------------------
 	// 1. Public & Authentication
 	// -------------------------
@@ -347,7 +360,8 @@ export const siteManifest = [
 		),
 	},
 	{
-		urlKey: Pages.manualUpload,
+		// Not registered in Pages (Constants.tsx); literal keeps the manifest entry identifiable
+		urlKey: 'manualUpload',
 		path: paths.manualUpload,
 		element: (
 			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
@@ -367,7 +381,7 @@ export const siteManifest = [
 		element: (
 			<RouteGuard permissions={['login', 'applications', 'archives']} allowedRoles={[UserType.member, UserType.both]}>
 				<AdminLayout>
-					<List type='applications' />
+					<List type='archives' />
 				</AdminLayout>
 			</RouteGuard>
 		),
@@ -450,6 +464,39 @@ export const siteManifest = [
 			</RouteGuard>
 		),
 	},
+	{
+		urlKey: Pages.newApps,
+		path: paths.newApps,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationType.newApplication} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.returningApps,
+		path: paths.returningApps,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationType.returningGrant} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.scholarshipApps,
+		path: paths.scholarshipApps,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationType.scholarship} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
 	// Year-based queues
 	{
 		urlKey: Pages.allAppsInYear,
@@ -495,6 +542,83 @@ export const siteManifest = [
 			</RouteGuard>
 		),
 	},
+	{
+		urlKey: Pages.completedAppsInYear,
+		path: paths.completedAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.completed} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.eligibleAppsInYear,
+		path: paths.eligibleAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.eligible} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.invitedAppsInYear,
+		path: paths.invitedAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.invited} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.awardedAppsInYear,
+		path: paths.awardedAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.awarded} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.deletedAppsInYear,
+		path: paths.deletedAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'admin', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.deleted} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.rejectedAppsInYear,
+		path: paths.rejectedAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type='rejected' />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.incompleteAppsInYear,
+		path: paths.incompleteAppsInYear,
+		element: (
+			<RouteGuard permissions={['login', 'applications']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<List type={ApplicationStatus.incomplete} />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
 
 	// -------------------------
 	// 7. Communications (Email)
@@ -533,7 +657,8 @@ export const siteManifest = [
 		),
 	},
 	{
-		urlKey: Pages.composeEmail,
+		// Not registered in Pages (Constants.tsx); literal keeps the manifest entry identifiable
+		urlKey: 'composeEmail',
 		path: paths.composeEmail,
 		element: (
 			<RouteGuard permissions={['login', 'email']} allowedRoles={[UserType.member, UserType.both]}>
@@ -585,9 +710,7 @@ export const siteManifest = [
 		path: paths.interviewRoom,
 		element: (
 			<RouteGuard allowedRoles={[UserType.applicant, UserType.member, UserType.both]} permissions={['interviews.canAccess']}>
-				<InterviewLayout>
-					<InterviewRoom />
-				</InterviewLayout>
+				<InterviewLayout>{withRoomSuspense(<InterviewRoom />)}</InterviewLayout>
 			</RouteGuard>
 		),
 	},
@@ -596,9 +719,7 @@ export const siteManifest = [
 		path: paths.deliberationRoom,
 		element: (
 			<RouteGuard permissions={['interviews.canAccess']} allowedRoles={[UserType.member, UserType.both]}>
-				<InterviewLayout>
-					<DeliberationRoom />
-				</InterviewLayout>
+				<InterviewLayout>{withRoomSuspense(<DeliberationRoom />)}</InterviewLayout>
 			</RouteGuard>
 		),
 	},
@@ -612,6 +733,10 @@ export const siteManifest = [
 		urlKey: Pages.unsubscribe,
 		path: paths.unsubscribe,
 		element: <Unsubscribe />,
+	},
+	{
+		path: '/members/applicants',
+		element: <Navigate to={generatePath(paths.allApplicants)} replace />,
 	},
 	{ urlKey: Pages.notFound, path: paths.notFound, element: <NotFound /> },
 	{
