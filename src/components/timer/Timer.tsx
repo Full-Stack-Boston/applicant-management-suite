@@ -14,6 +14,7 @@ import { Typography, Box } from '@mui/material';
 
 // Context
 import { useConfig } from '../../context/ConfigContext';
+import { toJsDate } from '../../config/data/dateValue';
 
 // --- Helpers ---
 
@@ -46,8 +47,15 @@ const Timer = ({ onModeChange }: TimerProps) => {
 	useEffect(() => {
 		const interval = setInterval(() => {
 			const now = new Date();
-			const deadline = new Date(config.APPLICATION_DEADLINE as string);
-			const nextOpen = config.NEXT_APPLICATION_OPEN_DATE ? new Date(config.NEXT_APPLICATION_OPEN_DATE as string) : null;
+			const deadline = toJsDate(config.APPLICATION_DEADLINE);
+			const nextOpen = toJsDate(config.NEXT_APPLICATION_OPEN_DATE);
+
+			if (!deadline) {
+				setDisplayMode('closed');
+				setTimeRemaining(null);
+				onModeChange?.('closed');
+				return;
+			}
 
 			let mode: TimerMode = 'closed';
 			let newTimeRemaining: number | null = null;

@@ -13,6 +13,7 @@ import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
 import { useAlert } from '../../context/AlertContext';
+import { toJsDate } from '../../config/data/dateValue';
 
 import { memberDashContent as dashboardConfig } from '../../config/admin';
 import { dashboardPanelSx, dashboardWidgetGridSx } from '../../config/ui/adminPageStyles';
@@ -144,7 +145,7 @@ const MemberDash = () => {
 		const currentYear =
 			typeof config.CYCLE_YEAR === 'number' && Number.isFinite(config.CYCLE_YEAR)
 				? config.CYCLE_YEAR
-				: new Date(config.APPLICATION_DEADLINE as string).getFullYear();
+				: (toJsDate(config.APPLICATION_DEADLINE)?.getFullYear() ?? new Date().getFullYear());
 		const priorCycleYear = currentYear - 1;
 
 		try {

@@ -9,6 +9,7 @@ import { Box, Typography, LinearProgress } from '@mui/material';
 // Config & Context
 import { ApplicationType } from '../../config/data/collections';
 import { getDashboardBenchmarkData } from '../../config/data/firebase';
+import { toJsDate } from '../../config/data/dateValue';
 import { useConfig } from '../../context/ConfigContext';
 import { dashboardModuleSurfaceSx, dashboardSectionTitleSx } from '../../config/ui/adminPageStyles';
 
@@ -115,11 +116,8 @@ const Featured = ({ variant = 'default' }: FeaturedProps) => {
 		const fetchData = async () => {
 			if (!config.APPLICATION_DEADLINE) return;
 
-			const rawDeadline = config.APPLICATION_DEADLINE;
-			const deadline =
-				rawDeadline && typeof rawDeadline === 'object' && 'toDate' in rawDeadline
-					? (rawDeadline as { toDate: () => Date }).toDate()
-					: new Date(rawDeadline as string);
+			const deadline = toJsDate(config.APPLICATION_DEADLINE);
+			if (!deadline) return;
 
 			const cycleYear = typeof config.CYCLE_YEAR === 'number' ? config.CYCLE_YEAR : deadline.getFullYear();
 

@@ -13,6 +13,7 @@ import { Box, Typography } from '@mui/material';
 // Context
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
+import { toJsDate } from '../../config/data/dateValue';
 
 // Components
 import Timer from './Timer';
@@ -27,8 +28,8 @@ export default function WindowInfo({ bg = 'transparent', tone = 'default' }: Win
 	const { darkMode, boxShadow } = useTheme();
 	const [mode, setMode] = useState('loading');
 
-	const deadline = new Date(config.APPLICATION_DEADLINE as string);
-	const nextOpen = config.NEXT_APPLICATION_OPEN_DATE ? new Date(config.NEXT_APPLICATION_OPEN_DATE as string) : null;
+	const deadline = toJsDate(config.APPLICATION_DEADLINE) ?? new Date(NaN);
+	const nextOpen = toJsDate(config.NEXT_APPLICATION_OPEN_DATE);
 
 	const windowYear = deadline.getFullYear();
 	const nextOpenYear = nextOpen?.getFullYear?.() || windowYear;

@@ -700,12 +700,18 @@ describe('src/config/data/firebase.js', () => {
 		expect(FirebaseConfig.coerceCycleYear(2026)).toBe(2026);
 		expect(FirebaseConfig.coerceCycleYear('2025')).toBe(2025);
 		expect(FirebaseConfig.coerceCycleYear('2024-07-05T23:59:59')).toBe(2024);
+		expect(FirebaseConfig.coerceCycleYear({ toDate: () => new Date('2026-02-15T17:00:00.000Z') })).toBe(2026);
 		expect(FirebaseConfig.coerceCycleYear(null)).toBeNull();
 	});
 
 	it('siteConfigCycleYear prefers CYCLE_YEAR over deadline', () => {
 		expect(FirebaseConfig.siteConfigCycleYear({ CYCLE_YEAR: 2026, APPLICATION_DEADLINE: '2025-01-01' })).toBe(2026);
 		expect(FirebaseConfig.siteConfigCycleYear({ APPLICATION_DEADLINE: '2024-12-31' })).toBe(2024);
+		expect(
+			FirebaseConfig.siteConfigCycleYear({
+				APPLICATION_DEADLINE: { toDate: () => new Date('2026-02-15T17:00:00.000Z') },
+			})
+		).toBe(2026);
 	});
 
 	it('resolveInterviewCycleYear prefers cycleYear then deadline/window', () => {

@@ -16,6 +16,7 @@ import { createContext, useContext, useEffect, useState, useMemo, type ReactNode
 
 // Backend
 import { getRealTimeConfigFromDb } from '../config/data/firebase';
+import { normalizeSiteConfigDates, toJsDate } from '../config/data/dateValue';
 import type { SiteConfig } from '../types/firebase';
 
 // Components
@@ -35,9 +36,13 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
 		// Subscribe to real-time updates for the Site Config
 		const unsubscribe = getRealTimeConfigFromDb((data) => {
 			try {
-				const raw: ConfigContextValue = data || {};
-				if (raw.APPLICATION_DEADLINE && !raw.CYCLE_YEAR) {
-					raw.CYCLE_YEAR = new Date(raw.APPLICATION_DEADLINE as string).getFullYear();
+				const raw: ConfigContextValue = normalizeSiteConfigDates({ ...(data || {}) }) as ConfigContextValue;
+				if (
+					raw.APPLICATION_DEADLINE &&
+					(raw.CYCLE_YEAR === undefined || raw.CYCLE_YEAR === null || raw.CYCLE_YEAR === '')
+				) {
+					const deadline = toJsDate(raw.APPLICATION_DEADLINE);
+					if (deadline) raw.CYCLE_YEAR = deadline.getFullYear();
 				}
 				setConfig(raw);
 			} catch (error) {

@@ -59,6 +59,7 @@ import type {
 	RealtimeCallback,
 	SiteConfig,
 } from '../../types/firebase';
+import { normalizeSiteConfigDates, toJsDate } from './dateValue';
 
 type WipeCollectionsInput = { conn?: string } | Firestore | null | undefined;
 
@@ -500,7 +501,7 @@ export const getConfigFromDb = async (): Promise<SiteConfig | null> => {
 	try {
 		const docRef = doc(db, collections.siteConfig, CONFIG_DOC_ID);
 		const docSnap = await getDoc(docRef);
-		return docSnap.exists() ? (docSnap.data() as SiteConfig) : null;
+		return docSnap.exists() ? (normalizeSiteConfigDates(docSnap.data() as SiteConfig) as SiteConfig) : null;
 	} catch (error) {
 		logEvent('Error in getConfigFromDB', error);
 		return null;
@@ -510,7 +511,9 @@ export const getConfigFromDb = async (): Promise<SiteConfig | null> => {
 export const getRealTimeConfigFromDb = (callback: RealtimeCallback<SiteConfig | null>) => {
 	const docRef = doc(db, collections.siteConfig, CONFIG_DOC_ID);
 	const unsubscribe = onSnapshot(docRef, (snapshot) => {
-		snapshot.exists() ? callback(snapshot.data() as SiteConfig) : callback(null);
+		snapshot.exists()
+			? callback(normalizeSiteConfigDates(snapshot.data() as SiteConfig) as SiteConfig)
+			: callback(null);
 	});
 	return unsubscribe;
 };
@@ -1007,16 +1010,14 @@ export const getRealTimeCollection = (collectionRef: CollectionName, callback: R
 };
 
 
-/** Coerce a cycle year number, "2026", or deadline/window date string to a year. */
+/** Coerce a cycle year number, "2026", or deadline/window date (string|Date|Timestamp) to a year. */
 export const coerceCycleYear = (windowOrYear: unknown): number | null => {
 	if (typeof windowOrYear === 'number' && Number.isFinite(windowOrYear)) return windowOrYear;
 	if (typeof windowOrYear === 'string' && /^\d{4}$/.test(windowOrYear.trim())) {
 		return Number(windowOrYear.trim());
 	}
-	if (windowOrYear != null && windowOrYear !== '') {
-		const year = new Date(String(windowOrYear)).getFullYear();
-		return Number.isNaN(year) ? null : year;
-	}
+	const dated = toJsDate(windowOrYear);
+	if (dated) return dated.getFullYear();
 	return null;
 };
 
@@ -1026,8 +1027,7 @@ export const resolveApplicationCycleYear = (app: DocumentData): number | null =>
 		return Number(app.cycleYear.trim());
 	}
 	if (app?.window) {
-		const year = new Date(String(app.window)).getFullYear();
-		return Number.isNaN(year) ? null : year;
+		return coerceCycleYear(app.window);
 	}
 	return null;
 };
@@ -1039,8 +1039,7 @@ export const resolveInterviewCycleYear = (interview: DocumentData): number | nul
 	}
 	const deadline = interview?.deadline ?? interview?.window;
 	if (deadline) {
-		const year = new Date(String(deadline)).getFullYear();
-		return Number.isNaN(year) ? null : year;
+		return coerceCycleYear(deadline);
 	}
 	return null;
 };
@@ -1050,8 +1049,8 @@ export const siteConfigCycleYear = (config: SiteConfig | null): number => {
 	if (typeof config?.CYCLE_YEAR === 'string' && /^\d{4}$/.test(String(config.CYCLE_YEAR).trim())) {
 		return Number(String(config.CYCLE_YEAR).trim());
 	}
-	const deadline = config?.APPLICATION_DEADLINE;
-	return deadline ? new Date(String(deadline)).getFullYear() : new Date().getFullYear();
+	const deadline = toJsDate(config?.APPLICATION_DEADLINE);
+	return deadline ? deadline.getFullYear() : new Date().getFullYear();
 };
 
 const COUNT_PIPELINE_STATUSES = new Set<string>([
@@ -2223,7 +2222,7 @@ const getParentNameForNote = async (parentRef: DocumentReference<DocumentData>) 
 					appHolderName = `${applicantSnap.data().firstName} ${applicantSnap.data().lastName}`;
 				}
 			}
-			const appYear = new Date(parentData.window).getFullYear();
+			const appYear = coerceCycleYear(parentData.window) ?? new Date().getFullYear();
 			return `${appHolderName}'s ${parentData.status} ${parentData.type} (${appYear})`;
 		}
 
@@ -2643,8 +2642,8 @@ export const getAverageApplicationsPerYearByType = async (type: ApplicationTypeV
 		snapshot.forEach((doc) => {
 			const data = doc.data();
 			if (data.window) {
-				const appYear = new Date(data.window).getFullYear();
-				if (appYear >= startYear && appYear < currentYear) totalApplicationsInWindow++;
+				const appYear = coerceCycleYear(data.window);
+				if (appYear != null && appYear >= startYear && appYear < currentYear) totalApplicationsInWindow++;
 			}
 		});
 		return Math.round(totalApplicationsInWindow / yearsBack);

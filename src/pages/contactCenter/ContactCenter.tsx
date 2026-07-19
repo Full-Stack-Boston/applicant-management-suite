@@ -32,6 +32,7 @@ import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
+import { toJsDate } from '../../config/data/dateValue';
 
 // Backend & Config
 import { send, templates as staticTemplateGroups } from '../../config/content/push';
@@ -373,7 +374,10 @@ const ContactCenter = () => {
 	);
 
 	useEffect(() => {
-		const cycleYear = typeof config?.CYCLE_YEAR === 'number' ? config.CYCLE_YEAR : config?.APPLICATION_DEADLINE ? new Date(config.APPLICATION_DEADLINE as string).getFullYear() : null;
+		const cycleYear =
+			typeof config?.CYCLE_YEAR === 'number'
+				? config.CYCLE_YEAR
+				: toJsDate(config?.APPLICATION_DEADLINE)?.getFullYear() ?? null;
 		if (!cycleYear) return;
 
 		const appTypeMap: Record<string, AppTypeBucket> = {

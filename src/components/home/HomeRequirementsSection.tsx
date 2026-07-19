@@ -29,6 +29,7 @@ import {
 } from '@mui/icons-material';
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
+import { toJsDate } from '../../config/data/dateValue';
 import { homePageContent } from '../../config/content';
 import DOMPurify from 'dompurify';
 import { sanitizeHtmlConfig } from '../../utils/sanitizeHtml';
@@ -70,11 +71,7 @@ export default function HomeRequirementsSection({ sectionId }: HomeRequirementsS
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const selectedTab = childTabs[selectedIndex];
 
-	const rawDeadline = siteConfig.APPLICATION_DEADLINE;
-	const deadlineDate =
-		rawDeadline && typeof rawDeadline === 'object' && 'toDate' in rawDeadline
-			? (rawDeadline as { toDate: () => Date }).toDate()
-			: new Date(rawDeadline as string);
+	const deadlineDate = toJsDate(siteConfig.APPLICATION_DEADLINE) ?? new Date(NaN);
 
 	const tabContent = selectedTab.content as {
 		title: string;

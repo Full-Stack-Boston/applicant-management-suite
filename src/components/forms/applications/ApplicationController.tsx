@@ -27,6 +27,7 @@ import { useTheme } from '../../../context/ThemeContext';
 
 // Config & Firebase
 import { saveCollectionData, getApplication, getCollectionData, getApplicant, addApplicationToApplicant, updateApplicantData } from '../../../config/data/firebase';
+import { toJsDate } from '../../../config/data/dateValue';
 import { attachmentFields } from '../../../config/Constants';
 import { collections, ApplicationStatus } from '../../../config/data/collections';
 import { generatePath } from '../../../config/navigation/routeUtils';
@@ -299,14 +300,16 @@ export default function ApplicationController() {
 		async (updatedCompleted: Record<string, unknown>, currentApplicationState: ApplicationRecord) => {
 			if (!applicationID || !appConfig || !user) return;
 			try {
-				const deadlineDate = new Date(siteConfig.APPLICATION_DEADLINE as string);
+				const deadlineDate = toJsDate(siteConfig.APPLICATION_DEADLINE);
+				if (!deadlineDate) throw new Error('Application deadline is not configured');
 				const applicationRecord = {
 					id: applicationID,
 					...updatedCompleted,
 					completedBy: user.uid,
 					type: appConfig.type,
 					status: ApplicationStatus.started,
-					window: siteConfig.APPLICATION_DEADLINE,
+					// Keep window as ISO string so legacy `new Date(app.window)` year displays keep working
+					window: deadlineDate.toISOString(),
 					cycleYear: deadlineDate.getFullYear(),
 					deadline: deadlineDate,
 					lastUpdated: new Date().toLocaleString(),
@@ -403,7 +406,8 @@ export default function ApplicationController() {
 		if (!appConfig || !applicationID || !user) return;
 		try {
 			// 1. Mark as Submitted
-			const submissionDeadline = new Date(siteConfig.APPLICATION_DEADLINE as string);
+			const submissionDeadline = toJsDate(siteConfig.APPLICATION_DEADLINE);
+			if (!submissionDeadline) throw new Error('Application deadline is not configured');
 			const submission = {
 				id: applicationID,
 				...completed,
@@ -412,7 +416,8 @@ export default function ApplicationController() {
 				status: ApplicationStatus.submitted,
 				lastUpdated: now,
 				submittedOn: now,
-				window: siteConfig.APPLICATION_DEADLINE,
+				// Keep window as ISO string so legacy `new Date(app.window)` year displays keep working
+				window: submissionDeadline.toISOString(),
 				cycleYear: submissionDeadline.getFullYear(),
 				deadline: submissionDeadline,
 			};

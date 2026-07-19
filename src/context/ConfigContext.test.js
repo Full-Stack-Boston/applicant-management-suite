@@ -59,6 +59,44 @@ describe('ConfigContext', () => {
 		expect(screen.getByTestId('config-value')).toHaveTextContent('Test App');
 	});
 
+	test('normalizes Firestore Timestamp deadlines to Date and derives CYCLE_YEAR', async () => {
+		const deadline = new Date('2026-02-15T17:00:00.000Z');
+		const DeadlineStamp = function DeadlineStamp() {};
+		DeadlineStamp.prototype.toDate = () => deadline;
+
+		getRealTimeConfigFromDb.mockImplementation((callback) => {
+			callback({
+				APPLICATION_DEADLINE: Object.assign(new DeadlineStamp(), {
+					seconds: Math.floor(deadline.getTime() / 1000),
+					nanoseconds: 0,
+				}),
+				NEXT_APPLICATION_OPEN_DATE: { toDate: () => new Date('2026-02-20T14:00:00.000Z') },
+			});
+			return jest.fn();
+		});
+
+		const Probe = () => {
+			const config = useConfig();
+			return (
+				<div>
+					<span data-testid='deadline-type'>{config.APPLICATION_DEADLINE instanceof Date ? 'date' : typeof config.APPLICATION_DEADLINE}</span>
+					<span data-testid='cycle-year'>{String(config.CYCLE_YEAR)}</span>
+				</div>
+			);
+		};
+
+		render(
+			<ConfigProvider>
+				<Probe />
+			</ConfigProvider>
+		);
+
+		await waitFor(() => {
+			expect(screen.getByTestId('deadline-type')).toHaveTextContent('date');
+		});
+		expect(screen.getByTestId('cycle-year')).toHaveTextContent('2026');
+	});
+
 	test('handles error in firebase callback gracefully', () => {
 		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -38,6 +38,7 @@ import { brand, capitalize } from '../../config/Constants';
 import TemplateManagerDialog from '../../components/dialogs/TemplateManagerDialog';
 import Loader from '../../components/loader/Loader';
 import { VIDEO_BUDGET_MODES, ensureVideoBudgetDefaults, allowedVideoMinutes, percentVideoUsed, normalizeVideoBudget, type VideoBudget, type VideoBudgetMode } from '../../config/ui/videoBudget';
+import { SITE_CONFIG_DATE_KEYS, isFirestoreDateLike, toJsDate } from '../../config/data/dateValue';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/data/firebase';
 
@@ -108,8 +109,12 @@ const groupSettings = (settings: SettingsMap): SettingsGroups => {
 			groups['Shared Signatures'].push([key, value]);
 		} else if (typeof value === 'boolean') {
 			groups['Feature Toggles'].push([key, value]);
-		} else if (value instanceof Date) {
-			groups['Important Dates'].push([key, value]);
+		} else if (
+			(SITE_CONFIG_DATE_KEYS as readonly string[]).includes(key) ||
+			value instanceof Date ||
+			isFirestoreDateLike(value)
+		) {
+			groups['Important Dates'].push([key, toJsDate(value) ?? value]);
 		} else if (key.includes('EMAIL') || key.includes('MAIL') || key.includes('TEL')) {
 			groups['Public Site Links'].push([key, value]);
 		} else if (key.includes('KEY') || key.includes('ID') || key.includes('PIN')) {
@@ -159,6 +164,9 @@ const rebrandParkerConfigValues = (settings: SettingsMap | null | undefined): Wa
 				return result.next;
 			});
 			return { next, changed };
+		}
+		if (value instanceof Date || isFirestoreDateLike(value)) {
+			return { next: value, changed: false };
 		}
 		if (value && typeof value === 'object') {
 			let changed = false;
@@ -377,10 +385,20 @@ const SiteSettings = () => {
 		if (typeof value === 'boolean') {
 			return <FormControlLabel key={key} control={<Checkbox checked={value} onChange={(e) => handleSettingChange(key, e.target.checked)} />} {...commonProps} />;
 		}
-		if (value instanceof Date) {
+		const dateValue =
+			value instanceof Date || isFirestoreDateLike(value) || (SITE_CONFIG_DATE_KEYS as readonly string[]).includes(key)
+				? toJsDate(value)
+				: null;
+		if (dateValue) {
 			return (
 				<LocalizationProvider dateAdapter={AdapterDayjs}>
-					<DateTimeField key={key} value={dayjs(value)} onChange={(newValue: Dayjs | null) => handleSettingChange(key, newValue ? newValue.toDate() : value)} {...commonProps} fullWidth />
+					<DateTimeField
+						key={key}
+						value={dayjs(dateValue)}
+						onChange={(newValue: Dayjs | null) => handleSettingChange(key, newValue ? newValue.toDate() : dateValue)}
+						{...commonProps}
+						fullWidth
+					/>
 				</LocalizationProvider>
 			);
 		}
