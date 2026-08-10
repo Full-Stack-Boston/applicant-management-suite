@@ -82,6 +82,26 @@ describe('AdminDrawer Component', () => {
 			});
 			expect(firebase.endInterview).toHaveBeenCalledWith({ interviewId: 'interview123' });
 		});
+
+		it('shows next-candidate waiting state and Complete & Next', async () => {
+			const onCompleteAndNext = jest.fn();
+			render(
+				<AdminDrawer
+					open={true}
+					onClose={mockOnClose}
+					interviewId='interview123'
+					isAdmin={true}
+					nextInterview={mockNextInterview}
+					onCompleteAndNext={onCompleteAndNext}
+				/>
+			);
+			expect(screen.getByText('Jane Doe')).toBeInTheDocument();
+			expect(screen.getByText('Applicant is waiting')).toBeInTheDocument();
+			await act(async () => {
+				fireEvent.click(screen.getByText('Complete & Next'));
+			});
+			expect(onCompleteAndNext).toHaveBeenCalledWith('next123');
+		});
 	});
 
 	describe('Deliberation Mode (isDeliberation=true)', () => {

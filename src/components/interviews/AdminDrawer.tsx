@@ -57,7 +57,9 @@ interface AdminDrawerProps {
 	isDeliberation?: boolean;
 	onRelevantAppsChange?: (appIds: string[]) => void;
 	onStartNextInterview?: (id: string) => void;
+	onCompleteAndNext?: (nextInterviewId: string) => void;
 	isStartingNext?: boolean;
+	isCompletingAndNext?: boolean;
 	isNavigating?: boolean;
 	redirectCountdown?: number;
 	previousInterview?: AdminDrawerInterviewInfo | null;
@@ -66,7 +68,7 @@ interface AdminDrawerProps {
 	onJoinInterview?: (id: string) => void;
 }
 
-export default function AdminDrawer({ open, onClose, interviewId, isAdmin, isDeliberation = false, onRelevantAppsChange, onStartNextInterview, isStartingNext, isNavigating, redirectCountdown, previousInterview, nextInterview, inProgressInterview, onJoinInterview }: AdminDrawerProps) {
+export default function AdminDrawer({ open, onClose, interviewId, isAdmin, isDeliberation = false, onRelevantAppsChange, onStartNextInterview, onCompleteAndNext, isStartingNext, isCompletingAndNext, isNavigating, redirectCountdown, previousInterview, nextInterview, inProgressInterview, onJoinInterview }: AdminDrawerProps) {
 	const { showAlert, handleError } = useAlert();
 	const config = useConfig();
 	const { member } = useAuth();
@@ -77,6 +79,7 @@ export default function AdminDrawer({ open, onClose, interviewId, isAdmin, isDel
 	const [isNotifying, setIsNotifying] = useState(false);
 	const [isMarkingMissed, setIsMarkingMissed] = useState(false);
 	const [deliberateNext, setDeliberateNext] = useState(false);
+	const actionsBusy = isEnding || isMarkingMissed || Boolean(isCompletingAndNext);
 
 	// Sync relevant application IDs for the host view
 	useEffect(() => {
@@ -183,6 +186,34 @@ export default function AdminDrawer({ open, onClose, interviewId, isAdmin, isDel
 						<Button variant='contained' color='secondary' startIcon={isNotifying ? <CircularProgress size={20} color='inherit' /> : <Send />} onClick={handleSendWrapUpNotice} disabled={isNotifying} fullWidth>
 							Send Wrap-Up Notice
 						</Button>
+						<Card sx={{ mt: 1 }}>
+							<CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+								<Typography variant='subtitle2' sx={{ color: 'text.secondary' }}>
+									Up Next
+								</Typography>
+								{nextInterview ? (
+									<>
+										<Typography variant='h6' sx={{ mt: 0.5 }}>
+											{nextInterview.displayName}
+										</Typography>
+										{nextInterview.startTime && (
+											<Typography variant='body2' sx={{ color: 'text.secondary' }}>
+												Scheduled: {dayjs(nextInterview.startTime.toDate()).format('ddd, MM/DD @ h:mm A')}
+											</Typography>
+										)}
+										{nextInterview.applicantPresent ? (
+											<Chip icon={<CheckCircleOutlined />} label='Applicant is waiting' color='success' variant='outlined' size='small' sx={{ mt: 1 }} />
+										) : (
+											<Chip label='Not waiting yet' size='small' sx={{ mt: 1 }} />
+										)}
+									</>
+								) : (
+									<Typography variant='body2' sx={{ mt: 0.5, fontStyle: 'italic', color: 'text.secondary' }}>
+										No upcoming interviews.
+									</Typography>
+								)}
+							</CardContent>
+						</Card>
 					</Box>
 				)}
 
@@ -285,11 +316,21 @@ export default function AdminDrawer({ open, onClose, interviewId, isAdmin, isDel
 
 						{interviewId && (
 							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-								<Button variant='contained' color='error' startIcon={isEnding ? <CircularProgress size={20} color='inherit' /> : <CallEnd />} onClick={handleEndForAll} disabled={isEnding || isMarkingMissed} fullWidth>
+								{!isDeliberation && nextInterview?.id && (
+									<Button
+										variant='contained'
+										color='success'
+										onClick={() => onCompleteAndNext?.(nextInterview.id!)}
+										disabled={actionsBusy || !onCompleteAndNext}
+										fullWidth>
+										{isCompletingAndNext ? <CircularProgress size={24} color='inherit' /> : 'Complete & Next'}
+									</Button>
+								)}
+								<Button variant='contained' color='error' startIcon={isEnding ? <CircularProgress size={20} color='inherit' /> : <CallEnd />} onClick={handleEndForAll} disabled={actionsBusy} fullWidth>
 									End and Complete
 								</Button>
 
-								<Button variant='outlined' color='warning' onClick={handleMarkAsMissed} disabled={isEnding || isMarkingMissed} fullWidth>
+								<Button variant='outlined' color='warning' onClick={handleMarkAsMissed} disabled={actionsBusy} fullWidth>
 									{isMarkingMissed ? <CircularProgress size={24} /> : 'Mark Missed'}
 								</Button>
 							</Box>

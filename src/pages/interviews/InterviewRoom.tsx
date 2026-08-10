@@ -12,7 +12,7 @@
  * drawers for Admin Controls (left) and Applicant Documents (right).
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DailyProvider } from '@daily-co/daily-react';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -36,7 +36,7 @@ import { useApplicantPresence } from '../../hooks/useApplicantPresence';
 import { useDailyJoin } from '../../hooks/useDailyJoin';
 
 // Backend & Config
-import { db, generateJoinToken } from '../../config/data/firebase';
+import { db, generateJoinToken, getRealTimeMeetings, endInterview, updateInterviewStatus } from '../../config/data/firebase';
 import { InterviewStatus, collections } from '../../config/data/collections';
 import { formatDailyJoinError, getInterviewReturnPath, getInterviewReturnLabel } from '../../utils/interviewUtils';
 
@@ -133,6 +133,32 @@ export default function InterviewRoom() {
 	const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
 	const [isAppDrawerOpen, setIsAppDrawerOpen] = useState(false);
 	const [isOwner, setIsOwner] = useState(false); // Does user have Host permissions?
+	const [nextInterview, setNextInterview] = useState<Record<string, unknown> | null>(null);
+	const [isCompletingAndNext, setIsCompletingAndNext] = useState(false);
+	const skipDeliberationRef = useRef(false);
+	const pendingNextInterviewIdRef = useRef<string | null>(null);
+
+	// Subscribe to upcoming interviews for Complete & Next
+	useEffect(() => {
+		if (!user || !member) return;
+
+		const unsubscribe = getRealTimeMeetings(user.uid, true, (data) => {
+			const allMeetings = data as Record<string, unknown>[];
+			const interviews = allMeetings.filter((m) => !m.deliberation);
+			const upcoming = interviews
+				.filter((m) => m.status === InterviewStatus.confirmed && m.id !== interviewId)
+				.sort((a, b) => {
+					const aTime = (a.startTime as { toDate?: () => Date } | Date | undefined);
+					const bTime = (b.startTime as { toDate?: () => Date } | Date | undefined);
+					const aMs = aTime && typeof aTime === 'object' && 'toDate' in aTime && aTime.toDate ? aTime.toDate().getTime() : 0;
+					const bMs = bTime && typeof bTime === 'object' && 'toDate' in bTime && bTime.toDate ? bTime.toDate().getTime() : 0;
+					return aMs - bMs;
+				});
+			setNextInterview(upcoming.length > 0 ? upcoming[0] : null);
+		});
+
+		return () => unsubscribe();
+	}, [user, member, interviewId]);
 
 	// --- Helper 1: Fetch Applicant Documents ---
 	// Loads the application PDFs so admins can reference them during the call.
@@ -340,6 +366,17 @@ export default function InterviewRoom() {
 				return;
 			}
 
+			if (skipDeliberationRef.current) {
+				const nextId = pendingNextInterviewIdRef.current;
+				skipDeliberationRef.current = false;
+				pendingNextInterviewIdRef.current = null;
+				if (nextId) {
+					showAlert({ message: 'Moving to the next interview…', type: 'success' });
+					navigate(`/interviews/interview-room/${nextId}`);
+				}
+				return;
+			}
+
 			// Auto-Redirect Logic:
 			// If configured, automatically move admins to the Deliberation Room
 			try {
@@ -363,6 +400,26 @@ export default function InterviewRoom() {
 			clearTimeout(navigationTimer);
 		};
 	}, [interviewStatus, callObject, member, navigate, showAlert, config.AUTO_DELIBERATE]);
+
+	const handleCompleteAndNext = useCallback(
+		async (nextInterviewId: string) => {
+			if (!nextInterviewId || !interviewId) return;
+			setIsCompletingAndNext(true);
+			try {
+				skipDeliberationRef.current = true;
+				pendingNextInterviewIdRef.current = nextInterviewId;
+				await endInterview({ interviewId });
+				await updateInterviewStatus({ interviewId: nextInterviewId, newStatus: InterviewStatus.inProgress });
+			} catch (error) {
+				skipDeliberationRef.current = false;
+				pendingNextInterviewIdRef.current = null;
+				handleError(error, 'interview-complete-and-next');
+			} finally {
+				setIsCompletingAndNext(false);
+			}
+		},
+		[interviewId, handleError]
+	);
 
 	// --- Render States ---
 
@@ -390,7 +447,16 @@ export default function InterviewRoom() {
 		<DailyProvider callObject={callObject}>
 			<Box sx={{ display: 'flex' }}>
 				{/* LEFT: Admin Controls */}
-				<AdminDrawer open={isAdminDrawerOpen} onClose={() => setIsAdminDrawerOpen(false)} interviewId={interviewId} isAdmin={isOwner} onStartNextInterview={() => {}} isDeliberation={false} />
+				<AdminDrawer
+					open={isAdminDrawerOpen}
+					onClose={() => setIsAdminDrawerOpen(false)}
+					interviewId={interviewId}
+					isAdmin={isOwner}
+					isDeliberation={false}
+					nextInterview={nextInterview as any}
+					onCompleteAndNext={handleCompleteAndNext}
+					isCompletingAndNext={isCompletingAndNext}
+				/>
 
 				{/* CENTER: Video Call */}
 				<Box

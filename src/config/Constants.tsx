@@ -229,6 +229,7 @@ export const Pages = {
 	allMembers: 'allMembers',
 	siteSettings: 'siteSettings',
 	financeCenter: 'financeCenter',
+	cycleExpenses: 'cycleExpenses',
 	viewMember: 'viewMember',
 	editMember: 'editMember',
 	newMember: 'newMember',

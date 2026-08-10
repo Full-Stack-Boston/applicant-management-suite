@@ -39,6 +39,9 @@ vi.mock('../../config/data/firebase', () => ({
 	db: {},
 	functions: {},
 	generateJoinToken: jest.fn(),
+	getRealTimeMeetings: jest.fn(() => () => {}),
+	endInterview: jest.fn(),
+	updateInterviewStatus: jest.fn(),
 }));
 
 vi.mock('../../config/data/collections', () => ({

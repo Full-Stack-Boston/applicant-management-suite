@@ -27,7 +27,7 @@ import { capitalize, attachmentFields } from '../../config/Constants';
 import { collections } from '../../config/data/collections';
 import { getApplicationActions } from '../../config/ui/buttonActions';
 import { ContactTemplate, pushNotice } from '../../config/content/push';
-import { getCollectionData, getRealTimeAwardsByIDs, saveCollectionData } from '../../config/data/firebase';
+import { getCollectionData, getRealTimeAwardsByIDs, linkAwardToYearlyFinances, saveCollectionData } from '../../config/data/firebase';
 
 // Components
 import SingleAssetPage, { AssetCard } from '../layout/SingleAssetPage';
@@ -329,9 +329,11 @@ export const Application = ({ application: initialApplication }: ApplicationCard
 									type: result.awardName,
 									amount: result.awardAmount,
 									followUp: result.awardFollowUp,
+									cycleYear: asset.cycleYear || (config.CYCLE_YEAR as number) || new Date().getFullYear(),
 								};
 								await saveCollectionData(collections.awards, awardId, awardData);
 								await saveCollectionData(collections.applications, asset.id, { status: 'Awarded' });
+								await linkAwardToYearlyFinances(Number(awardData.cycleYear), awardId);
 								await pushNotice(ContactTemplate.appApproved, applicant ?? {}, { award: awardData });
 
 								setApplication((prev) => ({ ...prev, status: 'Awarded' }));

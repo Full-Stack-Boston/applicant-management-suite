@@ -36,6 +36,7 @@ import SiteSettings from '../../pages/settings/Settings';
 import MemberDash from '../../pages/memberDash/MemberDash';
 import ContactCenter from '../../pages/contactCenter/ContactCenter';
 import ManualUploader from '../../components/forms/members/ManualUploader';
+import CycleExpenses from '../../components/forms/members/CycleExpenses';
 import ApplicationController from '../../components/forms/applications/ApplicationController';
 import UploadCenter from '../../pages/uploadCenter/UploadCenter';
 import Onboard from '../../pages/register/Onboard';
@@ -190,6 +191,17 @@ export const siteManifest: SiteManifestEntry[] = [
 			<RouteGuard permissions={['login', 'finances']} allowedRoles={[UserType.member, UserType.both]}>
 				<AdminLayout>
 					<List type='legacyFinances' />
+				</AdminLayout>
+			</RouteGuard>
+		),
+	},
+	{
+		urlKey: Pages.cycleExpenses,
+		path: paths.cycleExpenses,
+		element: (
+			<RouteGuard permissions={['login', 'finances']} allowedRoles={[UserType.member, UserType.both]}>
+				<AdminLayout>
+					<CycleExpenses />
 				</AdminLayout>
 			</RouteGuard>
 		),

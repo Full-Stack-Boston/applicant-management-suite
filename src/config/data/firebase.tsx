@@ -1008,6 +1008,68 @@ export const getRealTimeLegacyFinances = (handler: RealtimeCallback<DocumentData
 	}
 };
 
+export const getRealTimeYearlyFinances = (handler: RealtimeCallback<DocumentData[]>) => {
+	return getRealTimeLegacyFinances(handler, {
+		collection: collections.yearlyFinances,
+		orderBy: [['cycleYear', 'desc']],
+	});
+};
+
+export const ensureYearlyFinancesDoc = async (cycleYear: number) => {
+	const yearId = String(cycleYear);
+	const ref = doc(db, collections.yearlyFinances, yearId);
+	const snap = await getDoc(ref);
+	if (!snap.exists()) {
+		const { emptyYearlyFinances } = await import('./yearlyFinances');
+		await setDoc(ref, emptyYearlyFinances(cycleYear), { merge: true });
+	}
+	return yearId;
+};
+
+export const saveYearlyFinancesDoc = async (cycleYear: number, data: Record<string, unknown>) => {
+	return saveCollectionData(collections.yearlyFinances, String(cycleYear), {
+		...data,
+		cycleYear,
+	});
+};
+
+/** Index an award id onto yearlyFinances/{cycleYear}.awardIDs (awards collection remains SoT). */
+export const linkAwardToYearlyFinances = async (cycleYear: number, awardId: string) => {
+	if (!cycleYear || !awardId) return false;
+	try {
+		await ensureYearlyFinancesDoc(cycleYear);
+		const yearRef = doc(db, collections.yearlyFinances, String(cycleYear));
+		await updateDoc(yearRef, { awardIDs: arrayUnion(awardId), cycleYear });
+		return true;
+	} catch (error) {
+		logEvent('linkAwardToYearlyFinances error', error);
+		return false;
+	}
+};
+
+export const unlinkAwardFromYearlyFinances = async (cycleYear: number, awardId: string) => {
+	if (!cycleYear || !awardId) return false;
+	try {
+		const yearRef = doc(db, collections.yearlyFinances, String(cycleYear));
+		await updateDoc(yearRef, { awardIDs: arrayRemove(awardId) });
+		return true;
+	} catch (error) {
+		logEvent('unlinkAwardFromYearlyFinances error', error);
+		return false;
+	}
+};
+
+export const getAwardsByIds = async (awardIds: string[]) => {
+	const unique = [...new Set((awardIds || []).filter(Boolean))];
+	const docs = await Promise.all(
+		unique.map(async (id) => {
+			const snap = await getDoc(doc(db, collections.awards, id));
+			return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+		})
+	);
+	return docs.filter(Boolean) as Record<string, unknown>[];
+};
+
 export const getRealTimeCollection = (collectionRef: CollectionName, callback: RealtimeCallback<DocumentData[]>) => {
 	const unsubscribe = onSnapshot(collection(db, collectionRef), (snapshot) => {
 		const fetchedData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
