@@ -79,6 +79,7 @@ vi.mock('../../config/data/firebase', () => ({
 	getAwardsData: jest.fn(),
 	getRealTimeAwardsByIDs: jest.fn(() => () => {}),
 	saveCollectionData: jest.fn(),
+	linkAwardToYearlyFinances: jest.fn().mockResolvedValue(true),
 	storage: {},
 }));
 
@@ -322,8 +323,9 @@ describe('Application Card Component', () => {
 				await dialogCall.callback({ awardName: 'Grant', awardAmount: 500 });
 			});
 
-			// Should save Award, update App status, and send Push
+			// Should save Award, update App status, index yearly finances, and send Push
 			expect(firebaseConfig.saveCollectionData).toHaveBeenCalledTimes(2); // Award + App Update
+			expect(firebaseConfig.linkAwardToYearlyFinances).toHaveBeenCalled();
 			expect(pushConfig.pushNotice).toHaveBeenCalled();
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: 'Award added successfully!' }));
 		});
