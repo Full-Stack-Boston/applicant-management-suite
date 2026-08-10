@@ -1,10 +1,13 @@
 version: 2
 updates:
+  # Version-update PRs paused (limit 0) after FSB-4 #15 hardening.
+  # Dependabot vulnerability alerts remain enabled on the personal primary.
+  # Re-raise open-pull-requests-limit when ready for routine weekly bumps.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -13,7 +16,7 @@ updates:
     directory: /functions
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -22,7 +25,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
