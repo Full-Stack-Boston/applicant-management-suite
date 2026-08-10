@@ -284,7 +284,7 @@ const CycleExpenses = () => {
 						No award IDs indexed for {selectedYear} yet.
 					</Typography>
 				) : (
-					<Stack direction='row' flexWrap='wrap' gap={1}>
+					<Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 1 }}>
 						{awards.map((award) => (
 							<Chip
 								key={String(award.id)}
@@ -292,7 +292,7 @@ const CycleExpenses = () => {
 								variant='outlined'
 							/>
 						))}
-					</Stack>
+					</Box>
 				)}
 
 				{(draft.renewable_scholarships?.length || draft.non_renewable_grants?.length) ? (
