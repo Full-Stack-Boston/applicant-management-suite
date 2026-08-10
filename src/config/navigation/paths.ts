@@ -45,7 +45,8 @@ export const paths = {
 	memberDash: '/members/dashboard',
 	contactCenter: '/members/contact', // Bulk Email/SMS Tool
 	siteSettings: '/members/settings', // Global Config (Deadlines, Maintenance Mode)
-	financeCenter: '/members/finances', // Financial Reports
+	financeCenter: '/members/finances', // Financial Reports (legacy list)
+	cycleExpenses: '/members/cycle-expenses', // Yearly finances / program expenses hub
 	manualUpload: '/members/manual-upload', // Admin tool to attach files to users
 
 	// -- Admin Management --

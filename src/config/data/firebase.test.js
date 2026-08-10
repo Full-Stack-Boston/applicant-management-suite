@@ -135,6 +135,7 @@ let FirebaseConfig;
 				siteConfig: 'siteConfig',
 				sitelog: 'sitelog',
 				legacyFinances: 'legacyFinances',
+				yearlyFinances: 'yearlyFinances',
 				awards: 'awards',
 				requests: 'requests',
 				attachments: 'attachments',

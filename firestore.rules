@@ -186,6 +186,12 @@ service cloud.firestore {
       allow delete: if isOversightMember(request.auth.uid);
     }
 
+    // Yearly finances hubs: award index + program expenses
+    match /yearlyFinances/{cycleYear} {
+      allow read, write: if isOversightMember(request.auth.uid);
+      allow delete: if isOversightMember(request.auth.uid);
+    }
+
     // External recommendation / upload requests
     match /requests/{requestId} {
       allow read: if isOversightMember(request.auth.uid)

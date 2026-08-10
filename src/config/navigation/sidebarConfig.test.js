@@ -36,6 +36,7 @@ vi.mock('./paths', () => ({
 		allApplicants: '/applicants/all',
 		siteSettings: '/settings',
 		financeCenter: '/finances',
+		cycleExpenses: '/members/cycle-expenses',
 		contactCenter: '/contact',
 		newAppsInYear: '/applications/:year/newApplicants',
 		// Add any other paths used in sidebarConfig.js to be safe

@@ -47,6 +47,7 @@ export interface ApplicationCardProps {
 		contributions?: string;
 		attachments?: string;
 		awards?: string[];
+		cycleYear?: number;
 		lastUpdated?: unknown;
 		submittedOn?: unknown;
 	};

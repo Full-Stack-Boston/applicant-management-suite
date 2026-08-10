@@ -122,7 +122,7 @@ const sidebarTemplate: SidebarSection[] = [
 			},
 			{
 				icon: <FinancesIcon className='icon' />,
-				link: generatePath(paths.financeCenter),
+				link: generatePath(paths.cycleExpenses),
 				text: 'Finances',
 				requiredPermissions: ['finances'],
 			},

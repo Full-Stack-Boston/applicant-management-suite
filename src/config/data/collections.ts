@@ -52,6 +52,7 @@ export const collections = {
 	awards: 'awards', // History of monetary grants given
 	interviews: 'interviews', // Scheduling & Interview records
 	legacyFinances: 'legacy_financials', // Historical financial data (pre-2023)
+	yearlyFinances: 'yearlyFinances', // Cycle-year hubs: awardIDs index + program expenses
 } as const;
 
 export type CollectionKey = keyof typeof collections;
