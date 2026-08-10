@@ -82,3 +82,30 @@ jobs:
             --config=osv-scanner.toml
             --lockfile=package-lock.json
             --lockfile=functions/package-lock.json
+
+  semgrep:
+    name: Semgrep OSS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Trust workspace for git (container UID)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Scan
+        run: |
+          semgrep scan \
+            --config p/javascript \
+            --config p/typescript \
+            --error \
+            --metrics=off \
+            --exclude='node_modules' \
+            --exclude='build' \
+            --exclude='coverage' \
+            --exclude='functions/node_modules' \
+            --exclude='**/*.test.js' \
+            --exclude='**/*.test.jsx' \
+            --exclude='**/*.test.ts' \
+            --exclude='**/*.test.tsx'

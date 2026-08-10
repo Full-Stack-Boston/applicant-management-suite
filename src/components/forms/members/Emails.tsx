@@ -22,6 +22,8 @@ import { useComposeEmailOptions } from '../../../hooks/useComposeEmailOptions';
 
 // Backend
 import { sendZohoEmail } from '../../../config/data/firebase';
+import { sanitizeHtmlConfig } from '../../../utils/sanitizeHtml';
+import DOMPurify from 'dompurify';
 
 export const EmailForm = () => {
 	const { member } = useAuth();
@@ -195,7 +197,7 @@ export const EmailForm = () => {
 						Replying to:
 					</Typography>
 					<Box sx={{ px: 2, py: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, maxHeight: 200, overflowY: 'auto', opacity: 0.7 }}>
-						<div dangerouslySetInnerHTML={{ __html: navState.htmlPreview }} />
+						<div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(navState.htmlPreview, sanitizeHtmlConfig) }} />
 					</Box>
 				</Box>
 			)}

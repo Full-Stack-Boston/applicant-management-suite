@@ -11,6 +11,8 @@ import { Box, CircularProgress, Typography, type SxProps, type Theme } from '@mu
 
 // Hooks
 import { useProcessedEmailContent, type ProcessableEmail } from '../../hooks/useProcessedEmailContent';
+import { sanitizeHtmlConfig } from '../../utils/sanitizeHtml';
+import DOMPurify from 'dompurify';
 
 interface EmailBodyProps {
 	email: ProcessableEmail;
@@ -51,7 +53,7 @@ const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }: EmailBody
 						<Typography sx={{ ml: 2, color: 'text.secondary' }}>Loading email content...</Typography>
 					</Box>
 				) : (
-					<Box dangerouslySetInnerHTML={{ __html: processedContent }} sx={bodyStyles} />
+					<Box dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(processedContent, sanitizeHtmlConfig) }} sx={bodyStyles} />
 				)}
 			</Box>
 		</Box>

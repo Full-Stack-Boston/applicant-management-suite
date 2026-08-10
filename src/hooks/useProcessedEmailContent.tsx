@@ -20,6 +20,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchAttachmentContent } from '../config/data/firebase';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 /**
  * Escapes characters that have special meaning in Regular Expressions.
@@ -74,10 +75,10 @@ export const useProcessedEmailContent = (email: ProcessableEmail | null | undefi
 
 			let htmlContent = email.content;
 
-			// 2. Short Circuit: If no images to hydrate, return immediately
+			// 2. Short Circuit: If no images to hydrate, sanitize and return
 			if (!email?.inlineAttachments?.length) {
 				if (isMounted) {
-					setProcessedContent(htmlContent);
+					setProcessedContent(sanitizeHtml(htmlContent));
 					setContentLoading(false);
 				}
 				return;
@@ -123,7 +124,7 @@ export const useProcessedEmailContent = (email: ProcessableEmail | null | undefi
 					htmlContent = htmlContent.replace(cidRegex, replacementString);
 				}
 
-				setProcessedContent(htmlContent);
+				setProcessedContent(sanitizeHtml(htmlContent));
 				setContentLoading(false);
 			}
 		};

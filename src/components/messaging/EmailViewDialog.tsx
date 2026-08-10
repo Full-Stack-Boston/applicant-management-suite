@@ -16,6 +16,8 @@ import { Reply, Forward, MarkEmailReadOutlined, MarkEmailUnreadOutlined, ArrowDr
 import { useEmailActions, type RawEmail } from '../../hooks/useEmailActions';
 import { useAlert } from '../../context/AlertContext';
 import { useProcessedEmailContent, type ProcessableEmail } from '../../hooks/useProcessedEmailContent';
+import { sanitizeHtmlConfig } from '../../utils/sanitizeHtml';
+import DOMPurify from 'dompurify';
 import type { Member } from '../../types/domain';
 import type { EmailAttachment } from './EmailActions';
 
@@ -176,7 +178,7 @@ const EmailViewDialog = ({ email, onClose, permittedAliases, member }: EmailView
 					</Box>
 				) : (
 					<Box
-						dangerouslySetInnerHTML={{ __html: processedContent }}
+						dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(processedContent, sanitizeHtmlConfig) }}
 						sx={{
 							mt: 2,
 							fontFamily: 'sans-serif',

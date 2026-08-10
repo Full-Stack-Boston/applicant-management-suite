@@ -21,6 +21,8 @@ import { useComposeEmailOptions } from '../../hooks/useComposeEmailOptions';
 
 // Backend
 import { sendZohoEmail } from '../../config/data/firebase';
+import { sanitizeHtmlConfig } from '../../utils/sanitizeHtml';
+import DOMPurify from 'dompurify';
 
 // Helper: Convert comma-separated string to array
 const parseRecipients = (recipientString: unknown): string[] => {
@@ -186,7 +188,7 @@ const ComposeEmailDialog = ({ onSuccess, onClose, title, to, subject, htmlPrevie
 							Quoted Text:
 						</Typography>
 						<Box sx={{ px: 2, py: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'action.hover', maxHeight: 200, overflowY: 'auto' }}>
-							<div dangerouslySetInnerHTML={{ __html: htmlPreview }} />
+							<div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlPreview, sanitizeHtmlConfig) }} />
 						</Box>
 					</Box>
 				)}
