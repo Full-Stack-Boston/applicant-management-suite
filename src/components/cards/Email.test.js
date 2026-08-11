@@ -6,7 +6,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
-import { updateEmailReadStatus, fetchEmailContent } from '../../config/data/firebase';
+import { updateEmailReadStatus, fetchEmailContent, fetchAttachmentContent } from '../../config/data/firebase';
 
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
@@ -51,6 +51,12 @@ vi.mock('../messaging/EmailActions', () => ({
 		<div data-testid='email-actions'>
 			<button onClick={props.onDelete}>Delete</button>
 			<button onClick={props.onToggleRead}>Toggle Read</button>
+			<button
+				onClick={() =>
+					props.onDownload?.({ attachmentId: 'att-1', attachmentName: 'doc.pdf' })
+				}>
+				Download
+			</button>
 		</div>
 	),
 }));
@@ -146,6 +152,29 @@ describe('EmailCard', () => {
 		await waitFor(() => {
 			expect(screen.getByText('Nested Subject')).toBeInTheDocument();
 		});
+	});
+
+	test('downloads attachments via fetchAttachmentContent', async () => {
+		fetchAttachmentContent.mockResolvedValue({
+			data: { contentType: 'application/pdf', content: 'YmFzZTY0' },
+		});
+		const createEl = document.createElement.bind(document);
+		const click = vi.fn();
+		vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+			const el = createEl(tag);
+			if (tag === 'a') el.click = click;
+			return el;
+		});
+
+		render(<EmailCard email={mockEmail} />);
+		fireEvent.click(screen.getByText('Download'));
+
+		await waitFor(() => {
+			expect(fetchAttachmentContent).toHaveBeenCalledWith(
+				expect.objectContaining({ messageId: 'msg123', attachmentId: 'att-1' })
+			);
+		});
+		expect(click).toHaveBeenCalled();
 	});
 
 	test('calls updateEmailReadStatus when toggled', async () => {
