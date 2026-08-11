@@ -646,7 +646,7 @@ const ROW_ACTIONS: Record<string, RowActionConfig> = {
 		color: 'success.dark',
 		async: true,
 		onClick: async ({ row, emailActions }) => {
-			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
+			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId as string | undefined, folderName: row.folderName as string | undefined });
 			emailActions.handleReply({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},
@@ -656,7 +656,7 @@ const ROW_ACTIONS: Record<string, RowActionConfig> = {
 		color: 'success.light',
 		async: true,
 		onClick: async ({ row, emailActions }) => {
-			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
+			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId as string | undefined, folderName: row.folderName as string | undefined });
 			emailActions.handleReplyAll({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},
@@ -666,7 +666,7 @@ const ROW_ACTIONS: Record<string, RowActionConfig> = {
 		color: 'custom.brown',
 		async: true,
 		onClick: async ({ row, emailActions }) => {
-			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId });
+			const result = await fetchEmailContent({ messageId: row.id, folderId: row.folderId as string | undefined, folderName: row.folderName as string | undefined });
 			emailActions.handleForward({ ...(result.data as Record<string, unknown>), id: row.id, isRead: row.isRead, folderId: row.folderId, tags: row.tags });
 		},
 	},

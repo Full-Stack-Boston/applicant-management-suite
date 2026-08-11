@@ -22,6 +22,7 @@ const AssetProfileSection = ({
 	status,
 	config = {},
 	details,
+	stackDetails = false,
 	footerMeta,
 	actions,
 	asset,
@@ -104,7 +105,7 @@ const AssetProfileSection = ({
 				</Box>
 			)}
 
-			<ApplicationDetailGrid items={details} fullWidth />
+			<ApplicationDetailGrid items={details} fullWidth={!stackDetails} stacked={stackDetails} />
 
 			{footerMeta && (
 				<Box
@@ -137,6 +138,7 @@ AssetProfileSection.propTypes = {
 	status: PropTypes.string,
 	config: PropTypes.object,
 	details: PropTypes.array.isRequired,
+	stackDetails: PropTypes.bool,
 	footerMeta: PropTypes.node,
 	actions: PropTypes.array,
 	asset: PropTypes.object,

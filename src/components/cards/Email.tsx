@@ -3,7 +3,7 @@
  * Full email content with profile-style header + embedded actions (PF parity).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { Box } from '@mui/material';
@@ -23,8 +23,8 @@ import { useEmailActions } from '../../hooks/useEmailActions';
 import { paths } from '../../config/navigation/paths';
 import { collections } from '../../config/data/collections';
 import { capitalize } from '../../config/Constants';
-import { updateEmailReadStatus, deleteZohoEmail, fetchAttachmentContent } from '../../config/data/firebase';
-import { assetCardShellSx, assetViewCardContentSx, singleAssetStackSx } from '../../config/ui/adminPageStyles';
+import { updateEmailReadStatus, deleteZohoEmail, fetchAttachmentContent, fetchEmailContent } from '../../config/data/firebase';
+import { assetViewCardContentSx, singleAssetStackSx } from '../../config/ui/adminPageStyles';
 
 import SingleAssetPage, { AssetCard } from '../layout/SingleAssetPage';
 import AssetProfileSection from '../assets/AssetProfileSection';
@@ -47,19 +47,66 @@ interface AttachmentContentResult {
 	};
 }
 
-const EmailCard = ({ email }: { email: EmailRecord }) => {
+const EmailCard = ({ email: initialEmail }: { email: EmailRecord }) => {
 	const config = useConfig();
 	const navigate = useNavigate();
-	const { darkMode, boxShadow } = useTheme();
+	const { darkMode } = useTheme();
 	const { showDialog } = useDialog();
 	const { member, permittedAliases } = useMailbox() as MailboxContextValue;
 	const { showAlert, handleError } = useAlert();
-	const paperCardSx = assetCardShellSx(boxShadow ?? '');
 
 	const { handleReply, handleReplyAll, handleForward } = useEmailActions({ navigate, permittedAliases, member });
 
+	const [email, setEmail] = useState<EmailRecord>(initialEmail);
 	const [isDownloading, setIsDownloading] = useState<string | null>(null);
 	const [showNotes, setShowNotes] = useState(false);
+
+	useEffect(() => {
+		setEmail(initialEmail);
+	}, [initialEmail]);
+
+	useEffect(() => {
+		const needsHydration = !email?.content || !email?.headerContent;
+		if (!email?.id || !(email.folderId || email.folderName) || !needsHydration) return;
+
+		let cancelled = false;
+		(async () => {
+			try {
+				const result = await fetchEmailContent({
+					messageId: email.id,
+					folderId: email.folderId,
+					folderName: email.folderName,
+				});
+				const data = result.data as Partial<EmailRecord> & {
+					headerContent?: EmailRecord['headerContent'] | Record<string, string[]>;
+				};
+				if (cancelled || !data) return;
+
+				const rawHeaders = data.headerContent;
+				const normalizedHeaderContent =
+					rawHeaders && typeof rawHeaders === 'object' && 'headerContent' in rawHeaders
+						? (rawHeaders as EmailRecord['headerContent'])
+						: rawHeaders
+							? { headerContent: rawHeaders as Record<string, string[]> }
+							: undefined;
+
+				setEmail((prev) => ({
+					...prev,
+					content: data.content ?? prev.content,
+					attachments: (data.attachments as EmailRecord['attachments']) ?? prev.attachments,
+					inlineAttachments: (data.inlineAttachments as EmailRecord['inlineAttachments']) ?? prev.inlineAttachments,
+					folderId: (data.folderId as string | undefined) || prev.folderId,
+					headerContent: normalizedHeaderContent || prev.headerContent,
+				}));
+			} catch (error) {
+				console.error('Failed to hydrate email details:', error);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [email?.id, email?.content, email?.headerContent, email?.folderId, email?.folderName]);
 
 	if (!email) return null;
 
@@ -142,6 +189,7 @@ const EmailCard = ({ email }: { email: EmailRecord }) => {
 						status={capitalize(email.folderName ?? '')}
 						config={config}
 						details={emailDetails}
+						stackDetails
 						functionsTitle='Actions'
 						functions={
 							<EmailActions
@@ -170,7 +218,11 @@ const EmailCard = ({ email }: { email: EmailRecord }) => {
 				</Box>
 			)}
 
-			<EmailBody email={email as unknown as Parameters<typeof EmailBody>[0]['email']} darkMode={darkMode} cardStyles={paperCardSx as Record<string, unknown>} cardContentStyles={assetViewCardContentSx as Record<string, unknown>} />
+			<Box sx={singleAssetStackSx}>
+				<AssetCard contentSx={{ ...assetViewCardContentSx, p: { xs: 0, md: 0 }, px: 0, py: 0 }}>
+					<EmailBody email={email as unknown as Parameters<typeof EmailBody>[0]['email']} darkMode={darkMode} cardStyles={{}} cardContentStyles={{}} />
+				</AssetCard>
+			</Box>
 		</SingleAssetPage>
 	);
 };
