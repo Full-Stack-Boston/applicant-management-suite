@@ -40,8 +40,9 @@ Scheduled function `rotateDemoApplicationWindow` runs daily (05:15 America/New_Y
 Create a `.env` file in this directory (do not commit it to git) with the following keys:
 
 ```env
-# Daily.co (Video)
+# Daily.co (Video) — optional; use your own Daily.co subscription (not shared FSB accounts)
 DAILY_KEY=your_daily_api_key_here
+DAILY_DOMAIN=https://your-org.daily.co
 
 # Twilio (SMS)
 TWILIO_ACCOUNT_SID=your_sid
@@ -104,11 +105,13 @@ These files are required for local scripts but are ignored by Git for security:
 
 * **`sourceServiceAccount.json` & `destServiceAccount.json:`** Required only for cross-project migrations.
 
-## Daily.co
+## Daily.co (optional)
 
-- `DAILY_KEY` — API key for the AMS Daily team
-- `DAILY_DOMAIN` — optional override, e.g. `https://your-ams-subdomain.daily.co` (defaults to `https://fsb-demo.daily.co`)
+Video interviews are optional. Adopters must supply their own Daily.co subscription and API credentials (or replace Daily with another provider). There is no shared Full Stack Boston Daily account or Mission Control coupling in this template.
 
-### Video budget (AMS spending cap)
+- `DAILY_KEY` — your Daily.co API key (from your Daily dashboard)
+- `DAILY_DOMAIN` — your Daily subdomain URL, e.g. `https://your-org.daily.co` (required for room URL fallbacks; defaults to `https://your-org.daily.co` if unset)
 
-Site Settings → **Video / Daily** stores `videoBudget.mode` as `off` | `10` | `50` | `100` of a 10,000 participant-minute monthly base. Cloud Functions hard-gate room create/join. Usage is sampled every 5 minutes into `videoUsage/{YYYY-MM}`; `videoBudget/status` is the remote snapshot for a future fullstackboston.com dash. Owner alerts always email `OWNER_LEAD_EMAIL` (not demo-simulated).
+### Video budget (optional spending cap)
+
+Site Settings → **Video / Daily** stores `videoBudget.mode` as `off` | `10` | `50` | `100` of a 10,000 participant-minute monthly base. This caps usage on **your** Daily account only — it is not connected to Full Stack Boston Mission Control or any FSB-operated Daily team. Cloud Functions hard-gate room create/join when the cap is exceeded. Usage is sampled every 5 minutes into `videoUsage/{YYYY-MM}`; `videoBudget/status` holds a live snapshot for the Settings UI. Owner alerts email `OWNER_LEAD_EMAIL` (not demo-simulated).

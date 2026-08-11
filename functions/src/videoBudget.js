@@ -6,9 +6,9 @@
  *
  * Allowed minutes = base * (mode/100). mode 'off' blocks all video.
  *
- * Usage / remote status (future fullstackboston.com dash):
+ * Usage / status snapshots (Settings UI readout):
  *   videoUsage/{YYYY-MM}  — monthly counters + alert flags
- *   videoBudget/status    — latest snapshot for remote monitors
+ *   videoBudget/status    — latest snapshot for Site Settings
  */
 
 const admin = require('firebase-admin');

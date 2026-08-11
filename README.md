@@ -15,7 +15,7 @@ AMS is the portfolio-ready product surface. Client production deployments share 
 - Admin datagrid workflows with folder/alias inbox filtering and bulk actions
 - Contact center messaging (email / SMS templates) and notes with privacy toggles
 - Real-time dashboards and award trend charts (Recharts)
-- Video interview rooms via Daily.co, with scheduling and RSVP flows
+- Optional video interviews via Daily.co (bring your own Daily subscription and API key, or replace the video provider); scheduling and RSVP flows when video is enabled
 - Firebase Auth, Firestore, Storage, and Cloud Functions Gen2 backends
 - Synthetic seed data only. No real applicant PII is required to explore the suite
 
@@ -31,7 +31,7 @@ AMS is the portfolio-ready product surface. Client production deployments share 
 | Routing | React Router **7.18** |
 | State | React Context + Jotai |
 | Backend | Firebase Auth, Firestore, Storage, Cloud Functions |
-| Integrations | Daily.co (video), Twilio (SMS), Zoho Mail (sync) |
+| Integrations | Daily.co (optional video — your own account), Twilio (SMS), Zoho Mail (sync) |
 | Quality | ESLint, TypeScript check, Vitest + coverage (80% lines), OSV-Scanner |
 
 Client sources are TypeScript (`.ts` / `.tsx`). Cloud Functions remain modular JavaScript under `functions/src/modules/`.

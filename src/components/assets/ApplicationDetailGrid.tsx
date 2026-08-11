@@ -3,14 +3,13 @@
  * Full-width mode packs fields into many columns to minimize wrapping.
  */
 
-import React from 'react';
+import React, { type ElementType } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { SvgIconComponent } from '@mui/icons-material';
 
 export interface ApplicationDetailItem {
 	label: string;
 	value?: string | number | React.ReactNode;
-	icon: SvgIconComponent;
+	icon: ElementType;
 }
 
 interface ApplicationDetailGridProps {

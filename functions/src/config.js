@@ -11,7 +11,7 @@ const brand = {
 	tagline: 'To facilitate the administration and review of applications, interviews, and deliberations.',
 	organizationEstablished: 'City, State | Established 2000',
 	url: 'https://ams.fullstackboston.com',
-	dailyCoDomain: process.env.DAILY_DOMAIN || 'https://fsb-demo.daily.co',
+	dailyCoDomain: process.env.DAILY_DOMAIN || 'https://your-org.daily.co',
 	systemEmail: 'demo@fullstackboston.com',
 	noreplyEmail: 'demo@fullstackboston.com',
 };

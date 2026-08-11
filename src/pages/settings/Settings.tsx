@@ -242,7 +242,7 @@ const SiteSettings = () => {
 		fetchApplicants();
 	}, [config, handleError, memoizedGroupSettings, showAlert]);
 
-	// Live video budget status for Settings readout (future FSB dash uses same doc)
+	// Live video budget status for Settings readout (videoBudget/status)
 	useEffect(() => {
 		const statusRef = doc(db, collections.videoBudget, 'status');
 		const unsubscribe = onSnapshot(
