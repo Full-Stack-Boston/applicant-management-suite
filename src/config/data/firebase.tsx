@@ -1070,6 +1070,85 @@ export const getAwardsByIds = async (awardIds: string[]) => {
 	return docs.filter(Boolean) as Record<string, unknown>[];
 };
 
+export const getApplicationsByIds = async (applicationIds: string[]) => {
+	const unique = [...new Set((applicationIds || []).filter(Boolean))];
+	const docs = await Promise.all(
+		unique.map(async (id) => {
+			const snap = await getDoc(doc(db, collections.applications, id));
+			return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+		})
+	);
+	return docs.filter(Boolean) as Record<string, unknown>[];
+};
+
+/** Format a Places-style or plain mailing address. Never treats bare emails as mail addresses. */
+export const formatApplicantMailingAddress = (value: unknown): string | null => {
+	if (value === null || value === undefined) return null;
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (!trimmed) return null;
+		if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return null;
+		return trimmed;
+	}
+	if (typeof value === 'object') {
+		const obj = value as Record<string, unknown>;
+		const description = typeof obj.description === 'string' ? obj.description.trim() : '';
+		if (description && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(description)) return description;
+		const structured = obj.structured_formatting as Record<string, unknown> | undefined;
+		if (structured) {
+			const parts = [structured.main_text, structured.secondary_text].filter(Boolean).map(String);
+			if (parts.length) return parts.join(', ');
+		}
+		const parts = [obj.address, obj.street, obj.address2, obj.city, obj.state, obj.zip, obj.postalCode, obj.zipCode]
+			.filter(Boolean)
+			.map(String);
+		if (parts.length) return parts.join(', ');
+	}
+	return null;
+};
+
+export const getMemberOrApplicantAddress = async (
+	userId: string,
+	options?: { profileId?: string | null }
+) => {
+	const missingMail = 'No mailing address on file';
+	if (!userId && !options?.profileId) return { name: 'Unknown', address: missingMail };
+
+	const profileIds = [...new Set([options?.profileId, userId].filter(Boolean).map(String))];
+	for (const profileId of profileIds) {
+		const snap = await getDoc(doc(db, collections.profiles, profileId));
+		if (!snap.exists()) continue;
+		const data = snap.data() as Record<string, unknown>;
+		const name =
+			[data.applicantFirstName, data.applicantLastName].filter(Boolean).join(' ') ||
+			String(data.callMe || data.firstName || '') ||
+			'Unknown';
+		const address = formatApplicantMailingAddress(data.applicantMailingAddress);
+		return { name: name === 'Unknown' && !address ? 'Unknown' : name || 'Unknown', address: address || missingMail };
+	}
+
+	for (const coll of [collections.applicants, collections.members]) {
+		if (!userId) continue;
+		const snap = await getDoc(doc(db, coll, userId));
+		if (!snap.exists()) continue;
+		const data = snap.data() as Record<string, unknown>;
+		const name =
+			[data.firstName, data.lastName].filter(Boolean).join(' ') || String(data.callMe || 'Unknown');
+		const address =
+			formatApplicantMailingAddress(data.applicantMailingAddress) ||
+			formatApplicantMailingAddress(data.mailingAddress) ||
+			(() => {
+				const parts = [data.address, data.address2, data.city, data.state, data.zip, data.postalCode]
+					.filter(Boolean)
+					.map(String);
+				return parts.length ? parts.join(', ') : null;
+			})();
+		return { name, address: address || missingMail };
+	}
+
+	return { name: 'Unknown', address: missingMail };
+};
+
 export const getRealTimeCollection = (collectionRef: CollectionName, callback: RealtimeCallback<DocumentData[]>) => {
 	const unsubscribe = onSnapshot(collection(db, collectionRef), (snapshot) => {
 		const fetchedData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
