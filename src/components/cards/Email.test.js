@@ -37,7 +37,12 @@ vi.mock('../layout/SingleAssetPage', () => ({
 	AssetCard: ({ children }) => <div>{children}</div>,
 }));
 vi.mock('../assets/AssetProfileSection', () => ({
-	default: ({ displayName }) => <h1>{displayName}</h1>,
+	default: ({ displayName, functions }) => (
+		<div>
+			<h1>{displayName}</h1>
+			{functions}
+		</div>
+	),
 }));
 vi.mock('../notes/NotesSection', () => ({ default: () => null }));
 vi.mock('../messaging/EmailBody', () => ({ default: () => <div data-testid='email-body'>Email Body</div> }));
