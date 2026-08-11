@@ -1,51 +1,54 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import EmailCard from './Email.jsx'; // Ensure correct extension if needed
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import EmailCard from './Email';
 import { useMailbox } from '../../context/MailboxContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
-import { updateEmailReadStatus } from '../../config/data/firebase';
+import { updateEmailReadStatus, fetchEmailContent } from '../../config/data/firebase';
 
-// --- Mocks ---
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
-	useNavigate: jest.fn(),
+	useNavigate: vi.fn(),
 }));
 
-vi.mock('../../context/MailboxContext', () => ({ useMailbox: jest.fn() }));
-vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
-vi.mock('../../context/AlertContext', () => ({ useAlert: jest.fn() }));
-vi.mock('../../context/DialogContext', () => ({ useDialog: jest.fn() }));
-vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn(() => ({}))  }));
+vi.mock('../../context/MailboxContext', () => ({ useMailbox: vi.fn() }));
+vi.mock('../../context/ThemeContext', () => ({ useTheme: vi.fn() }));
+vi.mock('../../context/AlertContext', () => ({ useAlert: vi.fn() }));
+vi.mock('../../context/DialogContext', () => ({ useDialog: vi.fn() }));
+vi.mock('../../context/ConfigContext', () => ({ useConfig: vi.fn(() => ({})) }));
 
 vi.mock('../../hooks/useEmailActions', () => ({
-	useEmailActions: jest.fn(),
+	useEmailActions: vi.fn(),
 }));
 
 vi.mock('../../config/data/firebase', () => ({
 	__esModule: true,
-	updateEmailReadStatus: jest.fn(),
-	deleteZohoEmail: jest.fn(),
-	fetchAttachmentContent: jest.fn(),
+	updateEmailReadStatus: vi.fn(),
+	deleteZohoEmail: vi.fn(),
+	fetchAttachmentContent: vi.fn(),
+	fetchEmailContent: vi.fn(),
 }));
 
-// Mock children
 vi.mock('../layout/SingleAssetPage', () => ({
 	__esModule: true,
 	default: ({ children }) => <div>{children}</div>,
 	AssetCard: ({ children }) => <div>{children}</div>,
 }));
-vi.mock('../assets/Header', () => ({ default: ({ title }) => <h1>{title}</h1> }));
-vi.mock('../assets/InfoTable', () => ({ default: () => <div>InfoTable</div> }));
+vi.mock('../assets/AssetProfileSection', () => ({
+	default: ({ displayName }) => <h1>{displayName}</h1>,
+}));
+vi.mock('../notes/NotesSection', () => ({ default: () => null }));
 vi.mock('../messaging/EmailBody', () => ({ default: () => <div data-testid='email-body'>Email Body</div> }));
-vi.mock('../messaging/EmailActions', () => ({ default: (props) => (
-	<div data-testid='email-actions'>
-		<button onClick={props.onDelete}>Delete</button>
-		<button onClick={props.onToggleRead}>Toggle Read</button>
-	</div>
-) }));
+vi.mock('../messaging/EmailActions', () => ({
+	default: (props) => (
+		<div data-testid='email-actions'>
+			<button onClick={props.onDelete}>Delete</button>
+			<button onClick={props.onToggleRead}>Toggle Read</button>
+		</div>
+	),
+}));
 
 describe('EmailCard', () => {
 	const mockEmail = {
@@ -64,15 +67,15 @@ describe('EmailCard', () => {
 	};
 
 	beforeEach(() => {
-		jest.clearAllMocks();
+		vi.clearAllMocks();
 		useMailbox.mockReturnValue({ member: {}, permittedAliases: [] });
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
-		useAlert.mockReturnValue({ showAlert: jest.fn(), handleError: jest.fn() });
-		useDialog.mockReturnValue({ showDialog: jest.fn() });
+		useAlert.mockReturnValue({ showAlert: vi.fn(), handleError: vi.fn() });
+		useDialog.mockReturnValue({ showDialog: vi.fn() });
 		useEmailActions.mockReturnValue({
-			handleReply: jest.fn(),
-			handleReplyAll: jest.fn(),
-			handleForward: jest.fn(),
+			handleReply: vi.fn(),
+			handleReplyAll: vi.fn(),
+			handleForward: vi.fn(),
 		});
 	});
 
@@ -80,6 +83,35 @@ describe('EmailCard', () => {
 		render(<EmailCard email={mockEmail} />);
 		expect(screen.getByText('Test Subject')).toBeInTheDocument();
 		expect(screen.getByTestId('email-body')).toBeInTheDocument();
+	});
+
+	test('hydrates missing content from fetchEmailContent', async () => {
+		fetchEmailContent.mockResolvedValue({
+			data: {
+				content: '<p>hydrated</p>',
+				headerContent: { Subject: ['Hydrated Subject'], From: ['a@b.c'] },
+				folderId: 'inbox-id',
+			},
+		});
+
+		render(
+			<EmailCard
+				email={{
+					id: 'msg-hydrate',
+					folderName: 'inbox',
+					isRead: true,
+				}}
+			/>
+		);
+
+		await waitFor(() => {
+			expect(fetchEmailContent).toHaveBeenCalledWith(
+				expect.objectContaining({ messageId: 'msg-hydrate', folderName: 'inbox' })
+			);
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Hydrated Subject')).toBeInTheDocument();
+		});
 	});
 
 	test('calls updateEmailReadStatus when toggled', async () => {
