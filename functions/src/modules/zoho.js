@@ -554,20 +554,23 @@ exports.fetchEmailContent = onCall(async (request) => {
 		throw new HttpsError('permission-denied', 'User does not have email permissions.');
 	}
 
-	const { messageId, folderId } = request.data;
-	if (!messageId || !folderId) throw new HttpsError('invalid-argument', 'A messageId and folderId are required.');
+	const { messageId, folderId, folderName } = request.data;
+	if (!messageId || (!folderId && !folderName)) {
+		throw new HttpsError('invalid-argument', 'A messageId and folderId (or folderName) are required.');
+	}
 
 	const { live } = await resolveMailboxMode();
 	if (!live) {
 		const snap = await admin.firestore().doc(`mail_cache/${messageId}`).get();
 		if (!snap.exists) throw new HttpsError('not-found', 'Email not found in demo mailbox cache.');
 		const d = snap.data();
+		const resolvedFolderId = d.folderId || folderId || (folderName ? String(folderName).toLowerCase() : undefined);
 		return {
 			...(d.headerContent || {}),
 			content: d.content || '',
 			attachments: d.attachments || [],
 			inlineAttachments: d.inlineAttachments || [],
-			folderId: d.folderId || folderId,
+			folderId: resolvedFolderId,
 			simulated: true,
 		};
 	}
@@ -575,7 +578,18 @@ exports.fetchEmailContent = onCall(async (request) => {
 	try {
 		const accessToken = await getZohoAccessToken();
 		const accountId = process.env.ZOHO_ACCOUNTID;
-		const base = `https://mail.zoho.com/api/accounts/${accountId}/folders/${folderId}/messages/${messageId}`;
+
+		let resolvedFolderId = folderId;
+		if (!resolvedFolderId && folderName) {
+			const folders = await _getZohoFolders(accessToken, accountId);
+			const match = folders.find((f) => String(f.folderName).toLowerCase() === String(folderName).toLowerCase());
+			if (!match) {
+				throw new HttpsError('not-found', `Zoho folder not found for folderName "${folderName}".`);
+			}
+			resolvedFolderId = match.folderId;
+		}
+
+		const base = `https://mail.zoho.com/api/accounts/${accountId}/folders/${resolvedFolderId}/messages/${messageId}`;
 		const apiHeaders = { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } };
 
 		const [headersResponse, contentResponse, attachmentsInfoResponse] = await Promise.all([axios.get(`${base}/header`, { ...apiHeaders, params: { raw: false } }), axios.get(`${base}/content`, apiHeaders), axios.get(`${base}/attachmentinfo`, { ...apiHeaders, params: { includeInline: true } })]);
@@ -585,9 +599,10 @@ exports.fetchEmailContent = onCall(async (request) => {
 			content: contentResponse.data.data.content,
 			attachments: attachmentsInfoResponse.data.data.attachments || [],
 			inlineAttachments: attachmentsInfoResponse.data.data.inline || [],
-			folderId: folderId,
+			folderId: resolvedFolderId,
 		};
 	} catch (error) {
+		if (error instanceof HttpsError) throw error;
 		console.error('Error fetching Zoho email content:', error.response?.data);
 		throw new HttpsError('internal', 'Failed to fetch email content from Zoho.');
 	}

@@ -19,7 +19,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { fetchAttachmentContent } from '../config/data/firebase';
+import { fetchAttachmentContent, fetchEmailContent } from '../config/data/firebase';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 /**
@@ -40,6 +40,7 @@ export interface ProcessableEmail {
 	id: string;
 	content?: string;
 	folderId?: string;
+	folderName?: string;
 	inlineAttachments?: InlineAttachment[];
 	[key: string]: unknown;
 }
@@ -64,8 +65,7 @@ export const useProcessedEmailContent = (email: ProcessableEmail | null | undefi
 		const processInlineAttachments = async () => {
 			setContentLoading(true);
 
-			// 1. Basic Validation
-			if (!email?.content) {
+			if (!email) {
 				if (isMounted) {
 					setProcessedContent('');
 					setContentLoading(false);
@@ -73,10 +73,43 @@ export const useProcessedEmailContent = (email: ProcessableEmail | null | undefi
 				return;
 			}
 
-			let htmlContent = email.content;
+			let htmlContent = email.content || '';
+			let inlineAttachments = email.inlineAttachments || [];
+
+			// mail_cache often stores list metadata only; pull full body from Zoho when missing
+			if (!htmlContent && email.id && (email.folderId || email.folderName)) {
+				try {
+					const result = await fetchEmailContent({
+						messageId: email.id,
+						folderId: email.folderId,
+						folderName: email.folderName,
+					});
+					const data = (result as { data: { content?: string; inlineAttachments?: InlineAttachment[]; folderId?: string } }).data;
+					htmlContent = data?.content || '';
+					if (!inlineAttachments.length && data?.inlineAttachments?.length) {
+						inlineAttachments = data.inlineAttachments;
+					}
+				} catch (error) {
+					console.error('Failed to fetch email content:', error);
+					if (isMounted) {
+						setProcessedContent('');
+						setContentLoading(false);
+					}
+					return;
+				}
+			}
+
+			// 1. Basic Validation
+			if (!htmlContent) {
+				if (isMounted) {
+					setProcessedContent('');
+					setContentLoading(false);
+				}
+				return;
+			}
 
 			// 2. Short Circuit: If no images to hydrate, sanitize and return
-			if (!email?.inlineAttachments?.length) {
+			if (!inlineAttachments.length) {
 				if (isMounted) {
 					setProcessedContent(sanitizeHtml(htmlContent));
 					setContentLoading(false);
@@ -85,7 +118,7 @@ export const useProcessedEmailContent = (email: ProcessableEmail | null | undefi
 			}
 
 			// 3. Fetch Data for all Inline Images (Parallel)
-			const attachmentPromises = email.inlineAttachments.map(async (attachment): Promise<ResolvedAttachment | null> => {
+			const attachmentPromises = inlineAttachments.map(async (attachment): Promise<ResolvedAttachment | null> => {
 				if (!attachment.cid) {
 					console.warn('Skipping inline attachment with missing cid:', attachment);
 					return null;

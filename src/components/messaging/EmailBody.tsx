@@ -21,32 +21,38 @@ interface EmailBodyProps {
 	cardContentStyles: Record<string, unknown>;
 }
 
-const EmailBody = ({ email, darkMode, cardStyles, cardContentStyles }: EmailBodyProps) => {
+const EmailBody = ({ email, cardStyles, cardContentStyles }: EmailBodyProps) => {
 	// Custom hook to handle HTML sanitization and inline image processing
 	const { processedContent, contentLoading } = useProcessedEmailContent(email);
 
-	// Styles to ensure external HTML email content renders decently within the app
+	// HTML emails assume a light reading surface; keep contrast stable across themes.
 	const bodyStyles: SxProps<Theme> = {
-		mt: 1,
-		p: 2,
+		mt: 0,
+		p: { xs: 2, md: 2.5 },
 		fontFamily: 'sans-serif',
 		fontSize: '14px',
 		lineHeight: 1.6,
-		borderRadius: '8px',
-		// Ensure contrast matches the theme
-		bgcolor: darkMode ? 'background.default' : 'background.paper',
-		color: 'text.primary',
+		borderRadius: 0,
+		width: '100%',
+		boxSizing: 'border-box',
+		bgcolor: '#ffffff',
+		color: '#1a1a1a',
 		wordBreak: 'break-word',
-		overflowX: 'auto', // Handle wide tables/images
+		overflowX: 'auto',
 		'& img': { maxWidth: '100%', height: 'auto', display: 'block' },
 		'& table': { borderCollapse: 'collapse', width: '100%', maxWidth: '100%' },
-		'& th, & td': { border: '1px solid', borderColor: 'divider', p: 1 },
-		'& a': { color: 'primary.main' },
+		'& th, & td': { border: '1px solid #ddd', p: 1 },
+		'& a': { color: '#0b57d0' },
 	};
 
+	const outerSx = [
+		{ width: '100%', m: 0 },
+		...(Array.isArray(cardStyles.sx) ? cardStyles.sx : cardStyles.sx ? [cardStyles.sx] : []),
+	] as SxProps<Theme>;
+
 	return (
-		<Box sx={{ ...cardStyles }}>
-			<Box sx={{ ...cardContentStyles }}>
+		<Box {...(cardStyles as Record<string, unknown>)} sx={outerSx}>
+			<Box {...(cardContentStyles as Record<string, unknown>)}>
 				{contentLoading ? (
 					<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
 						<CircularProgress size={24} />

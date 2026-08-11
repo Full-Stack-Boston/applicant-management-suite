@@ -1,14 +1,26 @@
 /**
- * Compact, icon-backed detail grid for asset profile headers.
+ * Compact, icon-backed detail grid for application profile headers.
  * Full-width mode packs fields into many columns to minimize wrapping.
  */
 
 import React from 'react';
-import PropTypes from 'prop-types';
 import { Box, Typography } from '@mui/material';
-import type { ApplicationDetailGridProps } from './types';
+import type { SvgIconComponent } from '@mui/icons-material';
 
-const ApplicationDetailGrid = ({ items, fullWidth = false }: ApplicationDetailGridProps) => {
+export interface ApplicationDetailItem {
+	label: string;
+	value?: string | number | React.ReactNode;
+	icon: SvgIconComponent;
+}
+
+interface ApplicationDetailGridProps {
+	items: ApplicationDetailItem[];
+	fullWidth?: boolean;
+	/** Single-column stacked rows — better for lengthy values (email headers). */
+	stacked?: boolean;
+}
+
+const ApplicationDetailGrid: React.FC<ApplicationDetailGridProps> = ({ items, fullWidth = false, stacked = false }) => {
 	const visibleItems = items.filter((item) => item.value);
 
 	if (visibleItems.length === 0) return null;
@@ -17,20 +29,22 @@ const ApplicationDetailGrid = ({ items, fullWidth = false }: ApplicationDetailGr
 		<Box
 			sx={{
 				display: 'grid',
-				gridTemplateColumns: fullWidth
-					? {
-							xs: 'repeat(2, minmax(0, 1fr))',
-							sm: 'repeat(3, minmax(0, 1fr))',
-							md: 'repeat(4, minmax(0, 1fr))',
-							lg: 'repeat(5, minmax(0, 1fr))',
-						}
-					: {
-							xs: '1fr',
-							md: '1fr 1fr',
-							xl: '1fr 1fr 1fr',
-						},
-				columnGap: fullWidth ? { xs: 0.75, md: 1 } : { xs: 1.5, md: 2 },
-				rowGap: fullWidth ? { xs: 0.5, md: 0.75 } : { xs: 0.75, md: 1 },
+				gridTemplateColumns: stacked
+					? '1fr'
+					: fullWidth
+						? {
+								xs: 'repeat(2, minmax(0, 1fr))',
+								sm: 'repeat(3, minmax(0, 1fr))',
+								md: 'repeat(4, minmax(0, 1fr))',
+								lg: 'repeat(5, minmax(0, 1fr))',
+							}
+						: {
+								xs: '1fr',
+								md: '1fr 1fr',
+								xl: '1fr 1fr 1fr',
+							},
+				columnGap: stacked ? 0 : fullWidth ? { xs: 0.75, md: 1 } : { xs: 1.5, md: 2 },
+				rowGap: stacked ? { xs: 1, md: 1.25 } : fullWidth ? { xs: 0.5, md: 0.75 } : { xs: 0.75, md: 1 },
 				width: '100%',
 				minWidth: 0,
 			}}>
@@ -40,24 +54,31 @@ const ApplicationDetailGrid = ({ items, fullWidth = false }: ApplicationDetailGr
 					sx={{
 						display: 'flex',
 						alignItems: 'flex-start',
-						gap: fullWidth ? 0.75 : 1,
+						gap: stacked ? 1.25 : fullWidth ? 0.75 : 1,
 						minWidth: 0,
-						py: fullWidth ? 0.15 : 0.25,
+						py: stacked ? 0.5 : fullWidth ? 0.15 : 0.25,
+						...(stacked
+							? {
+									borderBottom: '1px solid',
+									borderColor: 'divider',
+									'&:last-of-type': { borderBottom: 'none' },
+								}
+							: {}),
 					}}>
 					<Box
 						sx={{
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',
-							width: fullWidth ? 30 : 34,
-							height: fullWidth ? 30 : 34,
+							width: stacked ? 34 : fullWidth ? 30 : 34,
+							height: stacked ? 34 : fullWidth ? 30 : 34,
 							borderRadius: 1,
 							bgcolor: 'action.hover',
 							color: 'secondary.main',
 							flexShrink: 0,
 							mt: 0.1,
 						}}>
-						<Icon sx={{ fontSize: fullWidth ? 17 : 20 }} aria-hidden />
+						<Icon sx={{ fontSize: stacked || !fullWidth ? 20 : 17 }} aria-hidden />
 					</Box>
 					<Box sx={{ minWidth: 0, flex: 1 }}>
 						<Typography
@@ -77,12 +98,13 @@ const ApplicationDetailGrid = ({ items, fullWidth = false }: ApplicationDetailGr
 						<Typography
 							component='div'
 							sx={{
-								fontSize: { xs: '1.05rem', md: '1.15rem' },
+								fontSize: stacked ? { xs: '0.95rem', md: '1rem' } : { xs: '1.05rem', md: '1.15rem' },
 								fontWeight: 500,
 								color: 'text.primary',
-								lineHeight: 1.25,
+								lineHeight: 1.45,
 								wordBreak: 'break-word',
 								overflowWrap: 'anywhere',
+								whiteSpace: 'normal',
 							}}>
 							{value}
 						</Typography>
@@ -91,17 +113,6 @@ const ApplicationDetailGrid = ({ items, fullWidth = false }: ApplicationDetailGr
 			))}
 		</Box>
 	);
-};
-
-ApplicationDetailGrid.propTypes = {
-	items: PropTypes.arrayOf(
-		PropTypes.shape({
-			label: PropTypes.string.isRequired,
-			value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.node]),
-			icon: PropTypes.elementType.isRequired,
-		})
-	).isRequired,
-	fullWidth: PropTypes.bool,
 };
 
 export default ApplicationDetailGrid;

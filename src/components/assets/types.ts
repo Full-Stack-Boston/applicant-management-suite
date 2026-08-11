@@ -34,6 +34,8 @@ export interface AssetProfileSectionProps {
 	status?: string;
 	config?: AssetConfig;
 	details: DetailGridItem[];
+	/** Stack detail rows full-width (email headers with long recipient lists). */
+	stackDetails?: boolean;
 	footerMeta?: ReactNode;
 	actions?: DynamicAction[];
 	asset?: AssetRecord;
@@ -55,6 +57,8 @@ export interface AssetSectionHeaderProps {
 export interface ApplicationDetailGridProps {
 	items: DetailGridItem[];
 	fullWidth?: boolean;
+	/** Single-column stacked rows — better for lengthy values (email headers). */
+	stacked?: boolean;
 }
 
 export interface HeaderProps {
