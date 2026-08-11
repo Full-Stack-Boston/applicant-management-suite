@@ -27,6 +27,22 @@ describe('videoBudget client helpers', () => {
 
 	test('normalize and percent helpers', () => {
 		expect(normalizeVideoBudget({ mode: '50' }).mode).toBe('50');
+		expect(normalizeVideoBudget({ mode: 'nope' as 'off' }).mode).toBe('off');
+		expect(normalizeVideoBudget({ monthlyBaseMinutes: -5 }).monthlyBaseMinutes).toBe(10000);
+		expect(normalizeVideoBudget({ monthlyBaseMinutes: 2500.9 }).monthlyBaseMinutes).toBe(2500);
 		expect(percentVideoUsed(500, 1000)).toBe(50);
+		expect(percentVideoUsed(0, 0)).toBe(0);
+		expect(percentVideoUsed(12, 0)).toBe(100);
+		expect(percentVideoUsed(9999, 1000)).toBe(100);
+	});
+
+	test('ensureVideoBudgetDefaults preserves unrelated keys and normalizes existing budget', () => {
+		expect(ensureVideoBudgetDefaults(null)).toBeNull();
+		const next = ensureVideoBudgetDefaults({
+			CONFIG_ID: 'x',
+			videoBudget: { mode: '100', monthlyBaseMinutes: 8000 },
+		});
+		expect(next.CONFIG_ID).toBe('x');
+		expect(next.videoBudget).toEqual({ mode: '100', monthlyBaseMinutes: 8000 });
 	});
 });
