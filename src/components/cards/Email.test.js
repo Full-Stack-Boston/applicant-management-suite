@@ -119,6 +119,35 @@ describe('EmailCard', () => {
 		});
 	});
 
+	test('hydrates nested headerContent payloads', async () => {
+		fetchEmailContent.mockResolvedValue({
+			data: {
+				content: '<p>nested</p>',
+				headerContent: {
+					headerContent: {
+						Subject: ['Nested Subject'],
+						From: ['nested@test.com'],
+					},
+				},
+				attachments: [{ attachmentId: 'a1', attachmentName: 'file.pdf' }],
+			},
+		});
+
+		render(
+			<EmailCard
+				email={{
+					id: 'msg-nested',
+					folderId: 'folder-1',
+					isRead: false,
+				}}
+			/>
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText('Nested Subject')).toBeInTheDocument();
+		});
+	});
+
 	test('calls updateEmailReadStatus when toggled', async () => {
 		render(<EmailCard email={mockEmail} />);
 
