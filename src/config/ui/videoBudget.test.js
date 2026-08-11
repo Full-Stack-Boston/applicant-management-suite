@@ -27,7 +27,7 @@ describe('videoBudget client helpers', () => {
 
 	test('normalize and percent helpers', () => {
 		expect(normalizeVideoBudget({ mode: '50' }).mode).toBe('50');
-		expect(normalizeVideoBudget({ mode: 'nope' as 'off' }).mode).toBe('off');
+		expect(normalizeVideoBudget({ mode: 'nope' }).mode).toBe('off');
 		expect(normalizeVideoBudget({ monthlyBaseMinutes: -5 }).monthlyBaseMinutes).toBe(10000);
 		expect(normalizeVideoBudget({ monthlyBaseMinutes: 2500.9 }).monthlyBaseMinutes).toBe(2500);
 		expect(percentVideoUsed(500, 1000)).toBe(50);
