@@ -83,11 +83,11 @@ const EmailCard = ({ email: initialEmail }: { email: EmailRecord }) => {
 				if (cancelled || !data) return;
 
 				const rawHeaders = data.headerContent;
-				const normalizedHeaderContent =
+				const normalizedHeaderContent: EmailRecord['headerContent'] | undefined =
 					rawHeaders && typeof rawHeaders === 'object' && 'headerContent' in rawHeaders
 						? (rawHeaders as EmailRecord['headerContent'])
 						: rawHeaders
-							? { headerContent: rawHeaders as Record<string, string[]> }
+							? ({ headerContent: rawHeaders as Record<string, string[]> } as EmailRecord['headerContent'])
 							: undefined;
 
 				setEmail((prev) => ({

@@ -45,7 +45,7 @@ export const collections = {
 	mailSync: 'mail_sync', // State tracking for the Email Sync background job
 	emailTemplates: 'emailTemplates', // Dynamic contact-center email templates
 	videoUsage: 'videoUsage', // Monthly Daily participant-minute counters
-	videoBudget: 'videoBudget', // Remote status snapshot (status doc) for FSB dash
+	videoBudget: 'videoBudget', // Live video budget status snapshot (status doc) for Settings UI
 
 	// Features
 	requests: 'requests', // External reference requests (Teachers/Clergy)
