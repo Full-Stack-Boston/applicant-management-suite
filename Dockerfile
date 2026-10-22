@@ -1,5 +1,5 @@
 # AMS local/dev image for optional Docker Compose (Vite on Node 24)
-FROM node:24-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 
 WORKDIR /app
 
