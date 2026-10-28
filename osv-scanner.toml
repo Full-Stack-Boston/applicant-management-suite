@@ -3,8 +3,21 @@
 
 [[IgnoredVulns]]
 id = "GHSA-4r6h-8v6p-xvw6"
+ignoreUntil = 2026-12-31
 reason = "xlsx comes from the SheetJS CDN tarball (see functions/package.json). No fixed npm release is published for this advisory; revisit when upgrading the import path."
 
 [[IgnoredVulns]]
 id = "GHSA-5pgg-2g8v-p4x9"
+ignoreUntil = 2026-12-31
 reason = "xlsx comes from the SheetJS CDN tarball (see functions/package.json). No fixed npm release is published for this advisory; revisit when upgrading the import path."
+
+
+[[IgnoredVulns]]
+id = "GHSA-86w9-cpqp-85rv"
+ignoreUntil = 2026-12-31
+reason = "node-forge 1.4.0 has no fixed release; firebase/cert tooling path. Remove when upstream upgrades."
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2026-12-31
+reason = "deepmerge 4.3.1 has no fixed release; transitive via tooling. Remove when upstream patches."
