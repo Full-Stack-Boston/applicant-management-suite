@@ -274,6 +274,59 @@ describe('src/pages/contactCenter/ContactCenter.jsx', () => {
 		expect(screen.queryByText('No Notify <no@notify.com>')).not.toBeInTheDocument();
 	});
 
+	it('adds member CCs and SMS presets from Add Preset menus', async () => {
+		render(<ContactCenter />);
+
+		const ccInput = screen.getByLabelText('CCs (email@example.com)');
+		const ccBox = ccInput.closest('.MuiBox-root');
+		await act(async () => {
+			fireEvent.click(within(ccBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /Members \(Email\)/i }));
+		});
+		expect(await screen.findByText('Admin User <admin@user.com>')).toBeInTheDocument();
+
+		const cellInput = screen.getByLabelText('Cell Numbers (9781230456)');
+		const cellBox = cellInput.closest('.MuiBox-root');
+		await act(async () => {
+			fireEvent.click(within(cellBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /^Members$/i }));
+		});
+		expect(await screen.findByText('Admin User <+14444444444>')).toBeInTheDocument();
+
+		await act(async () => {
+			fireEvent.click(within(cellBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /Applicants/i }));
+		});
+		expect(await screen.findByText('New App <+11111111111>')).toBeInTheDocument();
+		expect(await screen.findByText('Scholarship App <+13333333333>')).toBeInTheDocument();
+
+		await act(async () => {
+			fireEvent.click(within(cellBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /New Apps/i }));
+		});
+		await act(async () => {
+			fireEvent.click(within(cellBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /Returning Apps/i }));
+		});
+		await act(async () => {
+			fireEvent.click(within(cellBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /4-Year Apps/i }));
+		});
+		expect(await screen.findByText('Scholarship App <+13333333333>')).toBeInTheDocument();
+	}, 20000);
+
 	it('adds free-solo email to recipients', async () => {
 		render(<ContactCenter />);
 		const input = screen.getByLabelText('Recipients (email@example.com)');

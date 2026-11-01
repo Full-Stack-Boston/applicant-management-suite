@@ -70,15 +70,43 @@ vi.mock('../../context/HelmetContext', () => ({
 // Child Component Mocks
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
 vi.mock('../../components/interviews/AdminDrawer', () => ({ default: (props) => (
-	<div data-testid='admin-drawer'>
+	<div data-testid='admin-drawer' data-open={props.open ? 'true' : 'false'}>
 		<button onClick={() => props.onStartNextInterview('next-id')} data-testid='start-next-btn'>
 			Start Next
+		</button>
+		<button onClick={() => props.onJoinInterview?.('join-me')} data-testid='join-interview-btn'>
+			Join Interview
+		</button>
+		<button onClick={() => props.onRelevantAppsChange?.(['app-a', 'app-b'])} data-testid='relevant-apps-btn'>
+			Set Apps
+		</button>
+		<button onClick={props.onClose} data-testid='close-admin-btn'>
+			Close Admin
 		</button>
 	</div>
 ) }));
 
-vi.mock('../../components/interviews/ApplicationViewer', () => ({ default: () => <div data-testid='app-viewer'>App Viewer</div> }));
-vi.mock('../../components/interviews/CallInterface', () => ({ default: () => <div data-testid='call-ui'>Call UI</div> }));
+vi.mock('../../components/interviews/ApplicationViewer', () => ({
+	default: ({ open, onClose, applications }) => (
+		<div data-testid='app-viewer' data-open={open ? 'true' : 'false'} data-apps={(applications || []).join(',')}>
+			<button type='button' onClick={onClose} data-testid='close-apps-btn'>
+				Close Apps
+			</button>
+		</div>
+	),
+}));
+vi.mock('../../components/interviews/CallInterface', () => ({
+	default: ({ onOpenDrawer, onOpenAdminDrawer }) => (
+		<div data-testid='call-ui'>
+			<button type='button' onClick={onOpenAdminDrawer} data-testid='open-admin-btn'>
+				Open Admin
+			</button>
+			<button type='button' onClick={onOpenDrawer} data-testid='open-apps-btn'>
+				Open Apps
+			</button>
+		</div>
+	),
+}));
 vi.mock('../../components/interviews/VideoRoomUnavailable', () => ({
 	default: ({ title, message, onLeave, leaveLabel }) => (
 		<div data-testid='video-unavailable'>
@@ -289,5 +317,53 @@ describe('DeliberationRoom Component', () => {
 
 		expect(updateInterviewStatus).toHaveBeenCalledWith({ interviewId: 'next-id', newStatus: 'in-progress' });
 		expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+	});
+
+	test('toggles drawers, joins interview, and updates relevant apps', async () => {
+		render(<DeliberationRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await screen.findByTestId('call-ui');
+
+		fireEvent.click(screen.getByTestId('open-admin-btn'));
+		expect(screen.getByTestId('admin-drawer')).toHaveAttribute('data-open', 'true');
+		fireEvent.click(screen.getByTestId('close-admin-btn'));
+		expect(screen.getByTestId('admin-drawer')).toHaveAttribute('data-open', 'false');
+
+		fireEvent.click(screen.getByTestId('open-apps-btn'));
+		expect(screen.getByTestId('app-viewer')).toHaveAttribute('data-open', 'true');
+		fireEvent.click(screen.getByTestId('close-apps-btn'));
+		expect(screen.getByTestId('app-viewer')).toHaveAttribute('data-open', 'false');
+
+		fireEvent.click(screen.getByTestId('relevant-apps-btn'));
+		expect(screen.getByTestId('app-viewer')).toHaveAttribute('data-apps', 'app-a,app-b');
+
+		fireEvent.click(screen.getByTestId('join-interview-btn'));
+		expect(mockNavigate).toHaveBeenCalledWith('/interviews/interview-room/join-me');
+	});
+
+	test('handles start-next failures and join token errors', async () => {
+		updateInterviewStatus.mockRejectedValueOnce(new Error('start failed'));
+		render(<DeliberationRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await screen.findByTestId('call-ui');
+
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('start-next-btn'));
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'deliberation-start-interview');
+	});
+
+	test('shows unavailable state when join token fails', async () => {
+		generateJoinToken.mockRejectedValueOnce(new Error('token boom'));
+		render(<DeliberationRoom />);
+		await waitFor(() => {
+			expect(screen.getByTestId('video-unavailable')).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByText('Back to Interviews'));
+		expect(mockNavigate).toHaveBeenCalled();
 	});
 });
