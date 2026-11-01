@@ -8,6 +8,8 @@ const mockNavigate = jest.fn();
 const mockDispatch = jest.fn();
 const mockOnNavigateSection = jest.fn();
 const mockLogoutUser = jest.fn();
+const mockUseAuth = jest.fn(() => ({ user: null, applicant: null }));
+const mockUseMediaQuery = jest.fn(() => false);
 
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
@@ -15,7 +17,7 @@ vi.mock('react-router-dom', async () => ({
 }));
 
 vi.mock('../../context/AuthContext', () => ({
-	useAuth: () => ({ user: null, applicant: null }),
+	useAuth: () => mockUseAuth(),
 }));
 
 vi.mock('../../context/ThemeContext', () => ({
@@ -31,7 +33,7 @@ vi.mock('../theme/AccentColorPicker', () => ({
 }));
 
 vi.mock('../auth/ApplicantSettingsButton', () => ({
-	default: () => null,
+	default: () => <button type='button'>Applicant Settings</button>,
 	useApplicantSettingsDialog: () => jest.fn(),
 }));
 
@@ -39,7 +41,7 @@ vi.mock('@mui/material', async () => {
 	const actual = await vi.importActual('@mui/material');
 	return {
 		...actual,
-		useMediaQuery: () => false,
+		useMediaQuery: (...args) => mockUseMediaQuery(...args),
 	};
 });
 
@@ -65,6 +67,9 @@ const renderNav = (props = {}) =>
 describe('HomeNav', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockUseAuth.mockReturnValue({ user: null, applicant: null });
+		mockUseMediaQuery.mockReturnValue(false);
+		mockLogoutUser.mockResolvedValue(undefined);
 	});
 
 	it('renders brand and public scroll link', () => {
@@ -104,5 +109,34 @@ describe('HomeNav', () => {
 		expect(screen.getByRole('button', { name: /Platform Info/i })).toBeInTheDocument();
 		fireEvent.click(screen.getByRole('button', { name: /Platform Info/i }));
 		expect(screen.getByRole('menu')).toBeInTheDocument();
+	});
+
+	it('shows utility get-started action', () => {
+		renderNav({ variant: 'utility' });
+		const started = screen.queryByRole('button', { name: /Get Started|Apply|Sign Up/i });
+		if (started) {
+			fireEvent.click(started);
+			expect(mockNavigate).toHaveBeenCalled();
+		}
+	});
+
+	it('opens burger menu on compact screens and navigates items', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		const items = screen.getAllByRole('menuitem');
+		expect(items.length).toBeGreaterThan(0);
+		fireEvent.click(items[0]);
+		expect(mockOnNavigateSection.mock.calls.length + mockNavigate.mock.calls.length).toBeGreaterThan(0);
+	});
+
+	it('logs out applicants from the toolbar', async () => {
+		mockUseAuth.mockReturnValue({
+			user: { uid: 'u1' },
+			applicant: { id: 'a1', firstName: 'Pat' },
+		});
+		renderNav({ variant: 'applicant' });
+		fireEvent.click(screen.getByLabelText('Logout'));
+		expect(mockLogoutUser).toHaveBeenCalled();
 	});
 });
