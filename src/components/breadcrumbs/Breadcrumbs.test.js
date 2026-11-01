@@ -1,71 +1,106 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import Crumbs, { SettingsButton } from './Breadcrumbs';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useDialog } from '../../context/DialogContext';
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { logoutUser, saveApplicantData } from '../../config/data/firebase';
 
-// --- MOCKS ---
-vi.mock('../../context/AuthContext', () => ({ useAuth: jest.fn() }));
-vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
-vi.mock('../../context/DialogContext', () => ({ useDialog: jest.fn() }));
-vi.mock('react-router-dom', () => ({ useNavigate: jest.fn() }));
-vi.mock('../../config/data/firebase', () => ({ logoutUser: jest.fn(), saveApplicantData: jest.fn() }));
+const mocks = vi.hoisted(() => ({
+	navigate: vi.fn(),
+	dispatch: vi.fn(),
+	showDialog: vi.fn(),
+}));
 
-describe('Breadcrumbs Component', () => {
-	const mockNavigate = jest.fn();
-	const mockDispatch = jest.fn();
-	const mockShowDialog = jest.fn();
+vi.mock('react-router-dom', async () => ({
+	...(await vi.importActual('react-router-dom')),
+	useNavigate: () => mocks.navigate,
+}));
 
+vi.mock('../../context/ThemeContext', () => ({
+	useTheme: vi.fn(),
+}));
+
+vi.mock('../../context/DialogContext', () => ({
+	useDialog: vi.fn(),
+}));
+
+vi.mock('../../context/AuthContext', () => ({
+	useAuth: vi.fn(),
+}));
+
+vi.mock('../../config/data/firebase', () => ({
+	logoutUser: vi.fn(),
+	saveApplicantData: vi.fn(),
+}));
+
+const applicant = {
+	id: 'applicant-1',
+	callMe: 'Ada',
+	notifications: { email: true, sms: false },
+};
+
+describe('Breadcrumbs', () => {
 	beforeEach(() => {
-		jest.clearAllMocks();
-		useNavigate.mockReturnValue(mockNavigate);
-		useTheme.mockReturnValue({ darkMode: false, dispatch: mockDispatch, primaryColor: 'green' });
-		useAuth.mockReturnValue({ applicant: { id: '123' } });
-		useDialog.mockReturnValue({ showDialog: mockShowDialog });
+		vi.clearAllMocks();
+		useTheme.mockReturnValue({ darkMode: false, dispatch: mocks.dispatch, primaryColor: 'blue' });
+		useDialog.mockReturnValue({ showDialog: mocks.showDialog });
+		useAuth.mockReturnValue({ applicant });
+		saveApplicantData.mockResolvedValue(true);
 	});
 
-	test('renders navigation links', () => {
-		render(<Crumbs title='Test Page' />);
+	it('opens the applicant notification preferences dialog and saves changes', async () => {
+		render(<SettingsButton applicant={applicant} />);
+		fireEvent.click(screen.getByRole('button'));
 
-		expect(screen.getByText('Home')).toBeInTheDocument();
-		expect(screen.getByText('Applications')).toBeInTheDocument();
-		expect(screen.getByText('TEST PAGE')).toBeInTheDocument();
+		expect(mocks.showDialog).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'notificationsUpdate',
+				data: expect.objectContaining({ email: true, sms: false, nickname: 'Ada' }),
+			}),
+		);
+		const callback = mocks.showDialog.mock.calls[0][0].callback;
+		await callback(null);
+		await callback({ email: false, sms: true, nickname: 'Lady Ada' });
+
+		expect(saveApplicantData).toHaveBeenCalledWith(
+			'applicant-1',
+			expect.objectContaining({
+				callMe: 'Lady Ada',
+				notifications: { email: false, sms: true },
+			}),
+		);
+		expect(mocks.navigate).toHaveBeenCalled();
 	});
 
-	test('navigates home on click', () => {
+	it('does not open settings when the applicant has no id', () => {
+		render(<SettingsButton applicant={{}} />);
+		fireEvent.click(screen.getByRole('button'));
+		expect(mocks.showDialog).not.toHaveBeenCalled();
+		expect(() => render(<SettingsButton applicant={null} />)).not.toThrow();
+	});
+
+	it('navigates, toggles theme, and selects a color', () => {
+		render(<Crumbs title='Review' logout />);
+
+		fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Applications' }));
+
+		const buttons = screen.getAllByRole('button');
+		fireEvent.click(buttons[3]);
+		fireEvent.click(screen.getByRole('menuitem', { name: 'Forest Green' }));
+		expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'SET_COLOR', payload: 'green' });
+
+		fireEvent.click(screen.getAllByRole('button')[4]);
+		expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'TOGGLE' });
+
+		fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+		expect(logoutUser).toHaveBeenCalled();
+		expect(mocks.navigate).toHaveBeenCalled();
+	});
+
+	it('renders the applications label when no title is supplied', () => {
 		render(<Crumbs />);
-		fireEvent.click(screen.getByText('Home'));
-		// generatePath mock in utils likely returns undefined in deep imports,
-		// but we check if navigate was called at all
-		expect(mockNavigate).toHaveBeenCalled();
-	});
-
-	test('toggles theme mode', () => {
-		render(<Crumbs />);
-		// Dark Mode icon button (since darkMode is false, it shows DarkModeIcon)
-		// We find it by the SVG icon or just the button role
-		// The theme toggle is one of the icon buttons.
-		// Since we don't have strict aria-labels, we rely on firing the event on the button that isn't Home/Logout.
-		// A better way in MUI tests is usually testid, but let's try finding by index logic or adding testid if possible.
-		// Given the structure: Home, [Applications], Settings, Color, Theme, [Logout]
-
-		// Let's simulate clicking the theme toggle. It calls dispatch.
-		// We can just scan for the click handler behavior if we could, but in integration tests we need to find element.
-		// We will assume the 3rd or 4th button is the theme toggle.
-		// Alternatively, verify the icon exists.
-
-		// Using fireEvent on the button that triggers dispatch
-		// Note: This is brittle without testIds. In real projects add data-testid="theme-toggle"
-		// For now, let's try to find the specific button by checking all buttons?
-		// Or mock the Icons?
-	});
-
-	test('SettingsButton opens dialog', () => {
-		render(<SettingsButton applicant={{ id: '123' }} />);
-		const btn = screen.getByRole('button');
-		fireEvent.click(btn);
-		expect(mockShowDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'notificationsUpdate' }));
+		expect(screen.getByText('APPLICATIONS')).toBeInTheDocument();
 	});
 });

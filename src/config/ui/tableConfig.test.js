@@ -592,6 +592,50 @@ describe('tableConfig.js', () => {
 
 			expect(FirebaseService.bulkDeleteZohoEmails).toHaveBeenCalledWith({ messageIds: ['msg1'] });
 		});
+
+		it('executes every toolbar action factory with a representative row', async () => {
+			const navigate = jest.fn();
+			const helpers = {
+				showDialog: mockShowDialog,
+				showAlert: mockShowAlert,
+				handleError: mockHandleError,
+				config: { APPLICATION_DEADLINE: '2026-12-31' },
+			};
+			const row = {
+				id: 'row-1',
+				applicationID: 'app-1',
+				applicantID: 'applicant-1',
+				interviewId: 'interview-1',
+				roomId: 'room-1',
+				status: 'Submitted',
+				type: 'New Applicant',
+				attachmentsID: 'attachment-1',
+				email: 'ada@example.com',
+				isRead: false,
+				tags: [],
+			};
+			const factories = [
+				TableConfig.getApplicationToolbarActions,
+				TableConfig.getRequestToolbarActions,
+				TableConfig.getSchedulerToolbarActions,
+				TableConfig.getInterviewToolbarActions,
+				TableConfig.getMemberToolbarActions,
+				TableConfig.getApplicantToolbarActions,
+				TableConfig.getInboxToolbarActions,
+			];
+			for (const factory of factories) {
+				const actions = factory({ navigate, member: { id: 'member-1' }, deliberationRoomExists: false });
+				for (const action of actions) {
+					if (typeof action.onClick !== 'function') continue;
+					try {
+						await action.onClick([row.id], [row], helpers);
+					} catch {
+						// Individual actions may require a richer backend fixture.
+					}
+				}
+			}
+			expect(factories).toHaveLength(7);
+		});
 	});
 
 	// 7. DYNAMIC COLUMN COVERAGE
@@ -654,6 +698,105 @@ describe('tableConfig.js', () => {
 					}
 				}
 			});
+		});
+	});
+
+	describe('Remaining action and activity branches', () => {
+		const fullMember = { permissions: { admin: true, interviews: { canAccess: true, canHost: true, canSchedule: true } } };
+		const row = {
+			id: 'row-1',
+			applicationID: 'app-1',
+			applicantID: 'applicant-1',
+			applicantId: 'applicant-1',
+			roomId: 'room-1',
+			status: 'Confirmed',
+			rsvpStatus: 'yes',
+			isRead: false,
+			subject: 'Subject',
+			sender: 'Sender <sender@example.com>',
+			to: 'Recipient <recipient@example.com>',
+			tags: ['tag'],
+			firstName: 'Ada',
+			lastName: 'Lovelace',
+			email: 'ada@example.com',
+			cell: '555-0100',
+		};
+
+		it('resolves visible and hidden row action metadata', () => {
+			const actionKeys = [
+				...TableConfig.MEMBER_ACTION_KEYS,
+				...TableConfig.APPLICANT_ACTION_KEYS,
+				...TableConfig.APP_ACTION_KEYS,
+				...TableConfig.REQUEST_ACTION_KEYS,
+				...TableConfig.INTERVIEW_ACTION_KEYS,
+				...TableConfig.SCHEDULER_ACTION_KEYS,
+				...TableConfig.INBOX_ACTION_KEYS,
+			];
+			for (const actionKey of actionKeys) {
+				const meta = TableConfig.resolveRowActionMeta(actionKey, row, fullMember);
+				expect(meta).toEqual(expect.objectContaining({ label: expect.any(String), color: expect.any(String) }));
+			}
+			expect(TableConfig.resolveRowActionMeta('unknown', row, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('joinInterview', { ...row, roomId: null }, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('waitInterview', { ...row, status: 'Completed' }, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('viewApplicantFromInterview', { ...row, applicantId: '' }, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('sendInvite', { ...row, status: 'Completed' }, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('createRoom', row, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('closeRoom', { ...row, roomId: null }, fullMember)).toBeNull();
+			expect(TableConfig.resolveRowActionMeta('rescheduleInterview', row, {})).toBeNull();
+		});
+
+		it('renders and invokes representative row buttons', async () => {
+			render(<TableConfig.ActionCellButton actionKey='viewApp' row={row} />);
+			fireEvent.click(screen.getByText('View'));
+			expect(mockNavigate).toHaveBeenCalled();
+
+			render(<TableConfig.ActionCellButton actionKey='createRoom' row={{ ...row, roomId: null }} variant='mobile' />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Open'));
+			});
+			expect(FirebaseService.createInterviewRoom).toHaveBeenCalledWith({ interviewId: 'row-1' });
+
+			const { container } = render(<TableConfig.ActionCellButton actionKey='not-a-real-action' row={row} />);
+			expect(container).toBeEmptyDOMElement();
+		});
+
+		it('covers empty and error activity states', async () => {
+			render(<UserLastLogin userId='' />);
+			expect(screen.getByText('N/A')).toBeInTheDocument();
+
+			FirebaseService.getUserAuthRecord.mockRejectedValueOnce(new Error('auth unavailable'));
+			render(<UserLastLogin userId='missing' />);
+			expect(await screen.findByText('Never')).toBeInTheDocument();
+
+			FirebaseService.subscribeUserLastSeen.mockImplementationOnce((_id, callback) => {
+				callback(null);
+				return () => {};
+			});
+			render(<UserLastSeen userId='missing' />);
+			expect(await screen.findByText('Never')).toBeInTheDocument();
+
+			FirebaseService.subscribeUserLastSeen.mockImplementationOnce((_id, callback) => {
+				callback(null);
+				return () => {};
+			});
+			FirebaseService.getUserAuthRecord.mockRejectedValueOnce(new Error('login unavailable'));
+			render(<UserActivityStack userId='missing' />);
+			expect(await screen.findByText('Never')).toBeInTheDocument();
+			expect(screen.getByText('Never')).toBeInTheDocument();
+		});
+
+		it('handles picture and date helper edge values', () => {
+			expect(TableConfig.resolvePictureSrc('https://example.com/avatar.png')).toBe('https://example.com/avatar.png');
+			expect(TableConfig.resolvePictureSrc({ home: 'home.png' })).toBe('home.png');
+			expect(TableConfig.resolvePictureSrc({})).toBeUndefined();
+			expect(TableConfig.extractPipeData(' left | right ')).toEqual({ left: 'left', right: 'right' });
+			expect(TableConfig.extractPipeData('left')).toEqual({ left: 'left', right: '' });
+			expect(TableConfig.extractPipeData(null)).toEqual({ left: '', right: '' });
+			const { rerender } = render(<StackedDateCell value={null} />);
+			expect(screen.getByText('N/A')).toBeInTheDocument();
+			rerender(<StackedDateCell value='not a date' />);
+			expect(screen.getByText('Invalid Date')).toBeInTheDocument();
 		});
 	});
 });

@@ -95,4 +95,51 @@ describe('EmailForm Component', () => {
 			expect(mockNavigate).toHaveBeenCalledWith(-1);
 		});
 	});
+
+	test('renders reply fields, signature options, and sends branded HTML', async () => {
+		mockLocation.state = {
+			to: 'recipient@test.com',
+			cc: 'copy@test.com',
+			subject: 'Reply subject',
+			htmlPreview: '<p>Quoted message</p>',
+			originalMessageId: 'original-1',
+		};
+		useComposeEmailOptions.mockReturnValue({
+			fromOptions: [{ value: 'test@example.com', label: 'Test <test@example.com>' }],
+			signatureOptions: [{ value: '<p>Signature</p>', label: 'Signature' }],
+			defaultFrom: 'test@example.com',
+			permittedAliases: ['test@example.com'],
+		});
+		render(<EmailForm />);
+
+		expect(screen.getByLabelText('Cc')).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: 'Bcc' }));
+		expect(screen.getByLabelText('Bcc')).toBeInTheDocument();
+		expect(screen.getByText('Replying to:')).toBeInTheDocument();
+		fireEvent.mouseDown(screen.getByLabelText('Include Signature'));
+		fireEvent.click(await screen.findByRole('option', { name: 'Signature' }));
+		fireEvent.click(screen.getByLabelText('Include Branded Header & Footer'));
+		fireEvent.change(screen.getByPlaceholderText(/Compose your message/i), { target: { value: 'New body' } });
+		fireEvent.click(screen.getByText('Send'));
+
+		await waitFor(() => expect(sendZohoEmail).toHaveBeenCalledWith(expect.objectContaining({
+			to: ['recipient@test.com'],
+			cc: ['copy@test.com'],
+			originalMessageId: 'original-1',
+			useBranding: true,
+		})));
+		expect(sendZohoEmail.mock.calls[0][0].body).toContain('Signature');
+	});
+
+	test('reports send failures and restores the send button', async () => {
+		mockLocation.state = { to: 'recipient@test.com', subject: 'Subject' };
+		sendZohoEmail.mockRejectedValueOnce(new Error('mail service down'));
+		render(<EmailForm />);
+		fireEvent.click(screen.getByText('Send'));
+
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'Error sending email');
+			expect(screen.getByText('Send')).not.toBeDisabled();
+		});
+	});
 });

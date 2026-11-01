@@ -6,11 +6,18 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
-import { updateEmailReadStatus, fetchEmailContent, fetchAttachmentContent } from '../../config/data/firebase';
+import { deleteZohoEmail, updateEmailReadStatus, fetchEmailContent, fetchAttachmentContent } from '../../config/data/firebase';
+
+const mocks = vi.hoisted(() => ({
+	navigate: vi.fn(),
+	showAlert: vi.fn(),
+	handleError: vi.fn(),
+	showDialog: vi.fn(),
+}));
 
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
-	useNavigate: vi.fn(),
+	useNavigate: () => mocks.navigate,
 }));
 
 vi.mock('../../context/MailboxContext', () => ({ useMailbox: vi.fn() }));
@@ -44,7 +51,7 @@ vi.mock('../assets/AssetProfileSection', () => ({
 		</div>
 	),
 }));
-vi.mock('../notes/NotesSection', () => ({ default: () => null }));
+vi.mock('../notes/NotesSection', () => ({ default: () => <div data-testid='notes-section'>Notes</div> }));
 vi.mock('../messaging/EmailBody', () => ({ default: () => <div data-testid='email-body'>Email Body</div> }));
 vi.mock('../messaging/EmailActions', () => ({
 	default: (props) => (
@@ -57,6 +64,10 @@ vi.mock('../messaging/EmailActions', () => ({
 				}>
 				Download
 			</button>
+			<button onClick={props.onShowNotesToggle}>Notes</button>
+			<button onClick={() => props.onReply()}>Reply</button>
+			<button onClick={() => props.onReplyAll()}>Reply all</button>
+			<button onClick={() => props.onForward()}>Forward</button>
 		</div>
 	),
 }));
@@ -81,13 +92,16 @@ describe('EmailCard', () => {
 		vi.clearAllMocks();
 		useMailbox.mockReturnValue({ member: {}, permittedAliases: [] });
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
-		useAlert.mockReturnValue({ showAlert: vi.fn(), handleError: vi.fn() });
-		useDialog.mockReturnValue({ showDialog: vi.fn() });
+		useAlert.mockReturnValue({ showAlert: mocks.showAlert, handleError: mocks.handleError });
+		useDialog.mockReturnValue({ showDialog: mocks.showDialog });
 		useEmailActions.mockReturnValue({
 			handleReply: vi.fn(),
 			handleReplyAll: vi.fn(),
 			handleForward: vi.fn(),
 		});
+		updateEmailReadStatus.mockResolvedValue(true);
+		deleteZohoEmail.mockResolvedValue(true);
+		fetchAttachmentContent.mockResolvedValue({ data: { contentType: 'application/pdf', content: 'YmFzZTY0' } });
 	});
 
 	test('renders email subject and content', () => {
@@ -194,5 +208,43 @@ describe('EmailCard', () => {
 		fireEvent.click(deleteBtn);
 
 		expect(showDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'confirmAction' }));
+	});
+
+	test('handles read, delete, and attachment failures through the alert error handler', async () => {
+		const toggleError = new Error('toggle failed');
+		updateEmailReadStatus.mockRejectedValueOnce(toggleError);
+		render(<EmailCard email={mockEmail} />);
+		fireEvent.click(screen.getByText('Toggle Read'));
+		await waitFor(() => expect(mocks.handleError).toHaveBeenCalledWith(toggleError, 'toggle-read-status-card'));
+
+		fireEvent.click(screen.getByText('Delete'));
+		const deleteDialog = mocks.showDialog.mock.calls.at(-1)[0];
+		await deleteDialog.callback(true);
+		expect(deleteZohoEmail).toHaveBeenCalledWith({ messageId: 'msg123' });
+		expect(mocks.navigate).toHaveBeenCalled();
+
+		const attachmentError = new Error('download failed');
+		fetchAttachmentContent.mockRejectedValueOnce(attachmentError);
+		fireEvent.click(screen.getByText('Download'));
+		await waitFor(() => expect(mocks.handleError).toHaveBeenCalledWith(attachmentError, 'download-attachment-card'));
+	});
+
+	test('toggles notes and delegates reply actions', () => {
+		const actionHandlers = {
+			handleReply: vi.fn(),
+			handleReplyAll: vi.fn(),
+			handleForward: vi.fn(),
+		};
+		useEmailActions.mockReturnValue(actionHandlers);
+		render(<EmailCard email={mockEmail} />);
+
+		fireEvent.click(screen.getByText('Notes'));
+		expect(screen.getByTestId('notes-section')).toBeInTheDocument();
+		fireEvent.click(screen.getByText('Reply'));
+		fireEvent.click(screen.getByText('Reply all'));
+		fireEvent.click(screen.getByText('Forward'));
+		expect(actionHandlers.handleReply).toHaveBeenCalledWith(mockEmail);
+		expect(actionHandlers.handleReplyAll).toHaveBeenCalledWith(mockEmail);
+		expect(actionHandlers.handleForward).toHaveBeenCalledWith(mockEmail);
 	});
 });

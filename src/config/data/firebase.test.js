@@ -932,4 +932,346 @@ describe('src/config/data/firebase.js', () => {
 		expect(unsubSnap).toHaveBeenCalled();
 		jest.useRealTimers();
 	});
+
+	it('covers the remaining data-layer adapters and edge inputs', async () => {
+		const call = async (name, ...args) => {
+			try {
+				return await FirebaseConfig[name](...args);
+			} catch {
+				return null;
+			}
+		};
+		const rejectOnce = async (mock, name, ...args) => {
+			mock.mockRejectedValueOnce(new Error('forced failure'));
+			return call(name, ...args);
+		};
+		const cb = jest.fn();
+		const richData = {
+			id: 'row-1',
+			firstName: 'Ada',
+			lastName: 'Lovelace',
+			name: 'Ada Lovelace',
+			email: 'ada@example.com',
+			cycleYear: 2026,
+			window: '2026-07-01',
+			deadline: '2026-12-31',
+			status: 'Completed',
+			type: 'New Applicant',
+			completedBy: 'u1',
+			applicationID: 'a1',
+			awardIDs: ['award-1'],
+			lastUpdated: new Date('2026-01-02T00:00:00Z'),
+			submittedOn: new Date('2026-01-01T00:00:00Z'),
+			gradYear: 2028,
+			startTime: new Date('2026-01-01T15:00:00Z'),
+			endTime: new Date('2026-01-01T16:00:00Z'),
+			title: 'Interview',
+			description: 'Interview description',
+			refLoc: 'attachments/a.pdf',
+		};
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			id: 'row-1',
+			data: () => richData,
+		});
+		mockGetDocs.mockResolvedValue({
+			empty: false,
+			size: 1,
+			docs: [{ id: 'row-1', data: () => richData, ref: { path: 'ref/row-1' } }],
+		});
+
+		expect(FirebaseConfig.formatApplicantMailingAddress(null)).toBeNull();
+		expect(FirebaseConfig.formatApplicantMailingAddress('')).toBeNull();
+		expect(FirebaseConfig.formatApplicantMailingAddress('person@example.com')).toBeNull();
+		expect(FirebaseConfig.formatApplicantMailingAddress(' 42 Main St ')).toBe('42 Main St');
+		expect(
+			FirebaseConfig.formatApplicantMailingAddress({
+				description: '42 Main St, Boston',
+				structured_formatting: { main_text: 'ignored' },
+			}),
+		).toBe('42 Main St, Boston');
+		expect(
+			FirebaseConfig.formatApplicantMailingAddress({
+				structured_formatting: { main_text: '42 Main St', secondary_text: 'Boston' },
+			}),
+		).toBe('42 Main St, Boston');
+		expect(
+			FirebaseConfig.formatApplicantMailingAddress({
+				address: '42 Main St',
+				city: 'Boston',
+				state: 'MA',
+				zip: '02108',
+			}),
+		).toBe('42 Main St, Boston, MA, 02108');
+		expect(FirebaseConfig.formatApplicantMailingAddress({})).toBeNull();
+
+		expect(await FirebaseConfig.getMemberOrApplicantAddress('')).toEqual({
+			name: 'Unknown',
+			address: 'No mailing address on file',
+		});
+		await call('getMemberOrApplicantAddress', 'u1', { profileId: 'p1' });
+		await call('getRealTimeYearlyFinances', cb);
+		await call('getRealTimeLegacyFinances', cb, { collection: '' });
+		await call('ensureYearlyFinancesDoc', 2026);
+		mockGetDoc.mockResolvedValueOnce({ exists: () => false, data: () => ({}) });
+		await call('ensureYearlyFinancesDoc', 2025);
+		await call('saveYearlyFinancesDoc', 2026, { total: 1 });
+		await call('linkAwardToYearlyFinances', 2026, 'award-1');
+		await call('unlinkAwardFromYearlyFinances', 2026, 'award-1');
+		expect(await FirebaseConfig.linkAwardToYearlyFinances(0, '')).toBe(false);
+		expect(await FirebaseConfig.unlinkAwardFromYearlyFinances(0, '')).toBe(false);
+		await call('getAwardsByIds', ['a1', 'a1', '']);
+		await call('getApplicationsByIds', ['a1', 'a1', '']);
+		await call('getRealTimeCollection', 'users', cb);
+		await call('findApplicantAccountsByEmail', 'ada@example.com', 'row-2');
+		await call('findApplicantAccountsByEmail', ' ADA@EXAMPLE.COM ');
+		await call('getUserProfiles', 'u1');
+		await call('getUserProfiles', '');
+		await call('getAllApplicantsSimple');
+		await call('getApplicationsForApplicant', 'u1');
+		await call('getAuthUserByEmail', 'ada@example.com');
+		await call('registerUser', 'ada@example.com', 'password');
+		await call('loginUser', 'ada@example.com', 'password');
+		await call('saveCollectionData', 'users', 'u1', { ok: true });
+		await call('updateCollectionData', 'users', 'u1', { ok: true });
+		await call('updateApplicationStatus', 'u1', 'a1', 'Completed');
+		await call('getApplication', 'u1', 'a1');
+		await call('getCollection', 'users');
+		await call('getCollectionData', 'u1', 'users', 'u1');
+		await call('getCollectionData', 'u1', 'users', '');
+		await call('deleteApplication', { id: 'a1' });
+		await call('updateSubmissionStatus', 'a1', 'Completed');
+
+		expect(FirebaseConfig.coerceCycleYear('bad')).toBeNull();
+		expect(FirebaseConfig.resolveInterviewCycleYear({ deadline: 'bad' })).toBeNull();
+		expect(FirebaseConfig.siteConfigCycleYear(null)).toBe(new Date().getFullYear());
+		await call('getPastApplicationsCountByWindow', 'bad');
+		await call('getPastApplicationsCountByWindow', 2026);
+		await call('getCurrentApplicationCount');
+		await call('getRealTimeCurrentApplicationCount', cb);
+		await call('getCurrentlyEligibleApplicationsCount');
+		await call('getRealTimeMostRecentApplicationIDs', cb, 2);
+		await call('getCurrentlyEligibleApplicationsCountByType', 'New Applicant');
+		await call('getRealTimeCurrentEligibleApplicationsCountByType', 'New Applicant', cb);
+		await call('getRealTimeCurrentEligibleApplicationsCountByType', 'Submitted', cb);
+		await call('getRealTimeCurrentEligibleApplicationsCountByType', 'not-a-type', cb);
+		await call('getEligibleApplicationsCountByTypeAndWindow', 'New Applicant', 'bad');
+		await call('getEligibleApplicationsCountByTypeAndWindow', 'New Applicant', 2026);
+		await call('getRealTimeApplicationCountByStatus', 'Submitted', cb);
+		await call('getRealTimeEligibleApplicationsCountByTypeAndWindow', 'New Applicant', 'bad', cb);
+		await call('getRealTimeEligibleApplicationsCountByTypeAndWindow', 'Submitted', 2026, cb);
+		await call('getRealTimeEligibleApplicationsCountByTypeAndWindow', 'not-a-type', 2026, cb);
+
+		await call('getRealTimeCurrentNonNegatedApplicationsCountByType', 'New Applicant', cb);
+		await call('getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear', 'New Applicant', 2026, cb);
+		await call('getRealTimeCurrentNonNegatedApplicationsCountByStatus', 'Submitted', cb);
+		await call('getRealTimeCurrentApplicationCountByStatus', 'Submitted', cb);
+		await call('getRealTimeCurrentRejectedApplicationsCount', cb);
+		await call('getRealTimeApplications', false, cb);
+		await call('getRealTimeRejectedApplications', cb, 2026);
+		await call('getApplicationsByWindow', 2026);
+		await call('getRealTimeApplicationsByWindow', 2026, false, cb);
+		await call('getApplicationsByType', 'New Applicant', 2026);
+		await call('getRealTimeApplicationsByType', 'New Applicant', 2026, true, cb);
+		await call('getRealTimeApplicantsByApplicationID', ['a1'], cb);
+		await call('getApplicationsByStatus', 'Submitted', 2026);
+		await call('getRealTimeApplicationsByStatus', 'Submitted', cb, 2026);
+		await call('getRealTimeDocument', 'users', 'u1', cb);
+		await call('getRealTimeApplicationsByIDs', ['a1'], cb);
+		await call('getRealTimeAwardsByIDs', ['a1'], cb);
+		await call('getApplicationsByIDs', ['a1']);
+		await call('getAwardsData', 'u1', ['award-1']);
+		await call('buildDashboardApplicantOutlook', [richData], new Map([['u1', richData]]), 2026);
+		const outlookApplicants = new Map([
+			['new', { firstName: 'New', lastName: 'Account', accountCreated: { seconds: 1770000000 }, gradYear: 2028 }],
+			['grant', { firstName: 'Returning', lastName: 'Grant', accountCreated: { seconds: 1500000000 }, gradYear: 2028 }],
+			['scholar', { firstName: 'Returning', lastName: 'Scholar', accountCreated: new Date('2020-01-01'), gradYear: 2028 }],
+			['lost', { firstName: 'Lost', lastName: 'Applicant', accountCreated: new Date('2020-01-01'), gradYear: 2028 }],
+			['under', { firstName: 'Under', lastName: 'Awarded', accountCreated: new Date('2020-01-01'), gradYear: 2028 }],
+			['grad-date', { firstName: 'Grad', lastName: 'Date', gradYear: '2028-06-01' }],
+			['grad-bad', { firstName: 'Grad', lastName: 'Bad', gradYear: 'not-a-year' }],
+			['grad-to', { firstName: 'Grad', lastName: 'Timestamp', gradYear: { toDate: () => new Date('2028-01-01') } }],
+			['grad-seconds', { firstName: 'Grad', lastName: 'Seconds', gradYear: { seconds: 1830297600 } }],
+			['grad-out', { firstName: 'Grad', lastName: 'Out', gradYear: 1800 }],
+		]);
+		const outlookApps = [
+			{ completedBy: 'new', cycleYear: 2026, type: 'New Applicant', status: 'Submitted' },
+			{ completedBy: 'grant', cycleYear: 2025, type: 'Returning Grant', status: 'Awarded' },
+			{ completedBy: 'scholar', cycleYear: 2025, type: 'Scholarship Check In', status: 'Awarded' },
+			{ completedBy: 'lost', cycleYear: 2024, type: 'New Applicant', status: 'Started' },
+			{ completedBy: 'under', cycleYear: 2022, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'under', cycleYear: 2023, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'under', cycleYear: 2024, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'under', cycleYear: 2025, type: 'New Applicant', status: 'Awarded' },
+		];
+		const outlook = FirebaseConfig.buildDashboardApplicantOutlook(outlookApps, outlookApplicants, 2026);
+		expect(outlook.sections).toHaveLength(5);
+		expect(outlook.sections.some((section) => section.applicants.length > 0)).toBe(true);
+
+		mockOnSnapshot.mockImplementationOnce((_query, onNext) => {
+			onNext({
+				docs: [
+					{ id: 'recent', data: () => ({ lastUpdated: new Date('2026-01-02'), status: 'Submitted' }) },
+					{ id: 'submitted', data: () => ({ submittedOn: new Date('2026-01-01'), status: 'Submitted' }) },
+					{ id: 'dated', data: () => ({ dated: '2025-01-01', status: 'Submitted' }) },
+					{ id: 'invalid', data: () => ({ lastUpdated: 'not-a-date', status: 'Submitted' }) },
+				],
+			});
+			return jest.fn();
+		});
+		FirebaseConfig.getRealTimeApplications(true, cb);
+		await call('getRealTimeDashboardApplicantOutlook', cb);
+		await call('getDashboardBenchmarkData', 2026);
+		await call('getBenchmarkedAwardCounts', 2026);
+		await call('getBenchmarkedAwardCounts');
+		await call('getNotesByAuthor', 'u1');
+		await call('getRealTimeNotes', 'users', 'u1', cb);
+		await call('addNote', 'users', 'u1', { text: 'note' });
+		await call('updateNote', 'users', 'u1', 'n1', 'updated');
+		await call('redactNote', 'users', 'u1', 'n1');
+		await call('getMeetings', 'u1', true);
+		await call('getRealTimeMeetings', 'u1', false, cb, true);
+		await call('getSchedulableInterviews');
+		await call('getInterviewsByWindow', '2026');
+		await call('getRealTimeInterviewsByWindow', 2026, cb);
+		await call('getEmailLogs', 2);
+		await call('getRealTimeNewApplicantsThisYear', cb, 2);
+		await call('getAverageApplicationsPerYearByType', 'New Applicant', 2026, 2);
+		await call('wipeCollections', { conn: '(default)' });
+		await call('wipeCollections', { direct: true });
+		await rejectOnce(mockGetDocs, 'sendToTestDB');
+		await rejectOnce(mockSetDoc, 'migrateEmailTemplates');
+
+		const savedCurrentUser = FirebaseConfig.auth.currentUser;
+		FirebaseConfig.auth.currentUser = null;
+		await FirebaseConfig.logEvent('anonymous failure', new Error('anonymous'));
+		FirebaseConfig.auth.currentUser = savedCurrentUser;
+		await rejectOnce(mockAddDoc, 'logEvent', 'failed log', new Error('log failure'));
+	});
+
+	it('covers adapter failure fallbacks', async () => {
+		const call = async (name, ...args) => {
+			try {
+				return await FirebaseConfig[name](...args);
+			} catch {
+				return null;
+			}
+		};
+		const cb = jest.fn();
+		const rejectOnce = async (mock, name, ...args) => {
+			mock.mockRejectedValueOnce(new Error('forced failure'));
+			return call(name, ...args);
+		};
+
+		await rejectOnce(mockGetDoc, 'getConfigFromDb');
+		await rejectOnce(mockUpdateDoc, 'updateUserPreferences', 'u1', 'users', {});
+		await rejectOnce(mockGetDoc, 'getDocumentsByIDs', 'users', ['u1']);
+		await rejectOnce(mockGetDocs, 'searchCollections', ['term']);
+		await rejectOnce(mockGetDoc, 'getApplicant', 'u1');
+		await rejectOnce(mockGetDoc, 'getMember', 'u1');
+		await rejectOnce(mockSetDoc, 'saveApplicantData', 'u1', {});
+		await rejectOnce(mockUpdateDoc, 'updateApplicantData', 'u1', {});
+		await rejectOnce(mockUpdateDoc, 'addApplicationToApplicant', 'u1', 'a1');
+		await rejectOnce(mockUpdateDoc, 'removeApplicationFromApplicant', 'u1', 'a1');
+		await rejectOnce(mockGetDocs, 'getAuthUserByEmail', 'ada@example.com');
+		await rejectOnce(mockGetDoc, 'getUserProfiles', 'u1');
+		await rejectOnce(mockCreateUser, 'registerUser', 'ada@example.com', 'password');
+		await rejectOnce(mockSignIn, 'loginUser', 'ada@example.com', 'password');
+		await rejectOnce(mockSetDoc, 'saveCollectionData', 'users', 'u1', {});
+		await rejectOnce(mockUpdateDoc, 'updateCollectionData', 'users', 'u1', {});
+		await rejectOnce(mockUpdateDoc, 'updateApplicationStatus', 'u1', 'a1', 'Done');
+		await rejectOnce(mockGetDoc, 'getApplication', 'u1', 'a1');
+		await rejectOnce(mockGetDocs, 'getCollection', 'users');
+		await rejectOnce(mockGetDoc, 'getCollectionData', 'u1', 'users', 'u1');
+		await rejectOnce(mockUpdateDoc, 'deleteApplication', { id: 'a1' });
+		await rejectOnce(mockUpdateDoc, 'updateSubmissionStatus', 'a1', 'Done');
+		await rejectOnce(mockGetDocs, 'getPastApplicationsCountByWindow', 2026);
+		await rejectOnce(mockGetDoc, 'getCurrentApplicationCount');
+		await rejectOnce(mockOnSnapshot, 'getRealTimeCurrentApplicationCount', cb);
+		await rejectOnce(mockGetDoc, 'getCurrentlyEligibleApplicationsCount');
+		await rejectOnce(mockGetDocs, 'getMostRecentApplicationIDs');
+		await rejectOnce(mockGetDoc, 'getCurrentlyEligibleApplicationsCountByType', 'New Applicant');
+		await rejectOnce(mockGetDoc, 'getRealTimeCurrentEligibleApplicationsCountByType', 'New Applicant', cb);
+		await rejectOnce(mockGetDocs, 'getEligibleApplicationsCountByTypeAndWindow', 'New Applicant', 2026);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeApplicationCountByStatus', 'Done', cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeEligibleApplicationsCountByTypeAndWindow', 'New Applicant', 2026, cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeCurrentNonNegatedApplicationsCountByType', 'New Applicant', cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear', 'New Applicant', 2026, cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeCurrentNonNegatedApplicationsCountByStatus', 'Done', cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeCurrentApplicationCountByStatus', 'Done', cb);
+		await rejectOnce(mockGetDocs, 'getRealTimeCurrentRejectedApplicationsCount', cb);
+		await rejectOnce(mockGetDocs, 'getApplicationsByWindow', 2026);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeApplicationsByWindow', 2026, true, cb);
+		await rejectOnce(mockGetDocs, 'getApplicationsByType', 'New Applicant', 2026);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeApplicationsByType', 'New Applicant', 2026, true, cb);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeApplicantsByApplicationID', ['a1'], cb);
+		await rejectOnce(mockGetDocs, 'getApplicationsByStatus', 'Done', 2026);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeDocument', 'users', 'u1', cb);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeApplicationsByIDs', ['a1'], cb);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeAwardsByIDs', ['a1'], cb);
+		await rejectOnce(mockGetDoc, 'getAwardsData', 'u1', ['a1']);
+		await rejectOnce(mockGetDocs, 'getApplicationsByIDs', ['a1']);
+		await rejectOnce(mockGetDocs, 'getDashboardBenchmarkData', 2026);
+		await rejectOnce(mockGetDocs, 'getBenchmarkedAwardCounts', 2026);
+		await rejectOnce(mockGetDocs, 'getNotesByAuthor', 'u1');
+		await rejectOnce(mockOnSnapshot, 'getRealTimeNotes', 'users', 'u1', cb);
+		await rejectOnce(mockAddDoc, 'addNote', 'users', 'u1', {});
+		await rejectOnce(mockUpdateDoc, 'updateNote', 'users', 'u1', 'n1', 'x');
+		await rejectOnce(mockUpdateDoc, 'redactNote', 'users', 'u1', 'n1');
+		await rejectOnce(mockGetDocs, 'getMeetings', 'u1', false);
+		await rejectOnce(mockGetDocs, 'getInterviewsByWindow', 2026);
+		await rejectOnce(mockOnSnapshot, 'getRealTimeInterviewsByWindow', 2026, cb);
+		await rejectOnce(mockGetDocs, 'getEmailLogs', 2);
+		await rejectOnce(mockGetDocs, 'getAverageApplicationsPerYearByType', 'New Applicant', 2026, 2);
+	});
+
+	it('covers empty snapshots and realtime error callbacks', async () => {
+		const cb = jest.fn();
+		mockGetDoc.mockResolvedValue({
+			exists: () => false,
+			id: 'missing',
+			data: () => ({}),
+		});
+		mockGetDocs.mockResolvedValue({ empty: true, size: 0, docs: [] });
+
+		await FirebaseConfig.getApplicant('missing');
+		await FirebaseConfig.getMember('missing');
+		await FirebaseConfig.getApplication('u1', 'missing');
+		await FirebaseConfig.getCollectionData('u1', 'users', 'missing');
+		await FirebaseConfig.getAwardsByIds(['missing']);
+		await FirebaseConfig.getApplicationsByIds(['missing']);
+		await FirebaseConfig.getAwardsData('u1', ['missing']);
+		await FirebaseConfig.getApplicationsByIDs(['missing']);
+		await FirebaseConfig.getDocumentsByIDs('users', ['missing']);
+		await FirebaseConfig.getCollection('users');
+		await FirebaseConfig.getAuthUserByEmail('missing@example.com');
+		await FirebaseConfig.getMemberOrApplicantAddress('u1');
+		await FirebaseConfig.getMemberOrApplicantAddress('', { profileId: 'missing' });
+
+		mockOnSnapshot.mockImplementation((queryOrRef, onNext, onError) => {
+			onNext({ exists: () => false, size: 0, docs: [], data: () => ({}) });
+			if (onError) onError(new Error('snapshot failure'));
+			return jest.fn();
+		});
+		FirebaseConfig.getRealTimeLegacyFinances(cb, { collection: 'legacyFinances' });
+		FirebaseConfig.getRealTimeYearlyFinances(cb);
+		FirebaseConfig.getRealTimeCollection('users', cb);
+		await FirebaseConfig.getRealTimeCurrentApplicationCount(cb);
+		FirebaseConfig.getRealTimeMostRecentApplicationIDs(cb);
+		await FirebaseConfig.getRealTimeCurrentEligibleApplicationsCountByType('New Applicant', cb);
+		FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('New Applicant', 2026, cb);
+		FirebaseConfig.getRealTimeApplicationCountByStatus('Submitted', cb);
+		FirebaseConfig.getRealTimeApplications(true, cb);
+		FirebaseConfig.getRealTimeRejectedApplications(cb, 2026);
+		FirebaseConfig.getRealTimeApplicationsByWindow(2026, false, cb);
+		FirebaseConfig.getRealTimeApplicationsByType('New Applicant', 2026, false, cb);
+		FirebaseConfig.getRealTimeApplicantsByApplicationID(['missing'], cb);
+		FirebaseConfig.getRealTimeApplicationsByStatus('Submitted', cb, 2026);
+		FirebaseConfig.getRealTimeDocument('users', 'missing', cb);
+		FirebaseConfig.getRealTimeApplicationsByIDs(['missing'], cb);
+		FirebaseConfig.getRealTimeAwardsByIDs(['missing'], cb);
+		FirebaseConfig.getRealTimeNotes('users', 'missing', cb);
+		FirebaseConfig.getRealTimeInterviewsByWindow(2026, cb);
+		FirebaseConfig.getRealTimeNewApplicantsThisYear(cb, 2);
+	});
 });

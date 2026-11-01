@@ -31,4 +31,13 @@ describe('computeDemoWindowSchedule', () => {
 		expect(reopened.APPLICATION_DEADLINE.getMonth()).toBe(2); // March
 		expect(reopened.APPLICATION_DEADLINE.getDate()).toBe(20);
 	});
+
+	it('rewinds before the anchor and safely falls back after the guard limit', () => {
+		const beforeAnchor = computeDemoWindowSchedule(new Date(2026, 0, 1, 9, 0, 0));
+		expect(beforeAnchor.openStart.getFullYear()).toBe(2025);
+
+		const fallback = computeDemoWindowSchedule(new Date(Number.NaN));
+		expect(fallback.isOpen).toBe(true);
+		expect(Number.isNaN(fallback.openStart.getTime())).toBe(true);
+	});
 });

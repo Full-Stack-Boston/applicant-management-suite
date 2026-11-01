@@ -90,4 +90,19 @@ describe('HomeNav', () => {
 		fireEvent.click(screen.getByRole('button', { name: /^Home$/i }));
 		expect(mockNavigate).toHaveBeenCalled();
 	});
+
+	it('exposes public get-started and sign-in actions', () => {
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByRole('button', { name: /Get Started/i }));
+		expect(mockNavigate).toHaveBeenCalled();
+		fireEvent.click(screen.getByLabelText('Sign in'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('renders the applicant navigation actions', () => {
+		renderNav({ variant: 'applicant' });
+		expect(screen.getByRole('button', { name: /Platform Info/i })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: /Platform Info/i }));
+		expect(screen.getByRole('menu')).toBeInTheDocument();
+	});
 });

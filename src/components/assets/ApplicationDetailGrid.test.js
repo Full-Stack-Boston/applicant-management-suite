@@ -7,6 +7,7 @@ describe('ApplicationDetailGrid', () => {
 	test('renders visible items and skips empty values', () => {
 		render(
 			<ApplicationDetailGrid
+				fullWidth
 				items={[
 					{ label: 'From', value: 'a@example.com', icon: EmailIcon },
 					{ label: 'Empty', value: '', icon: EmailIcon },

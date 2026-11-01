@@ -312,4 +312,50 @@ describe('WaitingRoom Component', () => {
 			expect(useApplicantPresence).toHaveBeenCalledWith('test-interview-123', true);
 		});
 	});
+
+	test('shows a permission error when the browser blocks media access', async () => {
+		mockGetUserMedia.mockRejectedValueOnce(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/You blocked camera and\/or microphone access/i)).toBeInTheDocument();
+	});
+
+	test('diagnoses a missing camera after successful permission request', async () => {
+		mockEnumerateDevices.mockResolvedValueOnce([
+			{ kind: 'audioinput', deviceId: 'mic-1', label: 'Mic 1' },
+		]);
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/No camera found/i)).toBeInTheDocument();
+	});
+
+	test('handles an interview assigned to another account', async () => {
+		useAuth.mockReturnValue({
+			applicant: { firstName: 'John', lastName: 'Doe' },
+			member: null,
+			user: { uid: 'different-user' },
+		});
+		render(<WaitingRoom />);
+		expect(await screen.findByText(/Unable to Open Waiting Room/i)).toBeInTheDocument();
+		expect(screen.getByText(/assigned to a different account/i)).toBeInTheDocument();
+	});
+
+	test('shows an unavailable gate for non-confirmed interview statuses', async () => {
+		getDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({
+				applicantId: 'app-123',
+				startTime: { toDate: () => new Date(Date.now() + 100000) },
+				status: 'cancelled',
+			}),
+		});
+		render(<WaitingRoom />);
+		expect(await screen.findByText(/Waiting Room Unavailable/i)).toBeInTheDocument();
+	});
 });

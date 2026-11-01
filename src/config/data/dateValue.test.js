@@ -30,6 +30,18 @@ describe('dateValue', () => {
 		expect(isFirestoreDateLike({})).toBe(false);
 	});
 
+	it('handles invalid timestamp converters and invalid epoch values', () => {
+		expect(toJsDate({ toDate: () => { throw new Error('bad timestamp'); } })).toBeNull();
+		expect(toJsDate({ toDate: () => 'not a date' })).toBeNull();
+		expect(toJsDate({ seconds: Number.NaN, nanoseconds: 1 })).toBeNull();
+		expect(toJsDate({ _seconds: Number.NaN, _nanoseconds: 1 })).toBeNull();
+		expect(toJsDate({ seconds: 1e30 })).toBeNull();
+		expect(toJsDate(true)).toBeNull();
+		expect(isFirestoreDateLike(new Date('invalid'))).toBe(true);
+		expect(isFirestoreDateLike(null)).toBe(false);
+		expect(isFirestoreDateLike({ toDate: 'not a function', seconds: '1' })).toBe(false);
+	});
+
 	it('normalizes known site config date keys to Date instances', () => {
 		const deadline = new Date('2026-02-15T17:00:00.000Z');
 		const nextOpen = new Date('2026-02-20T14:00:00.000Z');

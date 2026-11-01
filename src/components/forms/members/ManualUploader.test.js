@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ManualUploader from './ManualUploader';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAlert } from '../../../context/AlertContext';
 import * as firebaseConfig from '../../../config/data/firebase';
 import { useTitle } from '../../../context/HelmetContext';
+import { maybePromoteApplicationToCompleted } from '../../../config/data/applicationAttachments';
 
 const mockNavigate = jest.fn();
 const mockShowAlert = jest.fn();
@@ -36,6 +37,8 @@ vi.mock('../../../config/data/applicationAttachments', () => ({
 vi.mock('../../loader/Loader', () => ({ default: () => <div>Loading...</div> }));
 
 describe('ManualUploader Component', () => {
+	afterEach(cleanup);
+
 	beforeEach(() => {
 		jest.clearAllMocks();
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
@@ -47,6 +50,45 @@ describe('ManualUploader Component', () => {
 			return jest.fn();
 		});
 	});
+
+	const selectAutocompleteOption = async (label, optionText) => {
+		const input = screen.getByRole('combobox', { name: label });
+		fireEvent.focus(input);
+		fireEvent.change(input, { target: { value: optionText } });
+		const option = await screen.findByRole('option', { name: new RegExp(optionText, 'i') });
+		fireEvent.click(option);
+	};
+
+	const selectFirstAttachmentType = async () => {
+		const attachmentSelect = document.getElementById('manual-upload-attachment-type');
+		expect(attachmentSelect).toBeTruthy();
+		await waitFor(() => expect(attachmentSelect).not.toHaveAttribute('aria-disabled', 'true'));
+		fireEvent.mouseDown(attachmentSelect);
+		const options = await screen.findAllByRole('option');
+		fireEvent.click(options[0]);
+	};
+
+	const fillRequiredFields = async () => {
+		firebaseConfig.getApplicationsForApplicant.mockResolvedValue([
+			{ id: 'appl-1', type: 'New Applicant', status: 'Incomplete', cycleYear: 2026 },
+		]);
+		firebaseConfig.getCollectionData.mockResolvedValue({
+			id: 'appl-1',
+			type: 'New Applicant',
+			status: 'Incomplete',
+			attachments: 'att-doc-1',
+		});
+
+		await selectAutocompleteOption('Applicant', 'John Doe');
+		await selectAutocompleteOption('Application', 'New Applicant');
+		await waitFor(() => expect(firebaseConfig.getCollectionData).toHaveBeenCalled());
+		await selectFirstAttachmentType();
+
+		const file = new File(['pdf-bytes'], 'transcript.pdf', { type: 'application/pdf' });
+		const fileInput = document.querySelector('input[type="file"]');
+		expect(fileInput).toBeTruthy();
+		fireEvent.change(fileInput, { target: { files: [file] } });
+	};
 
 	test('renders loader initially then form', async () => {
 		render(<ManualUploader />);
@@ -75,6 +117,52 @@ describe('ManualUploader Component', () => {
 				message: 'Please complete every field before uploading.',
 				type: 'error',
 			});
+		});
+	});
+
+	test('uploads a document and promotes the application when configured', async () => {
+		firebaseConfig.saveFile.mockResolvedValue('apps/appl-1/file.pdf');
+		firebaseConfig.getDownloadLinkForFile.mockResolvedValue('https://example.com/file.pdf');
+		firebaseConfig.saveCollectionData.mockResolvedValue(true);
+		maybePromoteApplicationToCompleted.mockResolvedValue(true);
+
+		render(<ManualUploader />);
+		await fillRequiredFields();
+		fireEvent.click(screen.getByRole('button', { name: /upload attachment/i }));
+
+		await waitFor(() => {
+			expect(firebaseConfig.saveFile).toHaveBeenCalled();
+			expect(firebaseConfig.saveCollectionData).toHaveBeenCalledWith(
+				'attachments',
+				'att-doc-1',
+				expect.objectContaining({ applicantPersonalLetter: expect.any(Object) }),
+			);
+			expect(maybePromoteApplicationToCompleted).toHaveBeenCalledWith('appl-1');
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: 'File uploaded and application marked completed!', type: 'success' }),
+			);
+		});
+	});
+
+	test('reports application-loading failures', async () => {
+		firebaseConfig.getApplicationsForApplicant.mockRejectedValueOnce(new Error('applications unavailable'));
+		render(<ManualUploader />);
+		await selectAutocompleteOption('Applicant', 'John Doe');
+		await waitFor(() => expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'manual-upload-load-applications'));
+	});
+
+	test('reports upload failures during submission', async () => {
+		const error = new Error('storage unavailable');
+		firebaseConfig.saveFile.mockRejectedValueOnce(error);
+
+		render(<ManualUploader />);
+		await fillRequiredFields();
+		fireEvent.click(screen.getByRole('button', { name: /upload attachment/i }));
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalled();
+			expect(mockHandleError.mock.calls[0][0]).toBe(error);
+			expect(mockHandleError.mock.calls[0][1]).toBe('manual-upload-submit');
 		});
 	});
 });
