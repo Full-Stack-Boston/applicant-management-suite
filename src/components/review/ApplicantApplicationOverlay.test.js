@@ -23,11 +23,15 @@ vi.mock('../../config/data/firebase', () => ({
 	getCollectionData: vi.fn(),
 }));
 
-vi.mock('../../config/data/Constants', () => ({
-	attachmentFields: [
-		{ key: 'applicantPersonalLetter', label: 'Personal Letter', requiredBy: ['New Applicant'] },
-	],
-}));
+vi.mock('../../config/Constants', async (importOriginal) => {
+	const actual = await importOriginal();
+	return {
+		...actual,
+		attachmentFields: [
+			{ key: 'applicantPersonalLetter', label: 'Personal Letter', requiredBy: ['New Applicant'] },
+		],
+	};
+});
 
 vi.mock('../../components/loader/Loader', () => ({
 	default: () => <div data-testid='loader' />,
@@ -109,5 +113,63 @@ describe('ApplicantApplicationOverlay', () => {
 		getApplication.mockResolvedValue(null);
 		render(<ApplicantApplicationOverlay open applicationId='missing' onClose={onClose} />);
 		expect(await screen.findByText(/Application not found/i)).toBeInTheDocument();
+	});
+
+	test('does not fetch when closed or when the user is missing', () => {
+		render(<ApplicantApplicationOverlay open={false} applicationId='app-1' onClose={onClose} />);
+		expect(getApplication).not.toHaveBeenCalled();
+
+		useAuth.mockReturnValue({ user: null });
+		render(<ApplicantApplicationOverlay open applicationId='app-1' onClose={onClose} />);
+		expect(getApplication).not.toHaveBeenCalled();
+	});
+
+	test('surfaces load failures from getApplication', async () => {
+		getApplication.mockRejectedValueOnce(new Error('boom'));
+		render(<ApplicantApplicationOverlay open applicationId='app-1' onClose={onClose} />);
+		expect(await screen.findByText(/Could not load your application/i)).toBeInTheDocument();
+		expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'waitingRoomApplicationOverlay');
+	});
+
+	test('renders attachment request and missing states', async () => {
+		getCollectionData.mockImplementation(async (_uid, collectionName) => {
+			if (collectionName === 'profiles') return { applicantFirstName: 'Test' };
+			if (collectionName === 'families') return { familyMembers: [] };
+			if (collectionName === 'attachments') {
+				return {
+					applicantPersonalLetter: { requestID: 'req-1' },
+				};
+			}
+			return null;
+		});
+		render(<ApplicantApplicationOverlay open applicationId='app-1' onClose={onClose} />);
+		expect(await screen.findByText('Request Sent')).toBeInTheDocument();
+	});
+
+	test('renders display-name-only attachment chips without links', async () => {
+		getCollectionData.mockImplementation(async (_uid, collectionName) => {
+			if (collectionName === 'profiles') return { applicantFirstName: 'Test' };
+			if (collectionName === 'families') return { familyMembers: [] };
+			if (collectionName === 'attachments') {
+				return {
+					applicantPersonalLetter: { displayName: 'offline.pdf' },
+				};
+			}
+			return null;
+		});
+		render(<ApplicantApplicationOverlay open applicationId='app-1' onClose={onClose} />);
+		expect(await screen.findByText('offline.pdf')).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'offline.pdf' })).not.toBeInTheDocument();
+	});
+
+	test('renders not-uploaded copy when attachment data is empty', async () => {
+		getCollectionData.mockImplementation(async (_uid, collectionName) => {
+			if (collectionName === 'profiles') return { applicantFirstName: 'Test' };
+			if (collectionName === 'families') return { familyMembers: [] };
+			if (collectionName === 'attachments') return {};
+			return null;
+		});
+		render(<ApplicantApplicationOverlay open applicationId='app-1' onClose={onClose} />);
+		expect((await screen.findAllByText(/Not uploaded/i)).length).toBeGreaterThan(0);
 	});
 });
