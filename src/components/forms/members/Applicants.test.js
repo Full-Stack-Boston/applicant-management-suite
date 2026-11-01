@@ -18,12 +18,18 @@ vi.mock('../../../config/data/firebase', () => ({
 vi.mock('../../loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
 
 // Mock Child Components
-vi.mock('../GenericAdminForm', () => ({ default: ({ onSubmit, onFileUpload, initialData }) => (
-	<div data-testid='generic-admin-form'>
-		<button onClick={() => onSubmit({ firstName: 'Updated Name', gradYear: '2025' })}>Submit</button>
-		<button onClick={() => onFileUpload('upload', 'picture', { name: 'test.jpg' })}>Upload</button>
-	</div>
-) }));
+vi.mock('../GenericAdminForm', () => ({
+	default: ({ onSubmit, onFileUpload }) => (
+		<div data-testid='generic-admin-form'>
+			<button onClick={() => onSubmit({ firstName: 'Updated Name', gradYear: '2025' })}>Submit</button>
+			<button onClick={() => onSubmit({ firstName: 'Bad Year', gradYear: '25' })}>Submit Invalid Year</button>
+			<button onClick={() => onSubmit({ firstName: 'No Year' })}>Submit No Year</button>
+			<button onClick={() => onFileUpload('upload', 'picture', { name: 'test.jpg' })}>Upload</button>
+			<button onClick={() => onFileUpload('delete', 'picture', { name: 'test.jpg' })}>Ignore Non Upload</button>
+			<button onClick={() => onFileUpload('upload', 'picture', null)}>Upload Missing File</button>
+		</div>
+	),
+}));
 
 vi.mock('../../widget/Application', () => ({ default: ({ id }) => <div data-testid={`app-widget-${id}`}>App {id}</div> }));
 
@@ -65,17 +71,23 @@ describe('ApplicantForm Component', () => {
 	});
 
 	test('validates graduation year format', async () => {
-		// Override mock to submit invalid year
 		render(<ApplicantForm applicant={{ id: '123' }} />);
+		fireEvent.click(screen.getByText('Submit Invalid Year'));
+		await waitFor(() => {
+			expect(mockAlert.showAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: 'Please enter a valid 4-digit graduation year.', type: 'error' })
+			);
+		});
+		expect(saveApplicantData).not.toHaveBeenCalled();
+	});
 
-		// We can't easily change the internal logic of the mocked GenericAdminForm's onSubmit button here
-		// without more complex setup.
-		// Instead, we rely on the fact that our mock calls onSubmit with '2025' which IS valid.
-		// To test invalid, we'd need to change what the mock passes.
-		// For brevity/simplicity in this pattern, we trust the 'handleSubmit' logic is covered if we see success.
-
-		// If we strictly want to test failure, we'd need to expose the handler.
-		// Given the constraints, let's stick to success path which proves the function runs.
+	test('handles submit failure via handleError', async () => {
+		saveApplicantData.mockRejectedValueOnce(new Error('save failed'));
+		render(<ApplicantForm applicant={{ id: '123' }} />);
+		fireEvent.click(screen.getByText('Submit'));
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'applicant-form-submit');
+		});
 	});
 
 	test('handles file upload', async () => {
@@ -93,5 +105,27 @@ describe('ApplicantForm Component', () => {
 			expect(getDownloadLinkForFile).toHaveBeenCalled();
 			expect(mockAlert.showAlert).toHaveBeenCalledWith(expect.objectContaining({ message: 'Picture updated!' }));
 		});
+	});
+
+	test('handles missing download link and non-upload actions', async () => {
+		saveFile.mockResolvedValue('ref/loc');
+		getDownloadLinkForFile.mockResolvedValue(null);
+		render(<ApplicantForm applicant={{ id: '123', applications: [{ id: 'obj-app' }] }} />);
+
+		expect(screen.getByTestId('app-widget-obj-app')).toBeInTheDocument();
+
+		fireEvent.click(screen.getByText('Ignore Non Upload'));
+		fireEvent.click(screen.getByText('Upload Missing File'));
+		expect(saveFile).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByText('Upload'));
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'applicant-picture-upload');
+		});
+	});
+
+	test('shows empty application history message', () => {
+		render(<ApplicantForm applicant={{ id: '123', applications: [] }} />);
+		expect(screen.getByText('No application history found.')).toBeInTheDocument();
 	});
 });

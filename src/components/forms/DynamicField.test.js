@@ -521,5 +521,261 @@ describe('DynamicField Component', () => {
 			renderField({ name: 'what', label: 'Unknown', type: 'alien_technology' });
 			expect(screen.getByText('Unsupported field type: alien_technology')).toBeInTheDocument();
 		});
+
+		it('renders header field', () => {
+			renderField({ name: 'h1', type: 'header', label: 'Section Header' });
+			expect(screen.getByText('Section Header')).toBeInTheDocument();
+		});
+
+		it('renders email field with start icon', () => {
+			const appData = { ...mockApplication, testSection: { applicantEmailAddress: 'a@b.com' } };
+			renderField({ name: 'applicantEmailAddress', label: 'Email', type: 'email' }, { allowEditing: true }, appData);
+			expect(screen.getByLabelText(/Email/i)).toHaveValue('a@b.com');
+		});
+
+		it('renders picture upload and changes picture', () => {
+			const appData = { ...mockApplication, testSection: { photo: { home: 'pic.jpg' } } };
+			const { container } = renderField({ name: 'photo', label: 'Photo', type: 'pictureUpload' }, { allowEditing: true }, appData);
+			expect(screen.getByText('Change Picture')).toBeInTheDocument();
+			const fileInput = container.querySelector('input[type="file"]');
+			const file = new File(['x'], 'avatar.png', { type: 'image/png' });
+			fireEvent.change(fileInput, { target: { files: [file] } });
+			expect(mockOnFile).toHaveBeenCalledWith('upload', 'testSection.photo', file);
+		});
+
+		it('renders singleFile and updates on select', () => {
+			const file = new File(['pdf'], 'doc.pdf', { type: 'application/pdf' });
+			const appData = { ...mockApplication, testSection: { resume: null } };
+			const { container, rerender } = render(
+				<ApplicationContext.Provider value={{ allowEditing: true }}>
+					<LocalizationProvider dateAdapter={AdapterDayjs}>
+						<DynamicField {...baseProps} fieldConfig={{ name: 'resume', label: 'Resume', type: 'singleFile' }} application={appData} />
+					</LocalizationProvider>
+				</ApplicationContext.Provider>
+			);
+			const fileInput = container.querySelector('input[type="file"]');
+			fireEvent.change(fileInput, { target: { files: [file] } });
+			expect(mockOnChange).toHaveBeenCalledWith('resume', file);
+
+			rerender(
+				<ApplicationContext.Provider value={{ allowEditing: true }}>
+					<LocalizationProvider dateAdapter={AdapterDayjs}>
+						<DynamicField {...baseProps} fieldConfig={{ name: 'resume', label: 'Resume', type: 'singleFile' }} application={{ ...appData, testSection: { resume: file } }} />
+					</LocalizationProvider>
+				</ApplicationContext.Provider>
+			);
+			expect(screen.getByText('doc.pdf')).toBeInTheDocument();
+			expect(screen.getByText('Change File')).toBeInTheDocument();
+		});
+
+		it('selects autocomplete option by id', async () => {
+			const appData = { ...mockApplication, testSection: { vehicle: 'car' } };
+			renderField(
+				{
+					name: 'vehicle',
+					label: 'Vehicle',
+					type: 'autocomplete',
+					options: [
+						{ id: 'car', label: 'Car' },
+						{ id: 'bike', label: 'Bike' },
+					],
+				},
+				{ allowEditing: true },
+				appData
+			);
+			const input = screen.getByLabelText('Vehicle');
+			fireEvent.mouseDown(input);
+			fireEvent.click(await screen.findByText('Bike'));
+			expect(mockOnChange).toHaveBeenCalledWith('testSection.vehicle', 'bike');
+		});
+
+		it('selects dropdown option objects', async () => {
+			renderField({
+				name: 'color',
+				label: 'Color',
+				type: 'dropdown',
+				options: [
+					{ value: 'red', label: 'Red' },
+					{ value: 'blue', label: 'Blue' },
+				],
+				helperText: 'Pick one',
+			});
+			fireEvent.mouseDown(screen.getByRole('combobox'));
+			fireEvent.click(await screen.findByText('Blue'));
+			expect(mockOnChange).toHaveBeenCalledWith('testSection.color', 'blue');
+		});
+
+		it('disables field when disableOn returns true', () => {
+			renderField(
+				{ name: 'locked', label: 'Locked', type: 'text', disableOn: (perms) => !perms?.canEdit },
+				{ allowEditing: true },
+				mockApplication,
+				{ permissions: { canEdit: false } }
+			);
+			expect(screen.getByLabelText(/Locked/i)).toBeDisabled();
+		});
+
+		it('uses attachments section path without prefix', () => {
+			const appData = {
+				...mockApplication,
+				attachments: { applicantPersonalLetter: { displayName: 'Letter.pdf' } },
+			};
+			renderField(
+				{ name: 'attachments.applicantPersonalLetter', label: 'Letter', type: 'file' },
+				{ allowEditing: true },
+				appData,
+				{ sectionName: 'attachments' }
+			);
+			expect(screen.getByText('Letter.pdf')).toBeInTheDocument();
+		});
+	});
+
+	describe('Additional label and formula edges', () => {
+		it('renders Not Provided, N/A, and false boolean labels', () => {
+			const appData = {
+				...mockApplication,
+				personal: { ...mockApplication.personal, isCitizen: false, DOB: '', empty: '' },
+			};
+			renderField({ name: 'personal.isCitizen', type: 'label', label: 'Citizen' }, { allowEditing: true }, appData);
+			expect(screen.getByText('No')).toBeInTheDocument();
+			renderField({ name: 'personal.DOB', type: 'label', label: 'DOB' }, { allowEditing: true }, appData);
+			expect(screen.getByText('N/A')).toBeInTheDocument();
+			renderField({ name: 'personal.empty', type: 'label', label: 'Empty' }, { allowEditing: true }, appData);
+			expect(screen.getByText('Not Provided')).toBeInTheDocument();
+		});
+
+		it('renders Not Uploaded attachment chip', () => {
+			const appData = { ...mockApplication, personal: { ...mockApplication.personal, attachment: {} } };
+			renderField({ name: 'personal.attachment', type: 'label', label: 'Resume', valueFormatter: 'attachmentChip' }, { allowEditing: true }, appData);
+			expect(screen.getByText('Not Uploaded')).toBeInTheDocument();
+		});
+
+		it('renders summary school objects and card details', () => {
+			const appData = {
+				...mockApplication,
+				schools: [{ id: 's1', school: 'State U' }],
+				expenses: {
+					...mockApplication.expenses,
+					otherExpenses: [{ id: 'e1', title: 'Misc', amount: 10, note: 'books' }],
+				},
+			};
+			renderField({ name: 'schools', type: 'summaryList', label: 'Schools' }, { allowEditing: true }, appData);
+			expect(screen.getByText('State U')).toBeInTheDocument();
+			renderField(
+				{
+					name: 'expenses.otherExpenses',
+					type: 'summaryList',
+					label: 'Others',
+					cardDisplay: { title: 'title', subtitle: 'amount', details: ['note'] },
+				},
+				{ allowEditing: true },
+				appData
+			);
+			expect(screen.getByText('Note: books')).toBeInTheDocument();
+		});
+
+		it('calculates otherTotalExpenses and otherIncomeSources', () => {
+			renderField({ name: 'c5', type: 'calculatedLabel', label: 'Other', calculatedValue: 'otherTotalExpenses' });
+			expect(screen.getByText('$30.00')).toBeInTheDocument();
+			renderField({ name: 'c6', type: 'calculatedLabel', label: 'Income', calculatedValue: 'otherIncomeSources' });
+			expect(screen.getByText('$50.00')).toBeInTheDocument();
+		});
+
+		it('returns Error when formula processing throws', () => {
+			const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+			const badApp = new Proxy(
+				{ ...mockApplication },
+				{
+					get(target, prop) {
+						if (prop === 'expenses') throw new Error('boom');
+						return target[prop];
+					},
+				}
+			);
+			renderField({ name: 'err2', type: 'calculatedLabel', label: 'Err', calculatedValue: 'expenses.tuitionCost' }, { allowEditing: true }, badApp);
+			expect(screen.getByText('Error')).toBeInTheDocument();
+			consoleSpy.mockRestore();
+		});
+	});
+
+	describe('FileField request edges', () => {
+		it('ignores cancelled recommendation dialog', async () => {
+			mockShowDialog.mockImplementation(({ callback }) => callback(null));
+			renderField({ name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true });
+			fireEvent.click(screen.getByText('Request letter'));
+			await waitFor(() => expect(mockShowDialog).toHaveBeenCalled());
+			expect(mockSaveCollectionData).not.toHaveBeenCalled();
+		});
+
+		it('alerts when recommendation request fails', async () => {
+			mockShowDialog.mockImplementation(({ callback }) => callback({ name: 'Teacher', email: 't@test.com' }));
+			mockSaveCollectionData.mockRejectedValueOnce(new Error('fail'));
+			const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+			renderField({ name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true });
+			fireEvent.click(screen.getByText('Request letter'));
+			await waitFor(() => {
+				expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+			});
+			consoleSpy.mockRestore();
+		});
+
+		it('opens uploaded file chip and uploads via hidden input', () => {
+			const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+			const appData = { ...mockApplication, testSection: { lor: { displayName: 'LOR.pdf', home: 'https://file' } } };
+			const { container } = renderField({ name: 'lor', label: 'LOR', type: 'file' }, { allowEditing: true }, appData);
+			fireEvent.click(screen.getByText('LOR.pdf'));
+			expect(openSpy).toHaveBeenCalledWith('https://file', '_blank');
+			const fileInput = container.querySelector('input[type="file"]');
+			const file = new File(['x'], 'new.pdf', { type: 'application/pdf' });
+			fireEvent.change(fileInput, { target: { files: [file] } });
+			expect(mockOnFile).toHaveBeenCalledWith('upload', 'testSection.lor', file);
+			openSpy.mockRestore();
+		});
+
+		it('resolves attachmentsID from object and string forms', async () => {
+			mockShowDialog.mockImplementation(({ callback }) => callback({ name: 'Teacher', email: 't@test.com', fromName: 'Override' }));
+			mockSaveCollectionData.mockResolvedValue(undefined);
+			mockSendRequest.mockResolvedValue(undefined);
+
+			const appWithObject = {
+				...mockApplication,
+				attachments: { attachmentsID: 'att-obj' },
+			};
+			renderField({ name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true }, { allowEditing: true }, appWithObject);
+			fireEvent.click(screen.getByText('Request letter'));
+			await waitFor(() => expect(mockSaveCollectionData).toHaveBeenCalled());
+			expect(mockSaveCollectionData.mock.calls[0][2].attachmentsID).toBe('att-obj');
+			expect(mockSaveCollectionData.mock.calls[0][2].fromName).toBe('Override');
+		});
+	});
+
+	describe('Field start icons', () => {
+		it('renders start adornments for common field names', () => {
+			const names = [
+				'applicantFirstName',
+				'applicantMiddleInitial',
+				'applicantDOB',
+				'expectedGraduationDate',
+				'applicantMailingAddress',
+				'location',
+				'applicantHomePhone',
+				'applicantCellPhone',
+				'schoolName',
+				'occupation',
+				'organization',
+				'age',
+				'tuitionCost',
+				'relation',
+			];
+			names.forEach((name) => {
+				const { unmount } = renderField({ name, label: name, type: 'text' });
+				expect(screen.getByLabelText(new RegExp(name, 'i'))).toBeInTheDocument();
+				unmount();
+			});
+			renderField({ name: 'misc', label: 'Addr', type: 'text' });
+			expect(screen.getByLabelText(/Addr/i)).toBeInTheDocument();
+			renderField({ name: 'contact', label: 'Mail', type: 'email' });
+			expect(screen.getByLabelText(/Mail/i)).toBeInTheDocument();
+		});
 	});
 });
