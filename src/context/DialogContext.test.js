@@ -211,4 +211,76 @@ describe('DialogContext', () => {
 		fireEvent.click(screen.getByText('Override'));
 		expect(screen.getByText('New Message')).toBeInTheDocument();
 	});
+
+	test('opens a component-only shell when config id is missing but data.component is provided', () => {
+		const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+		const CustomComp = ({ onCancel }) => (
+			<div>
+				<span>Shell Component</span>
+				<button type='button' onClick={onCancel}>
+					Cancel Shell
+				</button>
+			</div>
+		);
+		const callback = jest.fn();
+		const MissingConsumer = () => {
+			const { showDialog } = useDialog();
+			return (
+				<button
+					type='button'
+					onClick={() =>
+						showDialog({
+							id: 'missing-but-component',
+							data: { component: CustomComp, title: 'Shell Title' },
+							callback,
+						})
+					}>
+					Open Missing
+				</button>
+			);
+		};
+		render(
+			<DialogProvider>
+				<MissingConsumer />
+			</DialogProvider>
+		);
+		fireEvent.click(screen.getByText('Open Missing'));
+		expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('missing from dialogConfig'));
+		expect(screen.getByText('Shell Component')).toBeInTheDocument();
+		fireEvent.click(screen.getByText('Cancel Shell'));
+		expect(callback).toHaveBeenCalledWith(null);
+		consoleSpy.mockRestore();
+	});
+
+	test('cancels form dialogs without submitting', () => {
+		const callback = jest.fn();
+		renderDialog('formDialog', {}, callback);
+		fireEvent.click(screen.getByText('Cancel'));
+		expect(callback).toHaveBeenCalledWith(null);
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	test('throws when useDialog is used outside a provider', () => {
+		const Broken = () => {
+			useDialog();
+			return null;
+		};
+		expect(() => render(<Broken />)).toThrow(/must be used within a DialogProvider/i);
+	});
+
+	test('renders multiline text inputs from data.inputs overrides', () => {
+		const callback = jest.fn();
+		renderDialog(
+			'simpleDialog',
+			{
+				inputs: [{ name: 'notes', type: 'text', label: 'Notes', multiline: true, rows: 3 }],
+				title: 'Override Title',
+			},
+			callback,
+		);
+		expect(screen.getByText('Override Title')).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'hello' } });
+		fireEvent.click(screen.getByText('Submit'));
+		expect(callback).toHaveBeenCalledWith({ notes: 'hello' });
+	});
 });
