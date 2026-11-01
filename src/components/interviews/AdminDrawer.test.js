@@ -126,6 +126,43 @@ describe('AdminDrawer Component', () => {
 				expect.objectContaining({ AUTO_DELIBERATE: true })
 			);
 		});
+
+		it('marks interview as missed successfully', async () => {
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Mark Missed'));
+			});
+			expect(firebase.markInterviewAsMissed).toHaveBeenCalledWith({ interviewId: 'interview123' });
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+		});
+
+		it('handles mark-missed failures', async () => {
+			firebase.markInterviewAsMissed.mockRejectedValueOnce(new Error('missed-fail'));
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Mark Missed'));
+			});
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'mark-interview-missed');
+		});
+
+		it('handles end-interview failures', async () => {
+			firebase.endInterview.mockRejectedValueOnce(new Error('end-fail'));
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('End and Complete'));
+			});
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'end-interview-admin-panel');
+		});
+
+		it('handles AUTO_DELIBERATE update failures', async () => {
+			updateDoc.mockRejectedValueOnce(new Error('toggle-fail'));
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			const toggle = screen.getByRole('switch', { name: /Deliberate after interviews/i });
+			await act(async () => {
+				fireEvent.click(toggle);
+			});
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'update-post-interview-action');
+		});
 	});
 
 	describe('Deliberation Mode (isDeliberation=true)', () => {

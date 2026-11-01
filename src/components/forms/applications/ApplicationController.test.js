@@ -1,7 +1,7 @@
 import React from 'react';
 // FIX: Import 'act' from 'react' to address the deprecation warning
 import { act } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 // DELETED: Removed the duplicate import from here.
 import { ApplicationContext } from '../../../context/ApplicationContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -218,7 +218,22 @@ vi.mock('../../forms/GenericFormPage', async () => {
 					onClick={() =>
 						setApplication((prev) => ({
 							...prev,
-							profile: { applicantFirstName: 'FormFilled' },
+							profile: {
+								applicantFirstName: 'FormFilled',
+								applicantLastName: 'Person',
+								applicantEmailAddress: 'filled@example.com',
+								applicantCellPhone: '555-0100',
+								applicantHomePhone: '555-0101',
+							},
+							education: {
+								schoolName: 'State U',
+								major: 'CS',
+								expectedGraduationDate: '2026-05-01',
+							},
+							experience: {
+								currentOrganization: '0',
+								positions: [{ role: 'Intern', organization: 'Acme' }],
+							},
 							attachments: { testDoc: { displayName: 'doc.pdf' } },
 						}))
 					}>
@@ -339,7 +354,7 @@ describe('ApplicationController', () => {
 				'completed',
 				expect.objectContaining({
 					firstName: 'FormFilled',
-					lastName: 'Applicant',
+					lastName: 'Person',
 				}),
 				{}
 			);
@@ -552,5 +567,119 @@ describe('ApplicationController', () => {
 			expect(firebaseConfig.getApplicant).toHaveBeenCalledWith(mockUser.uid);
 			expect(screen.getByTestId('generic-form-page')).toBeInTheDocument();
 		});
+	});
+
+	test('bypasses validation when VALIDATION_OVERRIDE is enabled', async () => {
+		useConfig.mockReturnValue({ APPLICATION_DEADLINE: '2025-01-01', VALIDATION_OVERRIDE: true });
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		await act(async () => {
+			fireEvent.click(screen.getByText('Save & Continue'));
+		});
+		await waitFor(() => {
+			expect(mockAlert.showAlert).toHaveBeenCalledWith('application', 'updated');
+			expect(screen.getByText('Step 2')).toBeInTheDocument();
+		});
+	});
+
+	test('alerts when step save fails', async () => {
+		firebaseConfig.saveCollectionData.mockResolvedValueOnce(false);
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(mockAlert.showAlert).toHaveBeenCalledWith('application', 'failed');
+		});
+	});
+
+	test('redirects submitted applications to review', async () => {
+		firebaseConfig.getApplication.mockResolvedValue({
+			id: 'app123',
+			status: 'submitted',
+			type: 'Scholarship',
+		});
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(mockNavigate).toHaveBeenCalled();
+			expect(mockNavigate.mock.calls.some((call) => call[1]?.replace === true)).toBe(true);
+		});
+	});
+
+	test('handles loadExistingApplication fetch errors', async () => {
+		firebaseConfig.getApplication.mockRejectedValueOnce(new Error('fetch boom'));
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'fetchData');
+			expect(screen.getByText('Not Found')).toBeInTheDocument();
+		});
+	});
+
+	test('handles initializeNewApplication applicant fetch errors', async () => {
+		mockParams = { applicationType: 'scholarship', applicationID: null };
+		firebaseConfig.getApplicant.mockRejectedValueOnce(new Error('applicant boom'));
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'fetchApplicant');
+			expect(screen.getByTestId('generic-form-page')).toBeInTheDocument();
+		});
+	});
+
+	test('syncs education and experience into applicant updates', async () => {
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Fill Form'));
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.updateApplicantData).toHaveBeenCalledWith(
+				'user1',
+				expect.objectContaining({
+					firstName: 'FormFilled',
+					lastName: 'Person',
+					email: 'filled@example.com',
+					school: 'State U',
+					major: 'CS',
+					organization: 'Intern | Acme',
+				})
+			);
+		});
+	});
+
+	test('shows missing page and component messaging', async () => {
+		const { applicationConfigurations } = await import('../../../config/ui/applicationConfig');
+		const originalPage = applicationConfigurations.scholarship.pages[0];
+		applicationConfigurations.scholarship.pages[0] = null;
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Page configuration is missing for this step.')).toBeInTheDocument();
+		});
+		cleanup();
+		applicationConfigurations.scholarship.pages[0] = { section: 'profile', component: 'MissingComp' };
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Form component "MissingComp" not found.')).toBeInTheDocument();
+		});
+		applicationConfigurations.scholarship.pages[0] = originalPage;
 	});
 });
