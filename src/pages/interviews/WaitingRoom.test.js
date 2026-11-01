@@ -95,7 +95,15 @@ vi.mock('../../hooks/useApplicantPresence', () => ({
 }));
 
 vi.mock('../../components/review/ApplicantApplicationOverlay', () => ({
-	default: () => null,
+	default: ({ open, onClose, applicationId }) =>
+		open ? (
+			<div data-testid='application-overlay'>
+				<span>{applicationId}</span>
+				<button type='button' onClick={onClose}>
+					Close Overlay
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock('../../components/home/PublicPageLayout', () => ({
@@ -191,6 +199,7 @@ describe('WaitingRoom Component', () => {
 			exists: () => true,
 			data: () => ({
 				applicantId: 'app-123',
+				applicationId: 'application-99',
 				startTime: { toDate: () => new Date(Date.now() + 100000) }, // Future date
 				status: 'confirmed',
 				firstName: 'Applicant',
@@ -357,5 +366,26 @@ describe('WaitingRoom Component', () => {
 		});
 		render(<WaitingRoom />);
 		expect(await screen.findByText(/Waiting Room Unavailable/i)).toBeInTheDocument();
+	});
+
+	test('navigates away from the error status page', async () => {
+		useParams.mockReturnValue({});
+		render(<WaitingRoom />);
+		expect(await screen.findByText(/Unable to Open Waiting Room/i)).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: /Return to Application/i }));
+		expect(mockNavigate).toHaveBeenCalledWith('/apply');
+	});
+
+	test('opens application overlay and exposes leave/support actions', async () => {
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+
+		fireEvent.click(screen.getByRole('button', { name: /View your application/i }));
+		expect(await screen.findByTestId('application-overlay')).toHaveTextContent('application-99');
+		fireEvent.click(screen.getByText('Close Overlay'));
+		expect(screen.queryByTestId('application-overlay')).not.toBeInTheDocument();
+
+		expect(screen.getByRole('link', { name: /Return to Application/i })).toHaveAttribute('href', '/apply');
+		expect(screen.getByRole('link', { name: /Having trouble/i })).toHaveAttribute('href', 'mailto:test@example.com');
 	});
 });
