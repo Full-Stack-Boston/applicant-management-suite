@@ -112,6 +112,11 @@ export default defineConfig(({ mode }) => ({
         'src/setupTests.js',
         // Binary brand assets (imported as URLs; not runtime logic)
         'src/assets/images/**',
+        // Stylesheets (no executable statements)
+        'src/**/*.scss',
+        // Barrel re-exports only
+        'src/config/admin/index.ts',
+        'src/config/content/index.ts',
         // Static template catalogs (data, not runtime logic)
         'src/config/content/push.tsx',
         'src/config/content/emailTemplates.tsx',

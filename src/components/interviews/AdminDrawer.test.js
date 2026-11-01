@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import AdminDrawer from './AdminDrawer';
 import { useParticipantIds, useDaily } from '@daily-co/daily-react';
-import { onSnapshot } from 'firebase/firestore';
+import { onSnapshot, updateDoc } from 'firebase/firestore';
 import { useAlert } from '../../context/AlertContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useAuth } from '../../context/AuthContext';
@@ -23,8 +23,8 @@ vi.mock('../../config/data/firebase', () => ({
 	markInterviewAsMissed: jest.fn(),
 }));
 vi.mock('firebase/firestore', () => ({
-	doc: jest.fn(),
-	updateDoc: jest.fn(),
+	doc: jest.fn(() => ({ path: 'siteConfig/config123' })),
+	updateDoc: jest.fn(() => Promise.resolve()),
 	onSnapshot: jest.fn(),
 }));
 vi.mock('../../context/AlertContext', () => ({ useAlert: jest.fn() }));
@@ -102,6 +102,30 @@ describe('AdminDrawer Component', () => {
 			});
 			expect(onCompleteAndNext).toHaveBeenCalledWith('next123');
 		});
+
+		it('sends wrap-up notice via Daily app message', async () => {
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Send Wrap-Up Notice'));
+			});
+			expect(mockSendAppMessage).toHaveBeenCalledWith(
+				expect.objectContaining({ event: 'notify' }),
+				'*'
+			);
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'info' }));
+		});
+
+		it('toggles AUTO_DELIBERATE in site config', async () => {
+			render(<AdminDrawer open={true} onClose={mockOnClose} interviewId='interview123' isAdmin={true} />);
+			const toggle = screen.getByRole('switch', { name: /Deliberate after interviews/i });
+			await act(async () => {
+				fireEvent.click(toggle);
+			});
+			expect(updateDoc).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ AUTO_DELIBERATE: true })
+			);
+		});
 	});
 
 	describe('Deliberation Mode (isDeliberation=true)', () => {
@@ -115,6 +139,44 @@ describe('AdminDrawer Component', () => {
 		it('calls onRelevantAppsChange with app IDs from props', () => {
 			render(<AdminDrawer open={true} onClose={mockOnClose} isDeliberation={true} nextInterview={mockNextInterview} previousInterview={mockPrevInterview} onRelevantAppsChange={mockOnRelevantAppsChange} />);
 			expect(mockOnRelevantAppsChange).toHaveBeenCalledWith(['app123', 'app456']);
+		});
+
+		it('joins in-progress interview and starts next interview', async () => {
+			const onJoinInterview = jest.fn();
+			render(
+				<AdminDrawer
+					open={true}
+					onClose={mockOnClose}
+					isDeliberation={true}
+					isAdmin={true}
+					inProgressInterview={{ id: 'live-1', displayName: 'Live Candidate' }}
+					nextInterview={mockNextInterview}
+					onJoinInterview={onJoinInterview}
+					onStartNextInterview={mockOnStartNextInterview}
+				/>
+			);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Join Now'));
+			});
+			expect(onJoinInterview).toHaveBeenCalledWith('live-1');
+		});
+
+		it('starts next interview when none in progress', async () => {
+			render(
+				<AdminDrawer
+					open={true}
+					onClose={mockOnClose}
+					isDeliberation={true}
+					isAdmin={true}
+					previousInterview={mockPrevInterview}
+					nextInterview={mockNextInterview}
+					onStartNextInterview={mockOnStartNextInterview}
+				/>
+			);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Start Next Interview'));
+			});
+			expect(mockOnStartNextInterview).toHaveBeenCalledWith('next123');
 		});
 	});
 });

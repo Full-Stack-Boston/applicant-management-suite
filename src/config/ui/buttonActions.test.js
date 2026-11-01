@@ -109,10 +109,38 @@ describe('buttonActions', () => {
 	});
 
 	describe('getApplicantActions', () => {
-		// Note: This function has a different signature (4 args)
+		const mockApplicant = { email: 'applicant@test.com' };
+
 		it('should return 4 actions', () => {
 			const actions = getApplicantActions(mockShowAlert, mockHandleError, false, mockSetShowNotes);
 			expect(actions).toHaveLength(4);
+		});
+
+		it('should send applicant password reset emails', async () => {
+			const actions = getApplicantActions(mockShowAlert, mockHandleError, false, mockSetShowNotes);
+			const resetAction = actions.find((a) => a.label === 'Send Password Reset Email');
+			await resetAction.onClick(mockApplicant);
+			expect(sendPasswordResetEmail).toHaveBeenCalledWith(auth, 'applicant@test.com');
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Reset email sent successfully.', type: 'success' });
+		});
+
+		it('should handle applicant password reset failures', async () => {
+			const mockError = new Error('reset failed');
+			sendPasswordResetEmail.mockRejectedValue(mockError);
+			const actions = getApplicantActions(mockShowAlert, mockHandleError, false, mockSetShowNotes);
+			const resetAction = actions.find((a) => a.label === 'Send Password Reset Email');
+			await resetAction.onClick(mockApplicant);
+			expect(mockHandleError).toHaveBeenCalledWith(mockError, 'resetPasswordEmail');
+		});
+
+		it('should navigate to contact center and toggle notes', () => {
+			const actions = getApplicantActions(mockShowAlert, mockHandleError, true, mockSetShowNotes);
+			const contactAction = actions.find((a) => a.label === 'Contact Applicant');
+			expect(contactAction.navTo()).toEqual({ path: paths.contactCenter });
+			const notesAction = actions.find((a) => a.label.includes('Notes'));
+			expect(notesAction.label).toBe('Hide Notes');
+			notesAction.onClick();
+			expect(mockSetShowNotes).toHaveBeenCalledWith(false);
 		});
 	});
 
@@ -139,6 +167,14 @@ describe('buttonActions', () => {
 				path: paths.exportApp,
 				params: { id: 'app123' },
 			});
+		});
+
+		it('should toggle application notes', () => {
+			const actions = getApplicationActions(false, mockSetShowNotes, { id: 'm1' });
+			const notesAction = actions.find((a) => a.label.includes('Notes'));
+			expect(notesAction.label).toBe('Show Notes');
+			notesAction.onClick();
+			expect(mockSetShowNotes).toHaveBeenCalledWith(true);
 		});
 	});
 
