@@ -69,6 +69,21 @@ describe('AttachmentViewer Component', () => {
         expect(screen.getAllByRole('img')).toHaveLength(1);
 	});
 
+	it('converts PDF attachments into preview pages', async () => {
+		const { convertPDFBlobToImages } = await import('../../config/Constants');
+		getCollectionData.mockResolvedValue({
+			letter: { refLoc: 'path/to/letter.pdf', displayName: 'Letter.pdf' },
+		});
+		getBlob.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
+		convertPDFBlobToImages.mockResolvedValue(['pdf-page-1.jpg', 'pdf-page-2.jpg']);
+		render(<AttachmentViewer application={mockApplication} />);
+		expect(await screen.findByText('Letter.pdf')).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByAltText('Letter.pdf - Page 1')).toHaveAttribute('src', 'pdf-page-1.jpg');
+			expect(screen.getByAltText('Letter.pdf - Page 2')).toHaveAttribute('src', 'pdf-page-2.jpg');
+		});
+	});
+
 	it('shows empty state when attachments payload is empty', async () => {
 		getCollectionData.mockResolvedValue({});
 		render(<AttachmentViewer application={mockApplication} />);
