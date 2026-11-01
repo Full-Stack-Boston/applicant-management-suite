@@ -57,4 +57,49 @@ describe('Timer', () => {
 			expect(screen.getByText(/period is closed/i)).toBeInTheDocument();
 		});
 	});
+
+	test('enters closed mode when deadline is missing', async () => {
+		useConfig.mockReturnValue({
+			APPLICATION_DEADLINE: null,
+			NEXT_APPLICATION_OPEN_DATE: null,
+		});
+		jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+		render(<Timer onModeChange={mockOnModeChange} />);
+		await act(async () => {
+			jest.advanceTimersByTime(1000);
+		});
+		await waitFor(() => {
+			expect(mockOnModeChange).toHaveBeenCalledWith('closed');
+		});
+	});
+
+	test('shows nextOpen countdown when open date is sooner than deadline', async () => {
+		useConfig.mockReturnValue({
+			APPLICATION_DEADLINE: '2026-12-31T23:59:59Z',
+			NEXT_APPLICATION_OPEN_DATE: '2026-01-10T00:00:00Z',
+		});
+		jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+		render(<Timer onModeChange={mockOnModeChange} />);
+		await act(async () => {
+			jest.advanceTimersByTime(1000);
+		});
+		await waitFor(() => {
+			expect(mockOnModeChange).toHaveBeenCalledWith('nextOpen');
+		});
+	});
+
+	test('shows nextOpen after deadline when closer to next open', async () => {
+		useConfig.mockReturnValue({
+			APPLICATION_DEADLINE: '2025-12-01T00:00:00Z',
+			NEXT_APPLICATION_OPEN_DATE: '2026-01-15T00:00:00Z',
+		});
+		jest.setSystemTime(new Date('2026-01-10T00:00:00Z'));
+		render(<Timer onModeChange={mockOnModeChange} />);
+		await act(async () => {
+			jest.advanceTimersByTime(1000);
+		});
+		await waitFor(() => {
+			expect(mockOnModeChange).toHaveBeenCalledWith('nextOpen');
+		});
+	});
 });
