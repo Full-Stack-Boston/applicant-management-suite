@@ -38,12 +38,20 @@ vi.mock('../../config/admin', () => {
 					comparisonFetcher: comparisonFetcher,
 					isGainPositive: (curr, prev) => curr > prev,
 				},
+				{
+					id: 'live-widget',
+					title: 'Live Widget',
+					category: 'live',
+					fetcher: jest.fn(() => jest.fn()),
+					comparisonFetcher: null,
+				},
 			],
 			layout: [
 				{ type: 'widgets', id: 'widgets' },
 				{
 					type: 'customRow',
 					id: 'custom',
+					variant: 'featured',
 					components: [
 						{
 							id: 'custom-comp-1',
@@ -51,9 +59,27 @@ vi.mock('../../config/admin', () => {
 							fetcher: customFetcher,
 							initialState: 'initial',
 							props: {},
+							wrapperSx: { p: 1 },
 						},
 					],
 				},
+				{
+					type: 'customRow',
+					id: 'panel',
+					variant: 'panel',
+					display: 'flex',
+					containerSx: { gap: 1 },
+					components: [
+						{
+							id: 'panel-comp',
+							component: MockCustomComponent,
+							fetcher: jest.fn(() => jest.fn()),
+							initialState: 'panel',
+							props: {},
+						},
+					],
+				},
+				{ type: 'unknown', id: 'ignored' },
 			],
 			// Expose the specific jest functions to the test
 			_testMocks: {
@@ -185,7 +211,7 @@ describe('MemberDash Component', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByTestId('custom-component')).toHaveTextContent('test data');
+			expect(screen.getAllByTestId('custom-component')[0]).toHaveTextContent('test data');
 			expect(screen.getByText('Status Widget')).toBeInTheDocument();
 		});
 	});
@@ -236,5 +262,29 @@ describe('MemberDash Component', () => {
 
 		expect(statusUnsubSpy).toHaveBeenCalled();
 		expect(customUnsubSpy).toHaveBeenCalled();
+	});
+
+	test('renders live widgets with N/A percent and uses CYCLE_YEAR', async () => {
+		useConfig.mockReturnValue({
+			CYCLE_YEAR: 2024,
+			APPLICATION_DEADLINE: undefined,
+			MEMBER_MESSAGE: null,
+		});
+		render(<MemberDash />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(screen.getByText('Live Widget')).toBeInTheDocument();
+		expect(screen.getByTestId('percent-Live Widget')).toHaveTextContent('N/A%');
+	});
+
+	test('handles setup errors via handleError', async () => {
+		const handleError = jest.fn();
+		useAlert.mockReturnValue({ showAnnouncement: jest.fn(), handleError });
+		statusFetcher.mockImplementation(() => {
+			throw new Error('setup boom');
+		});
+		render(<MemberDash />);
+		await waitFor(() => {
+			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'Dashboard Data Fetch');
+		});
 	});
 });
