@@ -84,4 +84,46 @@ describe('AutoScheduler Component', () => {
 		// Check that it was called with the *mocked* functions object
 		expect(autoScheduleInterviews).toHaveBeenCalledWith({ deadline: '2025-01-01T00:00:00Z', availability: expect.any(Array) });
 	});
+
+	it('warns when no complete availability blocks exist', async () => {
+		render(<AutoScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		await act(async () => {
+			fireEvent.click(screen.getByText('Run Scheduler'));
+		});
+		expect(mockShowAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'warning', message: expect.stringContaining('at least one valid') })
+		);
+		expect(autoScheduleInterviews).not.toHaveBeenCalled();
+	});
+
+	it('surfaces start-after-end validation via handleError', async () => {
+		render(<AutoScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		fireEvent.change(screen.getAllByLabelText('Start')[0], { target: { value: '2025-02-01T12:00' } });
+		fireEvent.change(screen.getAllByLabelText('End')[0], { target: { value: '2025-02-01T10:00' } });
+		await act(async () => {
+			fireEvent.click(screen.getByText('Run Scheduler'));
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'autoScheduler submit error');
+	});
+
+	it('reports skipped applicants and scheduler failures', async () => {
+		autoScheduleInterviews.mockResolvedValueOnce({
+			data: { scheduledCount: 2, skippedApplicants: ['a', 'b'] },
+		});
+		render(<AutoScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		fireEvent.change(screen.getAllByLabelText('Start')[0], { target: { value: '2025-02-01T10:00' } });
+		fireEvent.change(screen.getAllByLabelText('End')[0], { target: { value: '2025-02-01T12:00' } });
+		await act(async () => {
+			fireEvent.click(screen.getByText('Run Scheduler'));
+		});
+		expect(mockShowAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ message: expect.stringContaining('Skipped 2') })
+		);
+
+		autoScheduleInterviews.mockRejectedValueOnce(new Error('schedule fail'));
+		await act(async () => {
+			fireEvent.click(screen.getByText('Run Scheduler'));
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'autoScheduler submit error');
+	});
 });

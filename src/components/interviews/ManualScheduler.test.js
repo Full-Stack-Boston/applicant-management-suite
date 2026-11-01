@@ -101,4 +101,46 @@ describe('ManualScheduler', () => {
 		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Success', type: 'success' });
 		expect(mockOnSuccess).toHaveBeenCalledTimes(1);
 	});
+
+	it('warns when required fields are missing', async () => {
+		render(<ManualScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Schedule Interview' }));
+		});
+		expect(mockShowAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'warning', message: expect.stringContaining('Please select') })
+		);
+		expect(scheduleSingleInterview).not.toHaveBeenCalled();
+	});
+
+	it('handles applicant fetch failures', async () => {
+		getAllApplicantsSimple.mockRejectedValueOnce(new Error('applicants fail'));
+		render(<ManualScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		await waitFor(() => expect(mockHandleError).toHaveBeenCalled());
+	});
+
+	it('handles application fetch failures after applicant selection', async () => {
+		getApplicationsForApplicant.mockRejectedValueOnce(new Error('apps fail'));
+		render(<ManualScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		const applicantInput = await screen.findByLabelText('Select Applicant');
+		fireEvent.change(applicantInput, { target: { value: 'Alice' } });
+		fireEvent.click(await screen.findByText('Alice Smith'));
+		await waitFor(() => expect(mockHandleError).toHaveBeenCalled());
+	});
+
+	it('handles schedule submit failures', async () => {
+		scheduleSingleInterview.mockRejectedValueOnce(new Error('submit fail'));
+		render(<ManualScheduler onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		const applicantInput = await screen.findByLabelText('Select Applicant');
+		fireEvent.change(applicantInput, { target: { value: 'Alice' } });
+		fireEvent.click(await screen.findByText('Alice Smith'));
+		await waitFor(() => expect(getApplicationsForApplicant).toHaveBeenCalled());
+		fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Select Application' }));
+		fireEvent.click(await screen.findByText('Fall 2025 - Window 1'));
+		fireEvent.change(screen.getByLabelText('Interview Start Time'), { target: { value: '2025-12-01T10:00' } });
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Schedule Interview' }));
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'Manual schedule submission failed.');
+	});
 });
