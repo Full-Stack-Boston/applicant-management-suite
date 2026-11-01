@@ -388,4 +388,35 @@ describe('WaitingRoom Component', () => {
 		expect(screen.getByRole('link', { name: /Return to Application/i })).toHaveAttribute('href', '/apply');
 		expect(screen.getByRole('link', { name: /Having trouble/i })).toHaveAttribute('href', 'mailto:test@example.com');
 	});
+
+	test('toggles camera/mic after permissions are granted', async () => {
+		const videoTrack = { enabled: true, stop: mockStopTrack, kind: 'video' };
+		const audioTrack = { enabled: true, stop: mockStopTrack, kind: 'audio' };
+		mockGetUserMedia.mockResolvedValue({
+			getTracks: () => [videoTrack, audioTrack],
+			getVideoTracks: () => [videoTrack],
+			getAudioTracks: () => [audioTrack],
+		});
+
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/Devices connected/i)).toBeInTheDocument();
+		});
+
+		// Preview controls should be interactive after permissions.
+		expect(screen.getByLabelText(/Mute microphone|Unmute microphone/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/Turn off camera|Turn on camera/i)).toBeInTheDocument();
+		fireEvent.click(screen.getByLabelText(/Mute microphone|Unmute microphone/i));
+		fireEvent.click(screen.getByLabelText(/Turn off camera|Turn on camera/i));
+
+		const cameraSelect = screen.getAllByRole('combobox')[0];
+		fireEvent.mouseDown(cameraSelect);
+		const option = await screen.findByText('Camera 1');
+		fireEvent.click(option);
+		expect(mockSetVideoDeviceId).toHaveBeenCalled();
+	});
 });
