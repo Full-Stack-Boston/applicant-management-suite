@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import HomeHero from './HomeHero';
@@ -120,5 +120,54 @@ describe('Home marketing sections', () => {
 			/>
 		);
 		expect(screen.getAllByText(/Scholarship|Application|started/i).length).toBeGreaterThan(0);
+	});
+
+	it('opens and deletes ApplicantApplicationCard actions with attachment progress', () => {
+		const onOpen = jest.fn();
+		const onDelete = jest.fn();
+		wrap(
+			<ApplicantApplicationCard
+				layout='card'
+				darkMode={false}
+				primaryColor='#0288D1'
+				editable={false}
+				application={{
+					id: 'a2',
+					type: 'Scholarship',
+					status: 'submitted',
+					cycleYear: 2026,
+					submittedOn: '2026-01-15',
+				}}
+				attachmentProgress={{ complete: true, uploaded: 3, required: 3 }}
+				onOpen={onOpen}
+				onDelete={onDelete}
+			/>
+		);
+		fireEvent.click(screen.getByLabelText('Review application'));
+		expect(onOpen).toHaveBeenCalled();
+		fireEvent.click(screen.getByLabelText('Delete application'));
+		expect(onDelete).toHaveBeenCalled();
+		expect(screen.getByText(/Documents complete/i)).toBeInTheDocument();
+
+		cleanup();
+		wrap(
+			<ApplicantApplicationCard
+				layout='list'
+				darkMode
+				primaryColor='#0288D1'
+				editable
+				application={{
+					id: 'a3',
+					type: 'New Applicant',
+					status: 'started',
+					cycleYear: 2026,
+				}}
+				attachmentProgress={{ complete: false, uploaded: 1, required: 3 }}
+				onOpen={onOpen}
+				onDelete={onDelete}
+			/>
+		);
+		expect(screen.getByLabelText('Edit application')).toBeInTheDocument();
+		expect(screen.getByText(/Documents: 1 of 3 uploaded/i)).toBeInTheDocument();
 	});
 });
