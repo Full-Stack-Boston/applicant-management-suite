@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { MemoryRouter } from 'react-router-dom';
 import RSVPStatusCard from './RSVPStatusCard';
-import { getRealTimeMeetings } from '../../config/data/firebase';
+import { getRealTimeMeetings, generateICSDownloadURL } from '../../config/data/firebase';
 import { updateDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -185,5 +185,82 @@ describe('RSVPStatusCard', () => {
 			expect(screen.queryByText('Interview History')).not.toBeInTheDocument();
 			expect(screen.getByText('Completed')).toBeInTheDocument();
 		});
+	});
+
+	it('marks interview unavailable on click', async () => {
+		const mockShowAlert = vi.fn();
+		useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: vi.fn() });
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([mockInterviewBase]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		fireEvent.click(await screen.findByText('Unavailable'));
+		await waitFor(() => {
+			expect(updateDoc).toHaveBeenCalledWith(
+				'mock-doc-ref',
+				expect.objectContaining({ rsvpStatus: 'no' }),
+			);
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'RSVP updated successfully.', type: 'success' });
+		});
+	});
+
+	it('reports RSVP update failures', async () => {
+		const mockHandleError = vi.fn();
+		useAlert.mockReturnValue({ showAlert: vi.fn(), handleError: mockHandleError });
+		updateDoc.mockRejectedValueOnce(new Error('write failed'));
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([mockInterviewBase]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		fireEvent.click(await screen.findByText('Confirm'));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'RSVP update failed');
+		});
+	});
+
+	it('renders unavailable RSVP copy and capsule', async () => {
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([{ ...mockInterviewBase, rsvpStatus: 'no', status: InterviewStatus.invited }]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		expect(await screen.findByText(/rescheduling is essential/i)).toBeInTheDocument();
+		expect(screen.getByText('RSVP: Unavailable')).toBeInTheDocument();
+	});
+
+	it('downloads ICS invites and surfaces calendar errors', async () => {
+		const mockShowAlert = vi.fn();
+		useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: vi.fn() });
+		const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+		generateICSDownloadURL.mockResolvedValueOnce('https://example.com/invite.ics');
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([mockInterviewBase]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		fireEvent.click(await screen.findByText(/Add to Calendar/i));
+		await waitFor(() => {
+			expect(generateICSDownloadURL).toHaveBeenCalled();
+			expect(openSpy).toHaveBeenCalledWith('https://example.com/invite.ics', '_blank');
+		});
+
+		generateICSDownloadURL.mockRejectedValueOnce(new Error('ics failed'));
+		fireEvent.click(screen.getByText(/Add to Calendar/i));
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith({
+				message: 'Could not fetch calendar invite. Try again later.',
+				type: 'error',
+			});
+		});
+		openSpy.mockRestore();
+	});
+
+	it('skips subscriptions when no user is signed in', () => {
+		useAuth.mockReturnValue({ user: null });
+		const { container } = renderCard(<RSVPStatusCard />);
+		expect(getRealTimeMeetings).not.toHaveBeenCalled();
+		expect(container).toBeEmptyDOMElement();
 	});
 });
