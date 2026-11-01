@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import CallUI from './CallInterface'; // Import the default export
-import { useParticipantProperty, useLocalSessionId, useDaily, useScreenShare, useParticipantIds } from '@daily-co/daily-react';
+import { useParticipantProperty, useLocalSessionId, useDaily, useScreenShare, useParticipantIds, useDailyEvent } from '@daily-co/daily-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAlert } from '../../context/AlertContext';
 import { useMeeting } from '../../context/MeetingContext';
@@ -242,6 +242,41 @@ describe('CallUI (and sub-components)', () => {
 			useParticipantIds.mockReturnValue([]);
 			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
 			expect(container.querySelectorAll('video').length).toBeGreaterThan(0);
+		});
+	});
+
+	describe('CallAlerter events', () => {
+		it('alerts on join/leave/notify/eject events', () => {
+			jest.useFakeTimers();
+			const showAlert = jest.fn();
+			useAlert.mockReturnValue({ showAlert });
+			const handlers = {};
+			useDailyEvent.mockImplementation((event, handler) => {
+				handlers[event] = handler;
+			});
+			mockCallObject.participants = jest.fn(() => ({
+				'sess-1': { user_name: 'Pat' },
+			}));
+
+			render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
+
+			handlers['participant-joined']({ participant: { local: true } });
+			handlers['participant-joined']({ participant: { local: false, session_id: 'sess-1' } });
+			jest.advanceTimersByTime(1500);
+			expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Pat has joined') }));
+
+			handlers['app-message']({ data: { event: 'notify', message: 'Wrap up' } });
+			expect(showAlert).toHaveBeenCalledWith({ message: 'Wrap up', type: 'info' });
+
+			handlers['participant-left']({ participant: { local: false, user_name: 'Sam' } });
+			expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Sam has left') }));
+
+			handlers['left-meeting']({ reason: 'ejected' });
+			expect(showAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: expect.stringContaining('removed from the meeting'), type: 'error' })
+			);
+
+			jest.useRealTimers();
 		});
 	});
 });
