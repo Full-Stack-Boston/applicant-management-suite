@@ -593,6 +593,51 @@ describe('tableConfig.js', () => {
 			expect(FirebaseService.bulkDeleteZohoEmails).toHaveBeenCalledWith({ messageIds: ['msg1'] });
 		});
 
+		it('Applicant Toolbar: merges exactly two selected applicants', () => {
+			const actions = TableConfig.getApplicantToolbarActions({});
+			const mergeAction = actions.find((a) => a.label?.toLowerCase().includes('merge'));
+			const rows = [
+				{ id: 'a1', firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' },
+				{ id: 'a2', firstName: 'Grace', lastName: 'Hopper', email: 'grace@example.com' },
+			];
+			mergeAction.onClick(['a1'], rows, { showDialog: mockShowDialog, showAlert: mockShowAlert });
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }));
+
+			mergeAction.onClick(['a1', 'a2'], rows, { showDialog: mockShowDialog, showAlert: mockShowAlert });
+			expect(mockShowDialog).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: 'mergeApplicantAccountsDialog',
+					data: expect.objectContaining({ applicants: rows }),
+				})
+			);
+		});
+
+		it('Inbox Toolbar: toggleRead and delete error paths', async () => {
+			const actions = TableConfig.getInboxToolbarActions({ navigate: jest.fn() });
+			const toggle = actions.find((a) => a.id === 'toggleRead');
+			FirebaseService.updateEmailReadStatus.mockRejectedValueOnce(new Error('mark fail'));
+			await toggle.onClick(
+				['msg1'],
+				[{ id: 'msg1', tags: ['inbox'] }],
+				{ handleError: mockHandleError },
+				{ newStatus: 'read' }
+			);
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-mark-read');
+			});
+
+			const deleteAction = actions.find((a) => a.label === 'Delete');
+			FirebaseService.bulkDeleteZohoEmails.mockRejectedValueOnce(new Error('delete fail'));
+			await deleteAction.onClick(['msg1'], [], {
+				showDialog: ({ callback }) => callback(true),
+				showAlert: mockShowAlert,
+				handleError: mockHandleError,
+			});
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-delete-zoho');
+			});
+		});
+
 		it('executes every toolbar action factory with a representative row', async () => {
 			const navigate = jest.fn();
 			const helpers = {
