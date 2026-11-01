@@ -9,6 +9,7 @@ const mockDispatch = jest.fn();
 const mockOnNavigateSection = jest.fn();
 const mockLogoutUser = jest.fn();
 const mockUseAuth = jest.fn(() => ({ user: null, applicant: null }));
+const mockUseTheme = jest.fn(() => ({ darkMode: false, dispatch: mockDispatch, primaryColor: '#0288D1' }));
 const mockUseMediaQuery = jest.fn(() => false);
 
 vi.mock('react-router-dom', async () => ({
@@ -21,12 +22,24 @@ vi.mock('../../context/AuthContext', () => ({
 }));
 
 vi.mock('../../context/ThemeContext', () => ({
-	useTheme: () => ({ darkMode: false, dispatch: mockDispatch, primaryColor: '#0288D1' }),
+	useTheme: () => mockUseTheme(),
 }));
 
 vi.mock('../../config/data/firebase', () => ({
 	logoutUser: (...args) => mockLogoutUser(...args),
 }));
+
+vi.mock('../../config/Constants', async () => {
+	const actual = await vi.importActual('../../config/Constants');
+	return {
+		...actual,
+		brand: {
+			...actual.brand,
+			githubUrl: 'https://github.com/example/ams',
+			githubLabel: 'GitHub',
+		},
+	};
+});
 
 vi.mock('../theme/AccentColorPicker', () => ({
 	default: ({ renderTrigger }) =>
@@ -61,10 +74,10 @@ const theme = createTheme({
 	},
 });
 
-const renderNav = (props = {}) =>
+const renderNav = (props = {}, { initialEntries = ['/home'] } = {}) =>
 	render(
 		<ThemeProvider theme={theme}>
-			<MemoryRouter initialEntries={['/home']}>
+			<MemoryRouter initialEntries={initialEntries}>
 				<HomeNav navSolid activeSection='about' onNavigateSection={mockOnNavigateSection} {...props} />
 			</MemoryRouter>
 		</ThemeProvider>
@@ -74,8 +87,10 @@ describe('HomeNav', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockUseAuth.mockReturnValue({ user: null, applicant: null });
+		mockUseTheme.mockReturnValue({ darkMode: false, dispatch: mockDispatch, primaryColor: '#0288D1' });
 		mockUseMediaQuery.mockReturnValue(false);
 		mockLogoutUser.mockResolvedValue(undefined);
+		window.scrollTo = jest.fn();
 	});
 
 	it('renders brand and public scroll link', () => {
@@ -164,5 +179,81 @@ describe('HomeNav', () => {
 		fireEvent.click(screen.getByLabelText('Open menu'));
 		fireEvent.click(screen.getByText('Settings'));
 		expect(mockOpenSettings).toHaveBeenCalled();
+	});
+
+	it('scrolls home brand to top when already on home with a hash', () => {
+		renderNav({ variant: 'public' }, { initialEntries: ['/home#about'] });
+		const brand = screen.getAllByRole('link').find((el) => /APPLICATION|MANAGEMENT|AMS/i.test(el.textContent || ''));
+		expect(brand).toBeTruthy();
+		fireEvent.click(brand);
+		expect(mockNavigate).toHaveBeenCalled();
+		expect(window.scrollTo).toHaveBeenCalled();
+	});
+
+	it('navigates home from a non-home route via brand link', () => {
+		renderNav({ variant: 'utility' }, { initialEntries: ['/login'] });
+		const brand = screen.getAllByRole('link').find((el) => /APPLICATION|MANAGEMENT|AMS/i.test(el.textContent || ''));
+		fireEvent.click(brand);
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('exposes My Account when a signed-in non-applicant user is present', () => {
+		mockUseAuth.mockReturnValue({ user: { uid: 'u1' }, applicant: null });
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('My account'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('exposes My Account in burger toolbar for signed-in users', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseAuth.mockReturnValue({ user: { uid: 'u1' }, applicant: null });
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('My account'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('toggles light mode from burger menu when dark mode is active', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseTheme.mockReturnValue({ darkMode: true, dispatch: mockDispatch, primaryColor: '#0288D1' });
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		fireEvent.click(screen.getByRole('menuitem', { name: /Light Mode/i }));
+		expect(mockDispatch).toHaveBeenCalledWith({ type: 'TOGGLE' });
+	});
+
+	it('opens applicant Platform Info links', () => {
+		renderNav({ variant: 'applicant' });
+		fireEvent.click(screen.getByRole('button', { name: /Platform Info/i }));
+		const items = screen.getAllByRole('menuitem');
+		expect(items.length).toBeGreaterThan(0);
+		fireEvent.click(items[0]);
+		expect(mockOnNavigateSection.mock.calls.length + mockNavigate.mock.calls.length).toBeGreaterThan(0);
+	});
+
+	it('renders GitHub link when configured', () => {
+		renderNav({ variant: 'public' });
+		expect(screen.getByLabelText('GitHub')).toHaveAttribute('href', 'https://github.com/example/ams');
+	});
+
+	it('renders GitHub from burger menu', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		expect(screen.getByRole('menuitem', { name: /GitHub/i })).toBeInTheDocument();
+	});
+
+	it('navigates utility burger Get Started item', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'utility' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		const started = screen.queryByRole('menuitem', { name: /Get Started/i });
+		if (started) {
+			fireEvent.click(started);
+			expect(mockNavigate).toHaveBeenCalled();
+		} else {
+			const items = screen.getAllByRole('menuitem');
+			fireEvent.click(items[0]);
+			expect(mockNavigate.mock.calls.length + mockOnNavigateSection.mock.calls.length).toBeGreaterThan(0);
+		}
 	});
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import List from './List';
 import { useMediaQuery } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
@@ -45,6 +45,7 @@ vi.mock('../../config/admin/lists', () => ({
 			title: 'Interviews',
 			columns: [{ field: 'id' }],
 			getToolbarActions: jest.fn(() => [{ label: 'Action' }]),
+			getActions: jest.fn(() => [{ label: 'Row Action' }]),
 		},
 		inbox: {
 			title: 'Inbox',
@@ -57,11 +58,17 @@ vi.mock('../../config/admin/lists', () => ({
 			title: (year) => `Finances ${year}`,
 			columns: [],
 		},
+		noMobile: {
+			title: 'No Mobile Config',
+			columns: [{ field: 'id', headerName: 'ID' }],
+			actions: [{ label: 'Static Action' }],
+		},
 	},
 	mobileCardConfig: {
 		users: {
 			content: ({ item }) => <div>Mobile Content: {item.id}</div>,
 			actionKeys: [],
+			getProps: (item) => ({ 'data-extra': item.id }),
 		},
 	},
 }));
@@ -119,6 +126,23 @@ vi.mock('../../components/datatable/Datatable', () => ({ default: (props) => (
 	<div data-testid='datatable'>
 		<h1>{props.titleIn}</h1>
 		<div>Rows: {props.rows?.length}</div>
+		<div data-testid='toolbar-actions'>{props.toolbarActions?.length || 0}</div>
+		<div data-testid='row-actions'>{props.actions?.length || 0}</div>
+		{props.columns?.map((col) => (
+			<div key={col.field} data-testid={`col-${col.field}`}>
+				{col.headerName || col.field}
+			</div>
+		))}
+		{props.onFolderChange && (
+			<button type='button' data-testid='folder-change' onClick={() => props.onFolderChange({ target: { value: 'sent' } })}>
+				Change Folder
+			</button>
+		)}
+		{props.onAliasFilterChange && (
+			<button type='button' data-testid='alias-change' onClick={() => props.onAliasFilterChange({ target: { value: 'alias1' } })}>
+				Change Alias
+			</button>
+		)}
 	</div>
 ) }));
 vi.mock('../../components/list/MobileListCard', () => ({ default: ({ children }) => <div data-testid='mobile-card'>{children}</div> }));
@@ -264,5 +288,66 @@ describe('List Page Component', () => {
 		expect(screen.getByText(/Error: Invalid list type specified/i)).toBeInTheDocument();
 
 		consoleSpy.mockRestore();
+	});
+
+	test('remaps inbox sent-folder columns and wires folder/alias handlers', () => {
+		useMailbox.mockReturnValue({
+			emails: [{ id: 'e1', subject: 'Hello', to: 'a@b.com', tags: ['alias1'] }],
+			loading: false,
+			permittedFolders: [{ id: 'sent', label: 'Sent' }],
+			permittedAliases: ['alias1'],
+			selectedFolderId: 'sent',
+			setSelectedFolderId: mockSetSelectedFolderId,
+			selectedAliasFilter: 'all',
+			setSelectedAliasFilter: mockSetSelectedAliasFilter,
+		});
+
+		render(<List type='inbox' />);
+
+		expect(screen.getByTestId('col-senderSubject')).toHaveTextContent('Recipient / Subject');
+		expect(screen.getByTestId('col-tags')).toHaveTextContent('Sent By');
+		fireEvent.click(screen.getByTestId('folder-change'));
+		expect(mockSetSelectedFolderId).toHaveBeenCalledWith('sent');
+		fireEvent.click(screen.getByTestId('alias-change'));
+		expect(mockSetSelectedAliasFilter).toHaveBeenCalledWith('alias1');
+	});
+
+	test('shows demo email banner for inbox in demo delivery mode', async () => {
+		const { useConfig } = await import('../../context/ConfigContext');
+		useConfig.mockReturnValue({ emailDeliveryMode: 'demo' });
+		useMailbox.mockReturnValue({
+			emails: [{ id: 'e1' }],
+			loading: false,
+			selectedFolderId: 'inbox',
+			selectedAliasFilter: 'all',
+		});
+		render(<List type='inbox' />);
+		expect(screen.getByRole('alert')).toBeInTheDocument();
+	});
+
+	test('falls back to DefaultCard when mobile card config is missing', () => {
+		useMediaQuery.mockReturnValue(true);
+		useRealTimeList.mockReturnValue({ data: [{ id: 'x1' }], loading: false, year: 2025 });
+		render(<List type='noMobile' />);
+		expect(screen.getByText(/Card for noMobile: x1/i)).toBeInTheDocument();
+		expect(screen.getByText(/Mobile Card configuration missing/i)).toBeInTheDocument();
+	});
+
+	test('injects getActions and getToolbarActions for interviews', async () => {
+		getRoomDetails.mockResolvedValue({ data: { success: true } });
+		const { adminLists } = await import('../../config/admin/lists');
+		render(<List type='interviews' />);
+		await waitFor(() => {
+			expect(getRoomDetails).toHaveBeenCalled();
+		});
+		expect(adminLists.interviews.getToolbarActions).toHaveBeenCalled();
+		expect(adminLists.interviews.getActions).toHaveBeenCalled();
+		expect(screen.getByTestId('toolbar-actions')).toHaveTextContent('1');
+		expect(screen.getByTestId('row-actions')).toHaveTextContent('1');
+	});
+
+	test('uses static actions when getActions is not defined', () => {
+		render(<List type='noMobile' />);
+		expect(screen.getByTestId('row-actions')).toHaveTextContent('1');
 	});
 });
