@@ -112,9 +112,13 @@ vi.mock('../../config/admin', () => ({
 			{ name: 'password', label: 'Password', component: 'TextField', type: 'password' },
 			{ name: 'confirmPassword', label: 'Confirm Password', component: 'TextField', type: 'password' },
 			{ name: 'picture', component: 'ProfilePictureUpload' },
+			{ name: 'unknown', component: 'MysteryWidget' },
 		],
-		buttons: [{ id: 'submit', label: 'Submit', type: 'submit', variant: 'contained' }],
-		links: [],
+		buttons: [
+			{ id: 'submit', label: 'Submit', type: 'submit', variant: 'contained' },
+			{ id: 'cancel', label: 'Cancel', type: 'button', variant: 'outlined', navigationPath: '/login' },
+		],
+		links: [{ id: 'login', label: 'Back to Login', navigationPath: '/login' }],
 	},
 }));
 
@@ -243,6 +247,23 @@ describe('Onboard Component', () => {
 			expect(saveCollectionData).toHaveBeenCalled();
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 			expect(mockNavigate).toHaveBeenCalledWith('/redirect');
+		});
+	});
+
+	test('navigates via secondary button and link', () => {
+		render(<Onboard />);
+		fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+		expect(mockNavigate).toHaveBeenCalledWith('/login');
+		fireEvent.click(screen.getByRole('button', { name: /Back to Login/i }));
+		expect(mockNavigate).toHaveBeenCalledWith('/login');
+	});
+
+	test('rejects invalid upload types', async () => {
+		render(<Onboard />);
+		const bad = new File(['x'], 'notes.txt', { type: 'text/plain' });
+		fireEvent.change(screen.getByTestId('file-input'), { target: { files: [bad] } });
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/valid image/i) }));
 		});
 	});
 });
