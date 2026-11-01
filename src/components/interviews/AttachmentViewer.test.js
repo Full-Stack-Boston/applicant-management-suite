@@ -68,4 +68,32 @@ describe('AttachmentViewer Component', () => {
 		expect(createBlobUrl).toHaveBeenCalledWith(mockImgBlob);
         expect(screen.getAllByRole('img')).toHaveLength(1);
 	});
+
+	it('shows empty state when attachments payload is empty', async () => {
+		getCollectionData.mockResolvedValue({});
+		render(<AttachmentViewer application={mockApplication} />);
+		expect(await screen.findByText('No attachments found.')).toBeInTheDocument();
+	});
+
+	it('skips entries without refLoc and swallows per-file processing errors', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		const { convertPDFBlobToImages } = await import('../../config/Constants');
+		getCollectionData.mockResolvedValue({
+			empty: { displayName: 'Missing.pdf' },
+			broken: { refLoc: 'path/to/broken.pdf', displayName: 'Broken.pdf' },
+			photo: { refLoc: 'path/to/photo.png' },
+		});
+		let calls = 0;
+		getBlob.mockImplementation(async () => {
+			calls += 1;
+			if (calls === 1) throw new Error('blob fail');
+			return mockImgBlob;
+		});
+		convertPDFBlobToImages.mockResolvedValue(['pdf-page-1.jpg']);
+		createBlobUrl.mockReturnValue('blob-photo.jpg');
+		render(<AttachmentViewer application={mockApplication} />);
+		expect(await screen.findByAltText(/Photo|Page 1/i)).toBeInTheDocument();
+		expect(consoleSpy).toHaveBeenCalled();
+		consoleSpy.mockRestore();
+	});
 });

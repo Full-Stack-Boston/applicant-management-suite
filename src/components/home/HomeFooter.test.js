@@ -31,6 +31,25 @@ vi.mock('../theme/AccentColorPicker', () => ({
 	default: () => <div data-testid='accent-picker' />,
 }));
 
+vi.mock('../../config/content/content', async () => {
+	const actual = await vi.importActual('../../config/content/content');
+	return {
+		...actual,
+		homePageContent: {
+			...actual.homePageContent,
+			appBar: {
+				...actual.homePageContent.appBar,
+				navLinks: [
+					{ type: 'navigate', label: 'Register Now', path: '/register' },
+					{ type: 'scroll', label: 'Platform Overview', sectionId: 'about' },
+					{ type: 'scroll', label: 'Contact Sales', sectionId: 'contact' },
+					{ type: 'navigate', label: 'Get Started', path: '/register-applicant' },
+				],
+			},
+		},
+	};
+});
+
 const theme = createTheme({
 	palette: {
 		custom: {
@@ -101,5 +120,11 @@ describe('HomeFooter', () => {
 		mockUseConfig.mockReturnValue({ MEMBER_ONBOARDING_PAGE_ENABLED: false });
 		renderFooter({ current: null });
 		expect(screen.queryByRole('button', { name: /Committee demo access/i })).not.toBeInTheDocument();
+	});
+
+	it('navigates footer links that use path navigation', () => {
+		renderFooter({ current: null });
+		fireEvent.click(screen.getByRole('button', { name: 'Register Now' }));
+		expect(mockNavigate).toHaveBeenCalledWith('/register');
 	});
 });
