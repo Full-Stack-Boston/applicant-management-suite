@@ -29,12 +29,18 @@ vi.mock('../../config/data/firebase', () => ({
 }));
 
 vi.mock('../theme/AccentColorPicker', () => ({
-	default: () => <div data-testid='accent-picker' />,
+	default: ({ renderTrigger }) =>
+		renderTrigger ? (
+			renderTrigger({ onClick: jest.fn() })
+		) : (
+			<div data-testid='accent-picker' />
+		),
 }));
 
+const mockOpenSettings = jest.fn();
 vi.mock('../auth/ApplicantSettingsButton', () => ({
 	default: () => <button type='button'>Applicant Settings</button>,
-	useApplicantSettingsDialog: () => jest.fn(),
+	useApplicantSettingsDialog: () => mockOpenSettings,
 }));
 
 vi.mock('@mui/material', async () => {
@@ -130,6 +136,14 @@ describe('HomeNav', () => {
 		expect(mockOnNavigateSection.mock.calls.length + mockNavigate.mock.calls.length).toBeGreaterThan(0);
 	});
 
+	it('exposes burger accent and settings menu chrome', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		expect(screen.getByRole('menuitem', { name: /Theme Color/i })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('menuitem', { name: /Theme Color/i }));
+	});
+
 	it('logs out applicants from the toolbar', async () => {
 		mockUseAuth.mockReturnValue({
 			user: { uid: 'u1' },
@@ -138,5 +152,17 @@ describe('HomeNav', () => {
 		renderNav({ variant: 'applicant' });
 		fireEvent.click(screen.getByLabelText('Logout'));
 		expect(mockLogoutUser).toHaveBeenCalled();
+	});
+
+	it('opens applicant settings from burger menu', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseAuth.mockReturnValue({
+			user: { uid: 'u1' },
+			applicant: { id: 'a1', firstName: 'Pat' },
+		});
+		renderNav({ variant: 'applicant' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		fireEvent.click(screen.getByText('Settings'));
+		expect(mockOpenSettings).toHaveBeenCalled();
 	});
 });
