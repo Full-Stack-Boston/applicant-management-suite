@@ -278,4 +278,92 @@ describe('UploadCenter Component', () => {
 		fireEvent.click(screen.getByText('Close this page'));
 		expect(window.close).toHaveBeenCalled();
 	});
+
+	test('alerts when PIN is missing or invalid', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue(mockRequest);
+		render(<UploadCenter />);
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+
+		const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+		const input = screen.getByTestId('file-input');
+		Object.defineProperty(input, 'files', { value: [file] });
+		fireEvent.change(input);
+		await waitFor(() => expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Please enter the 6-digit PIN.', type: 'warning' }));
+
+		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '000000' } });
+		validatePin.mockResolvedValueOnce(false);
+		fireEvent.change(input);
+		await waitFor(() =>
+			expect(mockShowAlert).toHaveBeenCalledWith({
+				message: 'Invalid PIN. Please check your email/request for the correct code.',
+				type: 'error',
+			}),
+		);
+	});
+
+	test('rejects requests missing attachment information', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue({ ...mockRequest, attachmentsID: null });
+		render(<UploadCenter />);
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
+		const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+		const input = screen.getByTestId('file-input');
+		Object.defineProperty(input, 'files', { value: [file] });
+		fireEvent.change(input);
+		await waitFor(() =>
+			expect(mockShowAlert).toHaveBeenCalledWith({
+				message: 'This request is missing attachment information. Ask the applicant to send a new request.',
+				type: 'error',
+			}),
+		);
+	});
+
+	test('alerts when saveFile returns a falsy path', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue(mockRequest);
+		getApplication.mockResolvedValue({ attachments: 'att-1' });
+		saveFile.mockResolvedValueOnce(null);
+		render(<UploadCenter />);
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
+		const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+		const input = screen.getByTestId('file-input');
+		Object.defineProperty(input, 'files', { value: [file] });
+		fireEvent.change(input);
+		await waitFor(() =>
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Failed to upload the file. Please try again.', type: 'error' }),
+		);
+	});
+
+	test('alerts on unexpected upload errors', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue(mockRequest);
+		getApplication.mockResolvedValue({ attachments: 'att-1' });
+		saveCollectionData.mockRejectedValueOnce(new Error('write failed'));
+		render(<UploadCenter />);
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
+		const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+		const input = screen.getByTestId('file-input');
+		Object.defineProperty(input, 'files', { value: [file] });
+		fireEvent.change(input);
+		await waitFor(() =>
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'An unexpected error occurred during upload.', type: 'error' }),
+		);
+	});
+
+	test('rejects tokens with too many attempts', async () => {
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue({ ...mockRequest, attempts: 5 });
+		render(<UploadCenter />);
+		expect(await screen.findByText(/This Link Is Not Valid/i)).toBeInTheDocument();
+	});
+
+	test('rejects tokens when validation throws', async () => {
+		validateRequest.mockRejectedValueOnce(new Error('network'));
+		render(<UploadCenter />);
+		expect(await screen.findByText(/This Link Is Not Valid/i)).toBeInTheDocument();
+	});
 });
