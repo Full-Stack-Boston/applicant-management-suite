@@ -226,4 +226,29 @@ describe('Datatable', () => {
 		expect(latestGridProps().getRowHeight()).toBe(56);
 		expect(latestGridProps().initialState.sorting.sortModel).toEqual([{ field: 'lastUpdated', sort: 'desc' }]);
 	});
+
+	test('offers Mark Read when selected rows are mostly unread', async () => {
+		const onClick = jest.fn();
+		render(
+			<Datatable
+				titleIn='Unread toggle'
+				rows={[{ id: '2', name: 'Pat', isRead: false }]}
+				columns={mockColumns}
+				toolbarActions={[{ id: 'toggleRead', label: 'Mark Read', labelAlt: 'Mark Unread', onClick }]}
+			/>
+		);
+		await act(async () => {
+			latestGridProps().onRowSelectionModelChange({ type: 'include', ids: new Set(['2']) });
+		});
+		expect(screen.getByText('Mark Read')).not.toBeDisabled();
+		await act(async () => {
+			fireEvent.click(screen.getByText('Mark Read'));
+		});
+		expect(onClick).toHaveBeenCalledWith(
+			['2'],
+			[{ id: '2', name: 'Pat', isRead: false }],
+			expect.any(Object),
+			expect.objectContaining({ newStatus: 'read' })
+		);
+	});
 });

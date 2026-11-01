@@ -1136,7 +1136,24 @@ describe('src/config/data/firebase.js', () => {
 		await call('getRealTimeInterviewsByWindow', 2026, cb);
 		await call('getEmailLogs', 2);
 		await call('getRealTimeNewApplicantsThisYear', cb, 2);
-		await call('getAverageApplicationsPerYearByType', 'New Applicant', 2026, 2);
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('new-applicants-listener-fail');
+		});
+		expect(FirebaseConfig.getRealTimeNewApplicantsThisYear(cb, 2)).toEqual(expect.any(Function));
+		mockGetDocs.mockResolvedValueOnce({
+			empty: false,
+			size: 3,
+			docs: [],
+			forEach: (fn) => {
+				[
+					{ data: () => ({ window: '2024-01-01', type: 'New Applicant' }) },
+					{ data: () => ({ window: '2025-06-01', type: 'New Applicant' }) },
+					{ data: () => ({ window: null, type: 'New Applicant' }) },
+					{ data: () => ({ window: '2020-01-01', type: 'New Applicant' }) },
+				].forEach(fn);
+			},
+		});
+		await expect(FirebaseConfig.getAverageApplicationsPerYearByType('New Applicant', 2026, 2)).resolves.toEqual(1);
 		await call('wipeCollections', { conn: '(default)' });
 		await call('wipeCollections', { direct: true });
 		await rejectOnce(mockGetDocs, 'sendToTestDB');
