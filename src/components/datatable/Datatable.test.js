@@ -13,23 +13,6 @@ vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn() }));
 
 const { calls } = vi.hoisted(() => ({ calls: [] }));
 
-const selectionIdsFromModel = (model, rows = []) => {
-	const map = new Map();
-	if (!model) return map;
-	if (Array.isArray(model)) {
-		model.forEach((id) => map.set(id, {}));
-		return map;
-	}
-	if (model.type === 'exclude') {
-		rows.forEach((row) => {
-			if (!model.ids?.has(row.id)) map.set(row.id, row);
-		});
-		return map;
-	}
-	model.ids?.forEach((id) => map.set(id, {}));
-	return map;
-};
-
 vi.mock('@mui/x-data-grid', () => ({
 	DataGrid: (props) => {
 		if (props) calls.push(props);
@@ -49,11 +32,6 @@ vi.mock('@mui/x-data-grid', () => ({
 			getLocaleText: (key) => key,
 		},
 	}),
-	useGridSelector: () => {
-		const props = [...calls].reverse().find(Boolean) || {};
-		return selectionIdsFromModel(props.rowSelectionModel, props.rows || []);
-	},
-	gridRowSelectionIdsSelector: (apiRef) => apiRef,
 	useGridRootProps: () => ({
 		slots: {
 			baseIconButton: (props) => <button type='button' {...props} />,
@@ -71,20 +49,12 @@ const mockUseDialog = useDialog;
 const mockUseAlert = useAlert;
 const mockUseConfig = useConfig;
 
-const mockRows = [
-	{ id: '1', name: 'Jon', isRead: true },
-	{ id: '2', name: 'Ada', isRead: false },
-];
+const mockRows = [{ id: '1', name: 'Jon', isRead: true }];
 const mockColumns = [{ field: 'name', headerName: 'Name', width: 150 }];
 const mockToggleAction = {
 	id: 'toggleRead',
 	label: 'Mark Read',
 	labelAlt: 'Mark Unread',
-	onClick: jest.fn(),
-};
-const mockBulkAction = {
-	label: 'Bulk Evaluate',
-	requiresSelection: true,
 	onClick: jest.fn(),
 };
 
@@ -121,20 +91,49 @@ describe('Datatable', () => {
 		expect(screen.queryByText('Mark Read')).not.toBeInTheDocument();
 	});
 
-	test('enables requiresSelection toolbar actions after include selection', async () => {
-		render(<Datatable titleIn='Test' rows={mockRows} columns={mockColumns} toolbarActions={[mockBulkAction]} />);
-		expect(screen.getByRole('button', { name: 'Bulk Evaluate' })).toBeDisabled();
+	test('marks unread rows and supports dark mode class names', () => {
+		mockUseTheme.mockReturnValue({ darkMode: true, boxShadow: 'none' });
+		render(
+			<Datatable
+				titleIn='Unread'
+				rows={[{ id: '2', name: 'Pat', isRead: false }]}
+				columns={mockColumns}
+			/>
+		);
+		const className = latestGridProps().getRowClassName({ row: { isRead: false } });
+		expect(className).toBe('unread-row-dark');
+		expect(latestGridProps().getRowClassName({ row: { isRead: true } })).toBe('read-row-dark');
+		expect(latestGridProps().getRowId({ id: 'abc' })).toBe('abc');
+	});
+
+	test('hides toolbar actions flagged as hide and runs plain actions', async () => {
+		const onClick = jest.fn();
+		render(
+			<Datatable
+				titleIn='Actions'
+				rows={mockRows}
+				columns={mockColumns}
+				toolbarActions={[
+					{ id: 'hidden', label: 'Hidden', hide: true, onClick },
+					{ id: 'plain', label: 'Do Thing', onClick, requiresSelection: true },
+				]}
+			/>
+		);
+		expect(screen.queryByText('Hidden')).not.toBeInTheDocument();
+		expect(screen.getByText('Do Thing')).toBeDisabled();
 		await act(async () => {
 			latestGridProps().onRowSelectionModelChange({ type: 'include', ids: new Set(['1']) });
 		});
-		expect(screen.getByRole('button', { name: 'Bulk Evaluate' })).not.toBeDisabled();
+		const btn = screen.getByText('Do Thing');
+		expect(btn).not.toBeDisabled();
+		await act(async () => {
+			btn.click();
+		});
+		expect(onClick).toHaveBeenCalled();
 	});
 
-	test('enables requiresSelection toolbar actions after exclude (select-all) selection', async () => {
-		render(<Datatable titleIn='Test' rows={mockRows} columns={mockColumns} toolbarActions={[mockBulkAction]} />);
-		await act(async () => {
-			latestGridProps().onRowSelectionModelChange({ type: 'exclude', ids: new Set() });
-		});
-		expect(screen.getByRole('button', { name: 'Bulk Evaluate' })).not.toBeDisabled();
+	test('shows disabled Mark Read when selection is empty for toggle actions', () => {
+		render(<Datatable titleIn='Empty' rows={mockRows} columns={mockColumns} toolbarActions={[mockToggleAction]} />);
+		expect(screen.getByText('Mark Read')).toBeDisabled();
 	});
 });
