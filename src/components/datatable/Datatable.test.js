@@ -13,6 +13,8 @@ vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn() }));
 
 const { calls } = vi.hoisted(() => ({ calls: [] }));
 
+const selectedIdsRef = vi.hoisted(() => ({ current: new Set() }));
+
 vi.mock('@mui/x-data-grid', () => ({
 	DataGrid: (props) => {
 		if (props) calls.push(props);
@@ -32,6 +34,12 @@ vi.mock('@mui/x-data-grid', () => ({
 			getLocaleText: (key) => key,
 		},
 	}),
+	useGridSelector: (_apiRef, selector) => selector(),
+	gridRowSelectionIdsSelector: () => {
+		const map = new Map();
+		for (const id of selectedIdsRef.current) map.set(id, true);
+		return map;
+	},
 	useGridRootProps: () => ({
 		slots: {
 			baseIconButton: (props) => <button type='button' {...props} />,
@@ -64,6 +72,7 @@ describe('Datatable', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		calls.length = 0;
+		selectedIdsRef.current = new Set();
 		mockUseTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 		mockUseDialog.mockReturnValue({ showDialog: jest.fn() });
 		mockUseAlert.mockReturnValue({ showAlert: jest.fn(), handleError: jest.fn() });
@@ -83,9 +92,11 @@ describe('Datatable', () => {
 	});
 
 	test('toolbar actions trigger correctly', async () => {
-		render(<Datatable titleIn='Test' rows={mockRows} columns={mockColumns} toolbarActions={[mockToggleAction]} />);
+		const { rerender } = render(<Datatable titleIn='Test' rows={mockRows} columns={mockColumns} toolbarActions={[mockToggleAction]} />);
+		selectedIdsRef.current = new Set(['1']);
 		await act(async () => {
 			latestGridProps().onRowSelectionModelChange({ type: 'include', ids: new Set(['1']) });
+			rerender(<Datatable titleIn='Test' rows={mockRows} columns={mockColumns} toolbarActions={[mockToggleAction]} />);
 		});
 		expect(screen.getByText('Mark Unread')).toBeInTheDocument();
 		expect(screen.queryByText('Mark Read')).not.toBeInTheDocument();
@@ -108,21 +119,17 @@ describe('Datatable', () => {
 
 	test('hides toolbar actions flagged as hide and runs plain actions', async () => {
 		const onClick = jest.fn();
-		render(
-			<Datatable
-				titleIn='Actions'
-				rows={mockRows}
-				columns={mockColumns}
-				toolbarActions={[
-					{ id: 'hidden', label: 'Hidden', hide: true, onClick },
-					{ id: 'plain', label: 'Do Thing', onClick, requiresSelection: true },
-				]}
-			/>
-		);
+		const actions = [
+			{ id: 'hidden', label: 'Hidden', hide: true, onClick },
+			{ id: 'plain', label: 'Do Thing', onClick, requiresSelection: true },
+		];
+		const { rerender } = render(<Datatable titleIn='Actions' rows={mockRows} columns={mockColumns} toolbarActions={actions} />);
 		expect(screen.queryByText('Hidden')).not.toBeInTheDocument();
 		expect(screen.getByText('Do Thing')).toBeDisabled();
+		selectedIdsRef.current = new Set(['1']);
 		await act(async () => {
 			latestGridProps().onRowSelectionModelChange({ type: 'include', ids: new Set(['1']) });
+			rerender(<Datatable titleIn='Actions' rows={mockRows} columns={mockColumns} toolbarActions={actions} />);
 		});
 		const btn = screen.getByText('Do Thing');
 		expect(btn).not.toBeDisabled();
