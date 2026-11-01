@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import MobileListCard from './MobileListCard';
 import { useTheme } from '../../context/ThemeContext';
 import { resolveRowActionMeta, useRowActionInvoker } from '../../config/ui/tableConfig';
@@ -110,5 +110,70 @@ describe('MobileListCard', () => {
 		expect(screen.getByText('d')).toBeInTheDocument();
 		expect(screen.getByTestId('icon-c')).toBeInTheDocument();
 		expect(screen.getByTestId('icon-d')).toBeInTheDocument();
+	});
+
+	test('runs overflow action and clears loading state', async () => {
+		const runAction = jest.fn().mockResolvedValue(undefined);
+		useRowActionInvoker.mockReturnValue({
+			runAction,
+			handleError: jest.fn(),
+			member: {},
+		});
+
+		render(
+			<MobileListCard item={{ id: 'row-1' }} actionKeys={['a', 'b', 'c']} primaryCount={1}>
+				<div>Content</div>
+			</MobileListCard>
+		);
+
+		fireEvent.click(screen.getByLabelText('More actions'));
+		fireEvent.click(screen.getByText('b'));
+
+		await waitFor(() => {
+			expect(runAction).toHaveBeenCalledWith('b', expect.objectContaining({ id: 'row-1' }));
+		});
+	});
+
+	test('handles overflow action failures via handleError', async () => {
+		const runAction = jest.fn().mockRejectedValue(new Error('boom'));
+		const handleError = jest.fn();
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		useRowActionInvoker.mockReturnValue({
+			runAction,
+			handleError,
+			member: {},
+		});
+
+		render(
+			<MobileListCard item={{ id: 'row-2' }} actionKeys={['a', 'b', 'c']} primaryCount={1}>
+				<div>Content</div>
+			</MobileListCard>
+		);
+
+		fireEvent.click(screen.getByLabelText('More actions'));
+		fireEvent.click(screen.getByText('c'));
+
+		await waitFor(() => {
+			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'action-c');
+		});
+		consoleSpy.mockRestore();
+	});
+
+	test('skips overflow items without resolvable meta', () => {
+		resolveRowActionMeta.mockImplementation((key) => (key === 'ghost' ? null : {
+			label: key,
+			IconComponent: () => <span data-testid={`icon-${key}`} />,
+			color: 'info.light',
+		}));
+
+		render(
+			<MobileListCard item={{ id: 1 }} actionKeys={['a', 'ghost', 'z']} primaryCount={1}>
+				<div>Content</div>
+			</MobileListCard>
+		);
+
+		fireEvent.click(screen.getByLabelText('More actions'));
+		expect(screen.queryByText('ghost')).not.toBeInTheDocument();
+		expect(screen.getByText('z')).toBeInTheDocument();
 	});
 });

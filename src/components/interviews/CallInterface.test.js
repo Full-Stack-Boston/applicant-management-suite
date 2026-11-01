@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import CallUI from './CallInterface'; // Import the default export
 import { useParticipantProperty, useLocalSessionId, useDaily, useScreenShare, useParticipantIds } from '@daily-co/daily-react';
@@ -127,6 +127,121 @@ describe('CallUI (and sub-components)', () => {
 			fireEvent.click(screen.getByText('Exit'));
 			expect(mockCallObject.leave).toHaveBeenCalled();
 			expect(mockNavigate).toHaveBeenCalledWith('/members/interviews/dashboard');
+		});
+
+		it('toggles background blur and noise cancellation', async () => {
+			mockCallObject.updateInputSettings.mockResolvedValue(undefined);
+			render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
+
+			fireEvent.click(screen.getByTestId('BlurOffIcon').closest('button'));
+			await waitFor(() => {
+				expect(mockCallObject.updateInputSettings).toHaveBeenCalledWith(
+					expect.objectContaining({ video: expect.any(Object) })
+				);
+			});
+
+			// Second click disables blur
+			fireEvent.click(screen.getByTestId('BlurOnIcon').closest('button'));
+			await waitFor(() => {
+				expect(mockCallObject.updateInputSettings).toHaveBeenCalledWith({
+					video: { processor: { type: 'none' } },
+				});
+			});
+
+			fireEvent.click(screen.getByTestId('NoiseControlOffIcon').closest('button'));
+			await waitFor(() => {
+				expect(mockCallObject.updateInputSettings).toHaveBeenCalledWith(
+					expect.objectContaining({ audio: expect.any(Object) })
+				);
+			});
+
+			fireEvent.click(screen.getByTestId('NoiseAwareIcon').closest('button'));
+			await waitFor(() => {
+				expect(mockCallObject.updateInputSettings).toHaveBeenCalledWith({
+					audio: { processor: { type: 'none' } },
+				});
+			});
+		});
+
+		it('starts and stops screen share based on local screen track', () => {
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'local-id' && prop === 'local') return true;
+				if (id === 'local-id' && prop === 'user_name') return 'Local User';
+				if (prop === 'tracks.audio.state') return 'on';
+				if (prop === 'tracks.video.state') return 'on';
+				if (prop === 'audio') return true;
+				if (prop === 'video') return true;
+				if (prop === 'screen') return false;
+				return null;
+			});
+
+			const { unmount } = render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
+			fireEvent.click(screen.getByTestId('ScreenShareIcon').closest('button'));
+			expect(mockCallObject.startScreenShare).toHaveBeenCalled();
+			unmount();
+
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'local-id' && prop === 'local') return true;
+				if (prop === 'audio') return true;
+				if (prop === 'video') return true;
+				if (prop === 'screen') return true;
+				if (prop === 'tracks.audio.state') return 'on';
+				if (prop === 'tracks.video.state') return 'on';
+				return null;
+			});
+			render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
+			fireEvent.click(screen.getByTestId('StopScreenShareIcon').closest('button'));
+			expect(mockCallObject.stopScreenShare).toHaveBeenCalled();
+		});
+
+		it('opens admin drawer, apps drawer, and leaves as applicant', () => {
+			const onOpenDrawer = jest.fn();
+			const onOpenAdminDrawer = jest.fn();
+			useAuth.mockReturnValue({ member: { id: 'm1' } });
+			const { unmount } = render(
+				<CallUI isAdmin={true} onOpenDrawer={onOpenDrawer} onOpenAdminDrawer={onOpenAdminDrawer} />,
+				{ wrapper: MemoryRouter }
+			);
+
+			fireEvent.click(screen.getByTestId('AdminPanelSettingsIcon').closest('button'));
+			expect(onOpenAdminDrawer).toHaveBeenCalled();
+			fireEvent.click(screen.getByText('Apps'));
+			expect(onOpenDrawer).toHaveBeenCalled();
+			unmount();
+
+			useAuth.mockReturnValue({ member: null });
+			render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			fireEvent.click(screen.getByText('Exit'));
+			expect(mockCallObject.leave).toHaveBeenCalled();
+			expect(mockNavigate).toHaveBeenCalled();
+		});
+	});
+
+	describe('ParticipantMenu and screen tiles', () => {
+		it('runs admin mute/video/eject menu actions', async () => {
+			const showAlert = jest.fn();
+			useAlert.mockReturnValue({ showAlert });
+			useParticipantIds.mockReturnValue(['remote-id-1']);
+			render(<CallUI isAdmin={true} />, { wrapper: MemoryRouter });
+
+			fireEvent.click(screen.getByTestId('MoreVertIcon').closest('button'));
+			fireEvent.click(await screen.findByText('Mute Audio'));
+			expect(mockCallObject.updateParticipant).toHaveBeenCalledWith('remote-id-1', { setAudio: false });
+
+			fireEvent.click(screen.getByTestId('MoreVertIcon').closest('button'));
+			fireEvent.click(await screen.findByText('Stop Video'));
+			expect(mockCallObject.updateParticipant).toHaveBeenCalledWith('remote-id-1', { setVideo: false });
+
+			fireEvent.click(screen.getByTestId('MoreVertIcon').closest('button'));
+			fireEvent.click(await screen.findByText('Eject Participant'));
+			expect(mockCallObject.updateParticipant).toHaveBeenCalledWith('remote-id-1', { eject: true });
+		});
+
+		it('renders screen share tiles when screens exist', () => {
+			useScreenShare.mockReturnValue({ screens: [{ session_id: 'scr-1' }] });
+			useParticipantIds.mockReturnValue([]);
+			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			expect(container.querySelectorAll('video').length).toBeGreaterThan(0);
 		});
 	});
 });

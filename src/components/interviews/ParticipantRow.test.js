@@ -79,4 +79,33 @@ describe('ParticipantRow', () => {
 		render(<ParticipantRow id="remote-id" isAdmin={true} />);
 		expect(screen.getByRole('button', { name: /Ask to Unmute/i })).toBeInTheDocument();
 	});
+
+	it('mutes a remote participant audio', () => {
+		render(<ParticipantRow id="remote-id" isAdmin={true} />);
+		fireEvent.click(screen.getByRole('button', { name: /Mute Audio/i }));
+		expect(mockUpdateParticipant).toHaveBeenCalledWith('remote-id', { setAudio: false });
+		expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'info' }));
+	});
+
+	it('disables a remote participant camera', () => {
+		render(<ParticipantRow id="remote-id" isAdmin={true} />);
+		fireEvent.click(screen.getByRole('button', { name: /Stop Video/i }));
+		expect(mockUpdateParticipant).toHaveBeenCalledWith('remote-id', { setVideo: false });
+		expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'info' }));
+	});
+
+	it('asks to unmute and re-enable video when tracks are off', () => {
+		useParticipantProperty.mockImplementation((id, prop) => {
+			if (prop === 'user_name') return 'Muted User';
+			if (prop === 'tracks.audio.state') return 'off';
+			if (prop === 'tracks.video.state') return 'off';
+			return null;
+		});
+
+		render(<ParticipantRow id="remote-id" isAdmin={true} />);
+		fireEvent.click(screen.getByRole('button', { name: /Ask to Unmute/i }));
+		expect(mockUpdateParticipant).toHaveBeenCalledWith('remote-id', { setAudio: true });
+		fireEvent.click(screen.getByRole('button', { name: /Ask to Start Video/i }));
+		expect(mockUpdateParticipant).toHaveBeenCalledWith('remote-id', { setVideo: true });
+	});
 });

@@ -1,10 +1,11 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { useProcessedEmailContent } from './useProcessedEmailContent';
-import { fetchAttachmentContent } from '../config/data/firebase';
+import { fetchAttachmentContent, fetchEmailContent } from '../config/data/firebase';
 
 // Mock the specific export explicitly
 vi.mock('../config/data/firebase', () => ({
 	fetchAttachmentContent: jest.fn(),
+	fetchEmailContent: jest.fn(),
 }));
 
 describe('useProcessedEmailContent', () => {
@@ -75,5 +76,57 @@ describe('useProcessedEmailContent', () => {
 		// Content should remain unchanged (still has cid=image1)
 		expect(result.current.processedContent).toContain('cid=image1');
 		consoleSpy.mockRestore();
+	});
+
+	test('hydrates missing body via fetchEmailContent', async () => {
+		fetchEmailContent.mockResolvedValue({
+			data: {
+				content: '<p>Fetched body</p>',
+				inlineAttachments: [],
+			},
+		});
+
+		const email = { id: 'msg-9', folderId: 'inbox' };
+		const { result } = renderHook(() => useProcessedEmailContent(email));
+
+		await waitFor(() => {
+			expect(result.current.contentLoading).toBe(false);
+		});
+
+		expect(fetchEmailContent).toHaveBeenCalledWith(
+			expect.objectContaining({ messageId: 'msg-9', folderId: 'inbox' })
+		);
+		expect(result.current.processedContent).toContain('Fetched body');
+	});
+
+	test('handles fetchEmailContent failure', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		fetchEmailContent.mockRejectedValue(new Error('zoho down'));
+
+		const email = { id: 'msg-9', folderName: 'Inbox' };
+		const { result } = renderHook(() => useProcessedEmailContent(email));
+
+		await waitFor(() => {
+			expect(result.current.contentLoading).toBe(false);
+		});
+		expect(result.current.processedContent).toBe('');
+		consoleSpy.mockRestore();
+	});
+
+	test('skips inline attachments missing cid', async () => {
+		const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+		const email = {
+			id: 'msg123',
+			content: '<p>Hi</p>',
+			inlineAttachments: [{ attachmentId: 'att-no-cid' }],
+		};
+
+		const { result } = renderHook(() => useProcessedEmailContent(email));
+		await waitFor(() => {
+			expect(result.current.contentLoading).toBe(false);
+		});
+		expect(warnSpy).toHaveBeenCalled();
+		expect(result.current.processedContent).toContain('Hi');
+		warnSpy.mockRestore();
 	});
 });

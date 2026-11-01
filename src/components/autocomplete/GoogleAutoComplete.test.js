@@ -175,4 +175,46 @@ describe('GoogleAutoComplete', () => {
 			);
 		});
 	});
+
+	test('clears location when selection is cleared', async () => {
+		const existing = { description: 'Saved Address' };
+		render(<GoogleAutoComplete {...baseProps} location={existing} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: '' } });
+		// Autocomplete clear via onChange(null)
+		fireEvent.keyDown(input, { key: 'Escape' });
+		// Simulate freeSolo clear by selecting null through blur empty
+		fireEvent.change(input, { target: { value: '   ' } });
+		fireEvent.blur(input);
+		await waitFor(() => {
+			expect(mockChangeLocation).toHaveBeenCalledWith(null);
+		});
+	});
+
+	test('drops to manual entry on REQUEST_DENIED', async () => {
+		mockGetPlacePredictions.mockImplementation((request, callback) => {
+			callback([], 'REQUEST_DENIED');
+		});
+
+		render(<GoogleAutoComplete {...baseProps} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: 'denied' } });
+
+		await waitFor(() => {
+			expect(screen.getByText(/Google Places is not configured/i)).toBeInTheDocument();
+		});
+	});
+
+	test('handles freeSolo string selection via onChange', async () => {
+		process.env.REACT_APP_googleApiKey = '';
+		render(<GoogleAutoComplete {...baseProps} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: 'typed string address' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		await waitFor(() => {
+			expect(mockChangeLocation).toHaveBeenCalledWith(
+				expect.objectContaining({ description: 'typed string address' })
+			);
+		});
+	});
 });

@@ -66,4 +66,44 @@ describe('TemplateManagerDialog', () => {
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 		});
 	});
+
+	it('edits an existing template and manages required fields', async () => {
+		render(<TemplateManagerDialog onClose={jest.fn()} />);
+		fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+
+		expect(await screen.findByDisplayValue('Welcome')).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText(/HTML Body/i), { target: { value: '<p>Updated</p>' } });
+
+		fireEvent.click(screen.getByRole('button', { name: /add required field/i }));
+		fireEvent.change(screen.getByLabelText(/Variable Name/i), { target: { value: 'amount' } });
+		fireEvent.change(screen.getByLabelText(/Display Label/i), { target: { value: 'Amount' } });
+
+		// Remove the required field via the error IconButton
+		const removeBtn = screen.getByTestId('DeleteOutlinedIcon').closest('button');
+		fireEvent.click(removeBtn);
+		expect(screen.queryByLabelText(/Variable Name/i)).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole('button', { name: /^back$/i }));
+		expect(await screen.findByText('Manage Email Templates')).toBeInTheDocument();
+	});
+
+	it('surfaces save errors via handleError', async () => {
+		mockSetDoc.mockRejectedValueOnce(new Error('write failed'));
+		render(<TemplateManagerDialog onClose={jest.fn()} />);
+		fireEvent.click(screen.getByRole('button', { name: /add/i }));
+		fireEvent.change(await screen.findByLabelText(/Template Key/i), { target: { value: 't2' } });
+		fireEvent.change(screen.getByLabelText(/Label \(Button Text\)/i), { target: { value: 'T2' } });
+		fireEvent.change(screen.getByLabelText(/Email Subject/i), { target: { value: 'Subj' } });
+		fireEvent.click(screen.getByRole('button', { name: /save/i }));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'saveTemplate');
+		});
+	});
+
+	it('closes from the list view', () => {
+		const onClose = jest.fn();
+		render(<TemplateManagerDialog onClose={onClose} />);
+		fireEvent.click(screen.getByRole('button', { name: /close/i }));
+		expect(onClose).toHaveBeenCalled();
+	});
 });

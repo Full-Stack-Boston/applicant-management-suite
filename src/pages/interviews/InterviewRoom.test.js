@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import InterviewRoom from './InterviewRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useMeeting } from '../../context/MeetingContext';
@@ -10,7 +10,7 @@ import { useTitle } from '../../context/HelmetContext';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 
 // NEW: Import generateJoinToken for mocking
-import { generateJoinToken } from '../../config/data/firebase';
+import { generateJoinToken, endInterview, updateInterviewStatus } from '../../config/data/firebase';
 
 // --- Mocks ---
 
@@ -39,7 +39,7 @@ vi.mock('../../config/data/firebase', () => ({
 	db: {},
 	functions: {},
 	generateJoinToken: jest.fn(),
-	getRealTimeMeetings: jest.fn(() => () => {}),
+	getRealTimeMeetings: jest.fn(() => jest.fn()),
 	endInterview: jest.fn(),
 	updateInterviewStatus: jest.fn(),
 }));
@@ -83,9 +83,41 @@ vi.mock('../../context/HelmetContext', () => ({
 
 // Child Component Mocks
 vi.mock('../../components/loader/Loader', () => ({ default: () => <div data-testid='loader'>Loading...</div> }));
-vi.mock('../../components/interviews/AdminDrawer', () => ({ default: () => <div data-testid='admin-drawer'>Admin Drawer</div> }));
-vi.mock('../../components/interviews/ApplicationViewer', () => ({ default: () => <div data-testid='app-viewer'>App Viewer</div> }));
-vi.mock('../../components/interviews/CallInterface', () => ({ default: () => <div data-testid='call-ui'>Call UI</div> }));
+vi.mock('../../components/interviews/AdminDrawer', () => ({
+	default: ({ open, onClose, onCompleteAndNext, nextInterview }) => (
+		<div data-testid='admin-drawer' data-open={open ? 'true' : 'false'}>
+			<button type='button' onClick={onClose}>
+				Close Admin
+			</button>
+			<button
+				type='button'
+				onClick={() => onCompleteAndNext?.(nextInterview?.id || 'next-interview-1')}>
+				Complete And Next
+			</button>
+		</div>
+	),
+}));
+vi.mock('../../components/interviews/ApplicationViewer', () => ({
+	default: ({ open, onClose }) => (
+		<div data-testid='app-viewer' data-open={open ? 'true' : 'false'}>
+			<button type='button' onClick={onClose}>
+				Close Apps
+			</button>
+		</div>
+	),
+}));
+vi.mock('../../components/interviews/CallInterface', () => ({
+	default: ({ onOpenDrawer, onOpenAdminDrawer }) => (
+		<div data-testid='call-ui'>
+			<button type='button' onClick={onOpenAdminDrawer}>
+				Open Admin
+			</button>
+			<button type='button' onClick={onOpenDrawer}>
+				Open Apps
+			</button>
+		</div>
+	),
+}));
 vi.mock('../../components/interviews/VideoRoomUnavailable', () => ({
 	default: ({ title, message, onLeave, leaveLabel }) => (
 		<div data-testid='video-unavailable'>
@@ -312,5 +344,67 @@ describe('InterviewRoom Component', () => {
 			expect(screen.getByText(/Interview Room Unavailable/i)).toBeInTheDocument();
 		});
 		expect(screen.getByText(/Token Gen Failed/i)).toBeInTheDocument();
+	});
+
+	test('toggles drawers and completes next interview flow', async () => {
+		const { getRealTimeMeetings } = await import('../../config/data/firebase');
+		getRealTimeMeetings.mockImplementation((uid, onlyUpcoming, cb) => {
+			cb([{ id: 'next-interview-1', status: 'confirmed' }]);
+			return jest.fn();
+		});
+		endInterview.mockResolvedValue(undefined);
+		updateInterviewStatus.mockResolvedValue(undefined);
+
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+
+		render(<InterviewRoom />);
+
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+
+		await waitFor(() => expect(screen.getByTestId('call-ui')).toBeInTheDocument());
+
+		fireEvent.click(screen.getByText('Open Admin'));
+		expect(screen.getByTestId('admin-drawer')).toHaveAttribute('data-open', 'true');
+		fireEvent.click(screen.getByText('Close Admin'));
+		expect(screen.getByTestId('admin-drawer')).toHaveAttribute('data-open', 'false');
+
+		fireEvent.click(screen.getByText('Open Apps'));
+		expect(screen.getByTestId('app-viewer')).toHaveAttribute('data-open', 'true');
+		fireEvent.click(screen.getByText('Close Apps'));
+		expect(screen.getByTestId('app-viewer')).toHaveAttribute('data-open', 'false');
+
+		fireEvent.click(screen.getByText('Complete And Next'));
+		await waitFor(() => {
+			expect(endInterview).toHaveBeenCalledWith({ interviewId: 'test-interview-123' });
+			expect(updateInterviewStatus).toHaveBeenCalledWith(
+				expect.objectContaining({ interviewId: 'next-interview-1' })
+			);
+		});
+	});
+
+	test('handles complete-and-next failures', async () => {
+		endInterview.mockRejectedValueOnce(new Error('end failed'));
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await waitFor(() => expect(screen.getByTestId('call-ui')).toBeInTheDocument());
+
+		fireEvent.click(screen.getByText('Complete And Next'));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'interview-complete-and-next');
+		});
 	});
 });

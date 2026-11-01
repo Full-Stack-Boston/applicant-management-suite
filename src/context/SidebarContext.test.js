@@ -74,4 +74,28 @@ describe('SidebarContext', () => {
 		// Expect DB Update
 		expect(updateUserPreferences).toHaveBeenCalledWith('user123', 'members', { sidebarCollapsed: true });
 	});
+
+	test('syncs collapsed state from member preferences', () => {
+		useAuth.mockReturnValue({
+			member: { preferences: { sidebarCollapsed: true } },
+			user: { uid: 'user123' },
+		});
+
+		render(
+			<SidebarProvider>
+				<TestConsumer />
+			</SidebarProvider>
+		);
+
+		expect(screen.getByTestId('state')).toHaveTextContent('COLLAPSED');
+		expect(localStorage.getItem('pf_sidebar_collapsed')).toBe('true');
+	});
+
+	test('throws when useSidebar is used outside provider', () => {
+		const Broken = () => {
+			useSidebar();
+			return null;
+		};
+		expect(() => render(<Broken />)).toThrow(/must be used within a SidebarProvider/i);
+	});
 });

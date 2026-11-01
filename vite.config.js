@@ -110,6 +110,8 @@ export default defineConfig(({ mode }) => ({
         'node_modules/**',
         'src/**/*.{test,spec}.{js,jsx,ts,tsx}',
         'src/setupTests.js',
+        // Binary brand assets (imported as URLs; not runtime logic)
+        'src/assets/images/**',
         // Static template catalogs (data, not runtime logic)
         'src/config/content/push.tsx',
         'src/config/content/emailTemplates.tsx',
