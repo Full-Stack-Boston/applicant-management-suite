@@ -407,4 +407,76 @@ describe('InterviewRoom Component', () => {
 			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'interview-complete-and-next');
 		});
 	});
+
+	test('returns applicants to apply from the concluded screen', async () => {
+		onSnapshot.mockImplementation((ref, onNext) => {
+			onNext({ exists: () => true, data: () => ({ status: 'completed' }) });
+			return jest.fn();
+		});
+		render(<InterviewRoom />);
+		fireEvent.click(await screen.findByText(/Return to Dashboard/i));
+		expect(mockNavigate).toHaveBeenCalledWith('/apply');
+	});
+
+	test('returns members to the interviews dashboard from the concluded screen', async () => {
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+		onSnapshot.mockImplementation((ref, onNext) => {
+			onNext({ exists: () => true, data: () => ({ status: 'completed' }) });
+			return jest.fn();
+		});
+		render(<InterviewRoom />);
+		fireEvent.click(await screen.findByText(/Return to Dashboard/i));
+		expect(mockNavigate).toHaveBeenCalledWith('/members/interviews/dashboard');
+	});
+
+	test('surfaces invalid token payloads from generateJoinToken', async () => {
+		generateJoinToken.mockResolvedValueOnce({ data: {} });
+		render(<InterviewRoom />);
+		await waitFor(() => {
+			expect(screen.getByText(/Interview Room Unavailable/i)).toBeInTheDocument();
+		});
+		expect(screen.getByText(/Invalid token or roomUrl received/i)).toBeInTheDocument();
+	});
+
+	test('surfaces snapshot listener failures', async () => {
+		onSnapshot.mockImplementation((ref, onNext, onError) => {
+			onError?.(new Error('snapshot failed'));
+			return jest.fn();
+		});
+		render(<InterviewRoom />);
+		await waitFor(() => {
+			expect(screen.getByText(/Interview Room Unavailable/i)).toBeInTheDocument();
+		});
+	});
+
+	test('leaves the unavailable gate via the leave button', async () => {
+		useParams.mockReturnValue({});
+		render(<InterviewRoom />);
+		await waitFor(() => {
+			expect(screen.getByTestId('video-unavailable')).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole('button'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	test('marks local owner participants and loads member pictures', async () => {
+		mockCallObject.participants.mockReturnValue({
+			local: { session_id: 'local', user_id: 'user-123', owner: true },
+		});
+		getDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ picture: { home: 'http://pic.url' } }),
+		});
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await waitFor(() => {
+			expect(mockSetParticipantDetails).toHaveBeenCalled();
+		});
+	});
 });
