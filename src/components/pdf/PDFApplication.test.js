@@ -201,7 +201,7 @@ describe('PDFApplication', () => {
 
 		expect(await screen.findByText('Applicant Information')).toBeInTheDocument();
 		expect(screen.getByText('AMS Application')).toBeInTheDocument();
-		expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+		expect(screen.getByText(/Name:\s*Ada\s+Lovelace/)).toBeInTheDocument();
 		expect(screen.getByText('Ann Lovelace')).toBeInTheDocument();
 		expect(screen.getByText('Somerville High')).toBeInTheDocument();
 		expect(screen.getByText('Cambridge Academy')).toBeInTheDocument();

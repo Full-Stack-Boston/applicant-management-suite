@@ -65,7 +65,7 @@ describe('AssetProfileSection', () => {
 		expect(screen.getByTestId('dynamic-actions')).toBeInTheDocument();
 		fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
 		expect(mocks.navigate).toHaveBeenCalledWith('/applications/app-1/edit');
-		fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+		fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
 		expect(mocks.onBack).not.toHaveBeenCalled();
 	});
 

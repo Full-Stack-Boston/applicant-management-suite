@@ -116,7 +116,7 @@ describe('EmailForm Component', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Bcc' }));
 		expect(screen.getByLabelText('Bcc')).toBeInTheDocument();
 		expect(screen.getByText('Replying to:')).toBeInTheDocument();
-		fireEvent.mouseDown(screen.getByLabelText('Include Signature'));
+		fireEvent.mouseDown(screen.getAllByRole('combobox').at(-1));
 		fireEvent.click(await screen.findByRole('option', { name: 'Signature' }));
 		fireEvent.click(screen.getByLabelText('Include Branded Header & Footer'));
 		fireEvent.change(screen.getByPlaceholderText(/Compose your message/i), { target: { value: 'New body' } });
