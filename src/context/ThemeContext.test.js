@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import { useAuth } from './AuthContext';
 import { updateUserPreferences } from '../config/data/firebase';
@@ -43,11 +43,15 @@ vi.mock('../config/ui/theme', () => ({
 }));
 
 const TestConsumer = () => {
-	const { darkMode, dispatch } = useTheme();
+	const { darkMode, primaryColor, dispatch } = useTheme();
 	return (
 		<div>
 			<div data-testid='theme-mode'>{darkMode ? 'DARK' : 'LIGHT'}</div>
+			<div data-testid='theme-color'>{primaryColor}</div>
 			<button onClick={() => dispatch({ type: 'TOGGLE' })}>Toggle</button>
+			<button onClick={() => dispatch({ type: 'LIGHT' })}>Light</button>
+			<button onClick={() => dispatch({ type: 'DARK' })}>Dark</button>
+			<button onClick={() => dispatch({ type: 'SET_COLOR', payload: 'teal' })}>Set Color</button>
 		</div>
 	);
 };
@@ -104,5 +108,69 @@ describe('ThemeContext', () => {
 
 		// Verify DB update
 		expect(updateUserPreferences).toHaveBeenCalledWith('123', 'members', expect.objectContaining({ darkMode: true }));
+	});
+
+	test('loads cloud preferences and saves color for applicants', () => {
+		useAuth.mockReturnValue({
+			user: { uid: 'app-1' },
+			member: null,
+			applicant: { preferences: { darkMode: true, primaryColor: 'green' } },
+		});
+
+		render(
+			<ThemeProvider>
+				<TestConsumer />
+			</ThemeProvider>
+		);
+
+		expect(screen.getByTestId('theme-mode')).toHaveTextContent('DARK');
+		expect(screen.getByTestId('theme-color')).toHaveTextContent('green');
+
+		fireEvent.click(screen.getByText('Set Color'));
+		expect(updateUserPreferences).toHaveBeenCalledWith('app-1', 'applicants', expect.objectContaining({ primaryColor: 'teal' }));
+		fireEvent.click(screen.getByText('Light'));
+		expect(updateUserPreferences).toHaveBeenCalledWith('app-1', 'applicants', expect.objectContaining({ darkMode: false }));
+		fireEvent.click(screen.getByText('Dark'));
+		expect(updateUserPreferences).toHaveBeenCalledWith('app-1', 'applicants', expect.objectContaining({ darkMode: true }));
+	});
+
+	test('follows system color-scheme changes when no prefs are saved', () => {
+		let changeHandler;
+		window.matchMedia = jest.fn().mockImplementation((query) => ({
+			matches: false,
+			media: query,
+			addEventListener: jest.fn((event, handler) => {
+				if (event === 'change') changeHandler = handler;
+			}),
+			removeEventListener: jest.fn(),
+			addListener: jest.fn(),
+			removeListener: jest.fn(),
+			dispatchEvent: jest.fn(),
+		}));
+		useAuth.mockReturnValue({ user: null, member: null, applicant: null });
+
+		render(
+			<ThemeProvider>
+				<TestConsumer />
+			</ThemeProvider>
+		);
+
+		expect(typeof changeHandler).toBe('function');
+		act(() => {
+			changeHandler({ matches: true });
+		});
+		expect(screen.getByTestId('theme-mode')).toHaveTextContent('DARK');
+		act(() => {
+			changeHandler({ matches: false });
+		});
+		expect(screen.getByTestId('theme-mode')).toHaveTextContent('LIGHT');
+	});
+
+	test('throws when useTheme is used outside provider', () => {
+		const Broken = () => {
+			useTheme();
+			return null;
+		};
+		expect(() => render(<Broken />)).toThrow(/must be used within a ThemeProvider/i);
 	});
 });
