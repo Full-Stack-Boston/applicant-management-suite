@@ -594,17 +594,18 @@ describe('tableConfig.js', () => {
 		});
 
 		it('Applicant Toolbar: merges exactly two selected applicants', () => {
+			const showDialog = jest.fn();
 			const actions = TableConfig.getApplicantToolbarActions({});
 			const mergeAction = actions.find((a) => a.label?.toLowerCase().includes('merge'));
 			const rows = [
 				{ id: 'a1', firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' },
 				{ id: 'a2', firstName: 'Grace', lastName: 'Hopper', email: 'grace@example.com' },
 			];
-			mergeAction.onClick(['a1'], rows, { showDialog: mockShowDialog, showAlert: mockShowAlert });
+			mergeAction.onClick(['a1'], rows, { showDialog, showAlert: mockShowAlert });
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }));
 
-			mergeAction.onClick(['a1', 'a2'], rows, { showDialog: mockShowDialog, showAlert: mockShowAlert });
-			expect(mockShowDialog).toHaveBeenCalledWith(
+			mergeAction.onClick(['a1', 'a2'], rows, { showDialog, showAlert: mockShowAlert });
+			expect(showDialog).toHaveBeenCalledWith(
 				expect.objectContaining({
 					id: 'mergeApplicantAccountsDialog',
 					data: expect.objectContaining({ applicants: rows }),
