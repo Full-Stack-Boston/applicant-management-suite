@@ -12,15 +12,25 @@ vi.mock('../../context/DialogContext', () => ({ useDialog: jest.fn() }));
 vi.mock('../../context/AlertContext', () => ({ useAlert: jest.fn() }));
 vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn() }));
 
-const { calls } = vi.hoisted(() => ({ calls: [] }));
+const { calls, selectionIds } = vi.hoisted(() => ({
+	calls: [],
+	selectionIds: { current: new Map() },
+}));
 
 vi.mock('@mui/x-data-grid', () => ({
 	DataGrid: (props) => {
 		if (props) calls.push(props);
+		const model = props?.rowSelectionModel;
+		if (model?.ids instanceof Set) {
+			selectionIds.current = new Map([...model.ids].map((id) => [id, true]));
+		} else if (Array.isArray(model)) {
+			selectionIds.current = new Map(model.map((id) => [id, true]));
+		}
 		const Toolbar = props?.slots?.toolbar;
+		const selectionKey = [...selectionIds.current.keys()].join(',');
 		return (
 			<div role='grid' data-testid='mock-grid'>
-				{Toolbar && <Toolbar {...(props.slotProps?.toolbar || {})} />}
+				{Toolbar && <Toolbar key={selectionKey} {...(props.slotProps?.toolbar || {})} />}
 			</div>
 		);
 	},
@@ -33,6 +43,8 @@ vi.mock('@mui/x-data-grid', () => ({
 			getLocaleText: (key) => key,
 		},
 	}),
+	useGridSelector: () => selectionIds.current,
+	gridRowSelectionIdsSelector: jest.fn(),
 	useGridRootProps: () => ({
 		slots: {
 			baseIconButton: (props) => <button type='button' {...props} />,
@@ -65,6 +77,7 @@ describe('Datatable', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		calls.length = 0;
+		selectionIds.current = new Map();
 		mockUseTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 		mockUseDialog.mockReturnValue({ showDialog: jest.fn() });
 		mockUseAlert.mockReturnValue({ showAlert: jest.fn(), handleError: jest.fn() });

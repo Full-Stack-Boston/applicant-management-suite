@@ -142,4 +142,23 @@ describe('EmailForm Component', () => {
 			expect(screen.getByText('Send')).not.toBeDisabled();
 		});
 	});
+
+	test('opens Cc/Bcc fields and cancels compose', async () => {
+		mockLocation.state = {};
+		render(<EmailForm />);
+		fireEvent.click(screen.getByRole('button', { name: 'Cc' }));
+		expect(screen.getByLabelText('Cc')).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: 'Bcc' }));
+		expect(screen.getByLabelText('Bcc')).toBeInTheDocument();
+
+		const bccInput = screen.getByLabelText('Bcc');
+		fireEvent.change(bccInput, { target: { value: 'hidden@test.com' } });
+		fireEvent.keyDown(bccInput, { key: 'Enter' });
+		await waitFor(() => {
+			expect(screen.getByText('hidden@test.com')).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByText('Cancel'));
+		expect(mockNavigate).toHaveBeenCalledWith(-1);
+	});
 });

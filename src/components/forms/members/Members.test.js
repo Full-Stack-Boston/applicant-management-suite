@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemberForm } from './Members';
 import { useAuth } from '../../../context/AuthContext';
 import { useAlert } from '../../../context/AlertContext';
-import { saveCollectionData, registerUser, saveFile } from '../../../config/data/firebase';
+import { saveCollectionData, registerUser, saveFile, getDownloadLinkForFile } from '../../../config/data/firebase';
 
 vi.mock('../../../context/AuthContext', () => ({ useAuth: jest.fn() }));
 vi.mock('../../../context/AlertContext', () => ({ useAlert: jest.fn() }));
@@ -16,12 +16,16 @@ vi.mock('../../../config/data/firebase', () => ({
 
 vi.mock('../../loader/Loader', () => ({ default: () => <div>Loading...</div> }));
 
-vi.mock('../GenericAdminForm', () => ({ default: ({ onSubmit, onFileUpload }) => (
-	<div>
-		<button onClick={() => onSubmit({ firstName: 'New', email: 'new@test.com' })}>Save</button>
-		<button onClick={() => onFileUpload('upload', 'path', { name: 'pic.jpg' })}>Upload</button>
-	</div>
-) }));
+vi.mock('../GenericAdminForm', () => ({
+	default: ({ onSubmit, onFileUpload, initialData }) => (
+		<div>
+			<span data-testid='picture-home'>{initialData?.picture?.home || ''}</span>
+			<button onClick={() => onSubmit({ firstName: 'New', email: 'new@test.com' })}>Save</button>
+			<button onClick={() => onFileUpload('upload', 'path', { name: 'pic.jpg' })}>Upload</button>
+			<button onClick={() => onFileUpload('delete', 'path', { name: 'pic.jpg' })}>Ignore</button>
+		</div>
+	),
+}));
 
 describe('MemberForm Component', () => {
 	const mockAlert = { showAlert: jest.fn(), handleError: jest.fn() };
@@ -69,6 +73,29 @@ describe('MemberForm Component', () => {
 
 		await waitFor(() => {
 			expect(saveFile).toHaveBeenCalled();
+		});
+	});
+
+	test('normalizes legacy string picture URLs', async () => {
+		render(<MemberForm member={{ id: 'm1', picture: 'https://legacy/pic.jpg' }} />);
+		await waitFor(() => {
+			expect(screen.getByTestId('picture-home')).toHaveTextContent('https://legacy/pic.jpg');
+		});
+	});
+
+	test('handles missing download link and submit failures', async () => {
+		getDownloadLinkForFile.mockResolvedValueOnce(null);
+		render(<MemberForm member={{ id: 'm1' }} />);
+		fireEvent.click(screen.getByText('Ignore'));
+		fireEvent.click(screen.getByText('Upload'));
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'member-upload-picture');
+		});
+
+		saveCollectionData.mockRejectedValueOnce(new Error('save fail'));
+		fireEvent.click(screen.getByText('Save'));
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'member-form-submit');
 		});
 	});
 });
