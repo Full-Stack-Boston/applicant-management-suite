@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import HomeNav from './HomeNav';
@@ -209,6 +209,24 @@ describe('HomeNav', () => {
 		mockUseAuth.mockReturnValue({ user: { uid: 'u1' }, applicant: null });
 		renderNav({ variant: 'public' });
 		fireEvent.click(screen.getByLabelText('My account'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('exposes Sign In from the burger menu when logged out', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		fireEvent.click(screen.getByRole('menuitem', { name: /Sign In/i }));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('exposes My Account from the burger menu when logged in', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseAuth.mockReturnValue({ user: { uid: 'u1' }, applicant: null });
+		cleanup();
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		fireEvent.click(screen.getByRole('menuitem', { name: /My Account/i }));
 		expect(mockNavigate).toHaveBeenCalled();
 	});
 

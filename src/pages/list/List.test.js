@@ -73,6 +73,10 @@ vi.mock('../../config/admin/lists', () => ({
 	},
 }));
 
+vi.mock('../../config/ui/tableConfig', () => ({
+	RecipientSubjectCell: (props) => <div data-testid='recipient-subject'>{props.row?.to}</div>,
+}));
+
 // 4. Firebase
 vi.mock('../../config/data/firebase', () => ({
 	getRoomDetails: jest.fn(),
@@ -131,6 +135,16 @@ vi.mock('../../components/datatable/Datatable', () => ({ default: (props) => (
 		{props.columns?.map((col) => (
 			<div key={col.field} data-testid={`col-${col.field}`}>
 				{col.headerName || col.field}
+				{typeof col.valueGetter === 'function' && (
+					<span data-testid={`getter-${col.field}`}>
+						{col.valueGetter(null, { to: 'to@x.com', subject: 'Subj' })}
+					</span>
+				)}
+				{typeof col.renderCell === 'function' && (
+					<span data-testid={`render-${col.field}`}>
+						{col.renderCell({ row: { to: 'to@x.com', subject: 'Subj' }, value: 'x' })}
+					</span>
+				)}
 			</div>
 		))}
 		{props.onFolderChange && (
@@ -306,6 +320,8 @@ describe('List Page Component', () => {
 
 		expect(screen.getByTestId('col-senderSubject')).toHaveTextContent('Recipient / Subject');
 		expect(screen.getByTestId('col-tags')).toHaveTextContent('Sent By');
+		expect(screen.getByTestId('getter-senderSubject')).toHaveTextContent('to@x.com Subj');
+		expect(screen.getByTestId('recipient-subject')).toHaveTextContent('to@x.com');
 		fireEvent.click(screen.getByTestId('folder-change'));
 		expect(mockSetSelectedFolderId).toHaveBeenCalledWith('sent');
 		fireEvent.click(screen.getByTestId('alias-change'));

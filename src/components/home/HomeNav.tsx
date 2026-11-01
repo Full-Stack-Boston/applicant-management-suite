@@ -382,6 +382,7 @@ export default function HomeNav({ navSolid, activeSection, onNavigateSection, va
 								{renderThemeToggle(true)}
 								{renderAccentPicker(true)}
 								{renderGitHubLink(true)}
+								{renderAuthAction(true)}
 								{isApplicantNav && applicant && (
 									<MenuItem onClick={openSettingsFromMenu}>
 										<SettingsIcon fontSize='small' sx={{ mr: 1 }} />
