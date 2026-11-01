@@ -163,6 +163,31 @@ describe('MessageOptions', () => {
 			);
 			expect(send).not.toHaveBeenCalled();
 		});
+
+		it('warns when no valid recipients are provided', async () => {
+			render(<TemplatedOptions darkMode recipients={[{ name: 'Nobody' }]} onClose={mockOnClose} />);
+			fireEvent.click(screen.getByRole('button', { name: 'Simple Message' }));
+			await waitFor(() => {
+				expect(mockShowAlert).toHaveBeenCalledWith({ message: 'No valid recipients were provided.', type: 'warning' });
+			});
+			expect(send).not.toHaveBeenCalled();
+		});
+
+		it('sends after requiredFields dialog callback and reports failures', async () => {
+			render(<TemplatedOptions darkMode={false} recipients={recipients} onClose={mockOnClose} />);
+			fireEvent.click(screen.getByRole('button', { name: 'Message With Data' }));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await callback({ customField: 'value' });
+			await waitFor(() => {
+				expect(send).toHaveBeenCalledWith('withData', recipients, senders[0], [], [], { customField: 'value' });
+			});
+
+			send.mockResolvedValueOnce({ success: false, error: new Error('queue failed') });
+			fireEvent.click(screen.getByRole('button', { name: 'Simple Message' }));
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'templated-options-send');
+			});
+		});
 	});
 
 	describe('CustomMessageTrigger', () => {
@@ -228,6 +253,44 @@ describe('MessageOptions', () => {
 			});
 
 			expect(mockOnClose).toHaveBeenCalled();
+		});
+
+		it('ignores empty form data and warns without recipients', async () => {
+			render(<CustomMessageTrigger darkMode recipients={[]} onClose={mockOnClose} />);
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await callback(null);
+			expect(setDoc).not.toHaveBeenCalled();
+
+			await callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: 'sms' });
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'No valid recipients were provided.', type: 'warning' });
+		});
+
+		it('reports custom send failures', async () => {
+			setDoc.mockRejectedValueOnce(new Error('write failed'));
+			render(<CustomMessageTrigger darkMode={false} recipients={recipients} onClose={mockOnClose} />);
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: 'sms' });
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'custom-message-trigger-send');
+			});
+		});
+
+		it('applies simulated delivery in demo email mode', async () => {
+			useConfig.mockReturnValue({ SYSTEM_REPLY_TO: 'reply@test.com', emailDeliveryMode: 'demo' });
+			render(<CustomMessageTrigger darkMode={false} recipients={[{ name: 'Email User', email: 'email@example.com' }]} onClose={mockOnClose} />);
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: '' });
+			await waitFor(() => {
+				expect(setDoc).toHaveBeenCalledWith(
+					mockDocRef,
+					expect.objectContaining({
+						delivery: expect.anything(),
+					}),
+				);
+			});
 		});
 	});
 });
