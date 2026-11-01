@@ -7,6 +7,8 @@ import HomeFooter from './HomeFooter';
 const mockNavigate = jest.fn();
 const mockDispatch = jest.fn();
 const mockOnNavigateSection = jest.fn();
+const mockUseAuth = jest.fn(() => ({ user: null }));
+const mockUseConfig = jest.fn(() => ({ MEMBER_ONBOARDING_PAGE_ENABLED: true }));
 
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
@@ -14,7 +16,7 @@ vi.mock('react-router-dom', async () => ({
 }));
 
 vi.mock('../../context/AuthContext', () => ({
-	useAuth: () => ({ user: null }),
+	useAuth: () => mockUseAuth(),
 }));
 
 vi.mock('../../context/ThemeContext', () => ({
@@ -22,7 +24,7 @@ vi.mock('../../context/ThemeContext', () => ({
 }));
 
 vi.mock('../../context/ConfigContext', () => ({
-	useConfig: () => ({ MEMBER_ONBOARDING_PAGE_ENABLED: true }),
+	useConfig: () => mockUseConfig(),
 }));
 
 vi.mock('../theme/AccentColorPicker', () => ({
@@ -51,6 +53,8 @@ const renderFooter = (topRef) =>
 describe('HomeFooter', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockUseAuth.mockReturnValue({ user: null });
+		mockUseConfig.mockReturnValue({ MEMBER_ONBOARDING_PAGE_ENABLED: true });
 	});
 
 	it('renders brand and section links', () => {
@@ -73,5 +77,29 @@ describe('HomeFooter', () => {
 		renderFooter({ current: null });
 		fireEvent.click(screen.getByRole('button', { name: /Committee demo access/i }));
 		expect(mockNavigate).toHaveBeenCalledWith('/board-registration');
+	});
+
+	it('scrolls to top when the back-to-top control is clicked', () => {
+		const scrollIntoView = jest.fn();
+		renderFooter({ current: { scrollIntoView } });
+		fireEvent.click(screen.getByLabelText(/back to top|top of page|scroll to top/i));
+		expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+	});
+
+	it('navigates sign-in and dashboard auth actions', () => {
+		renderFooter({ current: null });
+		fireEvent.click(screen.getByLabelText('Sign in'));
+		expect(mockNavigate).toHaveBeenCalled();
+
+		mockUseAuth.mockReturnValue({ user: { uid: 'u1' } });
+		renderFooter({ current: null });
+		fireEvent.click(screen.getByLabelText('Go to dashboard'));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('hides board access when onboarding is disabled', () => {
+		mockUseConfig.mockReturnValue({ MEMBER_ONBOARDING_PAGE_ENABLED: false });
+		renderFooter({ current: null });
+		expect(screen.queryByRole('button', { name: /Committee demo access/i })).not.toBeInTheDocument();
 	});
 });
