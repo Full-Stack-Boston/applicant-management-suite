@@ -34,14 +34,33 @@ describe('applicationCardUtils', () => {
 		expect(
 			getApplicationNextStep(ApplicationStatus.started, { uploaded: 0, required: 5, complete: false }),
 		).toContain('Upload your required documents');
+		expect(
+			getApplicationNextStep(ApplicationStatus.started, { uploaded: 2, required: 5, complete: false }),
+		).toContain('Finish uploading');
 
 		expect(formatAttachmentProgress({ uploaded: 2, required: 5, complete: false })).toBe('Documents: 2 of 5 uploaded');
 		expect(formatAttachmentProgress({ uploaded: 5, required: 5, complete: true })).toBe('Documents complete');
 		expect(shouldShowApplicationNextStep(ApplicationStatus.ineligible, null)).toBe(false);
+		expect(shouldShowApplicationNextStep(ApplicationStatus.denied, null)).toBe(false);
 		expect(shouldShowApplicationNextStep(ApplicationStatus.started, null)).toBe(true);
 		expect(isApplicationEditable(ApplicationStatus.started)).toBe(true);
 		expect(isApplicationEditable(ApplicationStatus.submitted)).toBe(false);
 		expect(isApplicationEditable(ApplicationStatus.incomplete)).toBe(false);
 		expect(isApplicationEditable(ApplicationStatus.awarded)).toBe(false);
+	});
+
+	it('covers status-specific next-step copy when attachments are complete', () => {
+		const done = { uploaded: 5, required: 5, complete: true };
+		expect(getApplicationNextStep(ApplicationStatus.started, done)).toContain('Continue your application');
+		expect(getApplicationNextStep(ApplicationStatus.submitted, done)).toContain('Submitted');
+		expect(getApplicationNextStep(ApplicationStatus.incomplete, done)).toContain('still missing');
+		expect(getApplicationNextStep(ApplicationStatus.completed, done)).toContain('Awaiting review');
+		expect(getApplicationNextStep(ApplicationStatus.eligible, done)).toContain('under review');
+		expect(getApplicationNextStep(ApplicationStatus.invited, done)).toContain('under review');
+		expect(getApplicationNextStep(ApplicationStatus.awarded, done)).toContain('award details');
+		expect(getApplicationNextStep(ApplicationStatus.denied, done)).toContain('decision');
+		expect(getApplicationNextStep(ApplicationStatus.ineligible, done)).toContain('not eligible');
+		expect(getApplicationNextStep(ApplicationStatus.deferred, done)).toContain('deferred');
+		expect(getApplicationNextStep('unknown-status', done)).toContain('Open this application');
 	});
 });

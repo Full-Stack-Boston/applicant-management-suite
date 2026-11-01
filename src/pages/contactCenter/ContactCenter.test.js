@@ -398,6 +398,124 @@ describe('src/pages/contactCenter/ContactCenter.jsx', () => {
 		});
 	});
 
+	it('sends after requiredFields dialog callback and reports send failures', async () => {
+		render(<ContactCenter />);
+		await selectFromAutocomplete('Recipients (email@example.com)', 'New App');
+		const select = screen.getByLabelText('Sender');
+		await act(async () => {
+			fireEvent.mouseDown(select);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByText('System <system@test.com>'));
+		});
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Send Test 2' }));
+		});
+		const dialogCall = mockShowDialog.mock.calls.find((call) => call[0].id === 'templatedMessage');
+		expect(dialogCall).toBeTruthy();
+		send.mockResolvedValueOnce({ success: true });
+		await act(async () => {
+			await dialogCall[0].callback({ field1: 'value' });
+		});
+		expect(send).toHaveBeenCalledWith('testTemplate2', [expectedRecipient], mockStaticSenders[0], [], [], { field1: 'value' });
+
+		send.mockResolvedValueOnce({ success: false, error: new Error('queue failed') });
+		await selectFromAutocomplete('Recipients (email@example.com)', 'New App');
+		await act(async () => {
+			fireEvent.mouseDown(screen.getByLabelText('Sender'));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByText('System <system@test.com>'));
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Send Test 1' }));
+		});
+		expect(mockHandleError).toHaveBeenCalled();
+	}, 20000);
+
+	it('adds email recipient presets for applicants and application segments', async () => {
+		render(<ContactCenter />);
+		const recipientInput = screen.getByLabelText('Recipients (email@example.com)');
+		const recipientBox = recipientInput.closest('.MuiBox-root');
+
+		await act(async () => {
+			fireEvent.click(within(recipientBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /^Applicants$/i }));
+		});
+		expect(await screen.findByText('New App <new@app.com>')).toBeInTheDocument();
+
+		await act(async () => {
+			fireEvent.click(within(recipientBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /Members \(Alias\)/i }));
+		});
+
+		await act(async () => {
+			fireEvent.click(within(recipientBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /New Apps/i }));
+		});
+		await act(async () => {
+			fireEvent.click(within(recipientBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /Returning Apps/i }));
+		});
+		await act(async () => {
+			fireEvent.click(within(recipientBox).getByRole('button', { name: 'Add Preset' }));
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: /4-Year Apps/i }));
+		});
+		expect(await screen.findByText('Returning App <returning@app.com>')).toBeInTheDocument();
+		expect(await screen.findByText('Scholarship App <scholarship@app.com>')).toBeInTheDocument();
+	}, 20000);
+
+	it('validates custom message sender/recipients and reports custom send errors', async () => {
+		render(<ContactCenter />);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+		});
+		const dialog = mockShowDialog.mock.calls.find((call) => call[0].id === 'customMessage');
+		expect(dialog).toBeTruthy();
+		await act(async () => {
+			await dialog[0].callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: 'sms' });
+		});
+		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Please add at least one recipient.', type: 'warning' });
+
+		await selectFromAutocomplete('Recipients (email@example.com)', 'New App');
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+		});
+		const dialog2 = mockShowDialog.mock.calls.filter((call) => call[0].id === 'customMessage').at(-1);
+		await act(async () => {
+			await dialog2[0].callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: 'sms' });
+		});
+		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Please select a sender.', type: 'warning' });
+
+		mockBatchCommit.mockRejectedValueOnce(new Error('batch failed'));
+		const select = screen.getByLabelText('Sender');
+		await act(async () => {
+			fireEvent.mouseDown(select);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByText('System <system@test.com>'));
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+		});
+		const dialog3 = mockShowDialog.mock.calls.filter((call) => call[0].id === 'customMessage').at(-1);
+		await act(async () => {
+			await dialog3[0].callback({ subject: 'S', emailBody: '<p>B</p>', smsBody: 'sms' });
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'contact-center-custom-send');
+	}, 20000);
+
 	// UPDATE: Added 15000ms timeout to prevent failing on slow UI interactions
 	it('opens custom message dialog and queues messages on callback', async () => {
 		render(<ContactCenter />);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import WaitingRoom from './WaitingRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -161,6 +161,7 @@ describe('WaitingRoom Component', () => {
 				enumerateDevices: mockEnumerateDevices,
 			},
 			writable: true,
+			configurable: true,
 		});
 	});
 
@@ -397,6 +398,42 @@ describe('WaitingRoom Component', () => {
 			getVideoTracks: () => [videoTrack],
 			getAudioTracks: () => [audioTrack],
 		});
+		mockEnumerateDevices.mockResolvedValue([
+			{ kind: 'videoinput', deviceId: 'cam-1', label: 'Camera 1' },
+			{ kind: 'videoinput', deviceId: 'cam-2', label: 'Camera 2' },
+			{ kind: 'audioinput', deviceId: 'mic-1', label: 'Mic 1' },
+			{ kind: 'audioinput', deviceId: 'mic-2', label: 'Mic 2' },
+		]);
+
+		useMeeting.mockReturnValue({
+			videoDeviceId: 'cam-1',
+			audioDeviceId: 'mic-1',
+			setVideoDeviceId: mockSetVideoDeviceId,
+			setAudioDeviceId: mockSetAudioDeviceId,
+		});
+
+		const closeAudio = jest.fn(() => Promise.resolve());
+		const disconnect = jest.fn();
+		const getByteFrequencyData = jest.fn((data) => {
+			for (let i = 0; i < data.length; i += 1) data[i] = 40;
+		});
+		class FakeAudioContext {
+			createMediaStreamSource() {
+				return { connect: jest.fn(), disconnect };
+			}
+			createAnalyser() {
+				return {
+					fftSize: 0,
+					frequencyBinCount: 8,
+					getByteFrequencyData,
+					connect: jest.fn(),
+				};
+			}
+			close() {
+				return closeAudio();
+			}
+		}
+		window.AudioContext = FakeAudioContext;
 
 		render(<WaitingRoom />);
 		await screen.findByText(/Interview Waiting Room/i);
@@ -406,17 +443,202 @@ describe('WaitingRoom Component', () => {
 		await waitFor(() => {
 			expect(screen.getByText(/Devices connected/i)).toBeInTheDocument();
 		});
+		await waitFor(() => {
+			expect(screen.getByLabelText('Microphone level meter')).toBeInTheDocument();
+		});
 
-		// Preview controls should be interactive after permissions.
-		expect(screen.getByLabelText(/Mute microphone|Unmute microphone/i)).toBeInTheDocument();
-		expect(screen.getByLabelText(/Turn off camera|Turn on camera/i)).toBeInTheDocument();
-		fireEvent.click(screen.getByLabelText(/Mute microphone|Unmute microphone/i));
-		fireEvent.click(screen.getByLabelText(/Turn off camera|Turn on camera/i));
+		expect(screen.getByLabelText(/Mute microphone/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/Turn off camera/i)).toBeInTheDocument();
+		fireEvent.click(screen.getByLabelText(/Mute microphone/i));
+		expect(screen.getByLabelText(/Unmute microphone/i)).toBeInTheDocument();
+		expect(screen.getByText(/\(muted\)/i)).toBeInTheDocument();
+		fireEvent.click(screen.getByLabelText(/Turn off camera/i));
+		expect(screen.getByLabelText(/Turn on camera/i)).toBeInTheDocument();
+		expect(audioTrack.enabled).toBe(false);
+		expect(videoTrack.enabled).toBe(false);
 
-		const cameraSelect = screen.getAllByRole('combobox')[0];
-		fireEvent.mouseDown(cameraSelect);
-		const option = await screen.findByText('Camera 1');
-		fireEvent.click(option);
-		expect(mockSetVideoDeviceId).toHaveBeenCalled();
+		const micSelect = screen.getAllByRole('combobox')[1];
+		fireEvent.mouseDown(micSelect);
+		const listbox = await screen.findByRole('listbox');
+		fireEvent.click(within(listbox).getByText('Mic 2'));
+		expect(mockSetAudioDeviceId).toHaveBeenCalledWith('mic-2');
+	});
+
+	test('falls back to separate video/audio streams on NotFoundError', async () => {
+		mockGetUserMedia
+			.mockRejectedValueOnce(Object.assign(new Error('not found'), { name: 'NotFoundError' }))
+			.mockResolvedValueOnce({
+				getTracks: () => [{ stop: mockStopTrack }],
+				getVideoTracks: () => [{ enabled: true, stop: mockStopTrack }],
+				getAudioTracks: () => [],
+			})
+			.mockResolvedValueOnce({
+				getTracks: () => [{ stop: mockStopTrack }],
+				getVideoTracks: () => [],
+				getAudioTracks: () => [{ enabled: true, stop: mockStopTrack }],
+			});
+
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/Devices connected/i)).toBeInTheDocument();
+		});
+		expect(mockGetUserMedia).toHaveBeenCalledTimes(3);
+	});
+
+	test('diagnoses a missing microphone after successful permission request', async () => {
+		mockEnumerateDevices.mockResolvedValueOnce([
+			{ kind: 'videoinput', deviceId: 'cam-1', label: 'Camera 1' },
+		]);
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/No microphone found/i)).toBeInTheDocument();
+	});
+
+	test('surfaces NotReadableError when devices are locked by another app', async () => {
+		mockGetUserMedia.mockRejectedValueOnce(Object.assign(new Error('busy'), { name: 'NotReadableError' }));
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/already in use by another application/i)).toBeInTheDocument();
+	});
+
+	test('rejects browsers without mediaDevices support', async () => {
+		Object.defineProperty(global.navigator, 'mediaDevices', {
+			value: {},
+			configurable: true,
+			writable: true,
+		});
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/does not support media device access/i)).toBeInTheDocument();
+		Object.defineProperty(global.navigator, 'mediaDevices', {
+			value: {
+				getUserMedia: mockGetUserMedia,
+				enumerateDevices: mockEnumerateDevices,
+			},
+			configurable: true,
+			writable: true,
+		});
+	});
+
+	test('shows preview failure when getUserMedia fails after permissions', async () => {
+		useMeeting.mockReturnValue({
+			videoDeviceId: 'cam-1',
+			audioDeviceId: 'mic-1',
+			setVideoDeviceId: mockSetVideoDeviceId,
+			setAudioDeviceId: mockSetAudioDeviceId,
+		});
+		mockGetUserMedia
+			.mockResolvedValueOnce({
+				getTracks: () => [{ stop: mockStopTrack }],
+				getVideoTracks: () => [{ enabled: true, stop: mockStopTrack }],
+				getAudioTracks: () => [{ enabled: true, stop: mockStopTrack }],
+			})
+			.mockRejectedValueOnce(new Error('preview failed'));
+
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		expect(await screen.findByText(/Could not start devices/i)).toBeInTheDocument();
+	});
+
+	test('redirects into the interview room after the connecting countdown', async () => {
+		vi.useFakeTimers();
+		let statusCallback;
+		getRealTimeDocument.mockImplementation((col, id, cb) => {
+			statusCallback = cb;
+			return jest.fn();
+		});
+
+		render(<WaitingRoom />);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(screen.getByText(/Interview Waiting Room/i)).toBeInTheDocument();
+
+		act(() => {
+			statusCallback({ status: 'in-progress' });
+		});
+		expect(screen.getByText(/Interview starting/i)).toBeInTheDocument();
+		expect(screen.getByTestId('redirect-countdown')).toHaveTextContent('10');
+
+		for (let i = 0; i < 10; i += 1) {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1000);
+			});
+		}
+		expect(mockNavigate).toHaveBeenCalledWith('/interviews/interview-room/test-interview-123');
+		vi.useRealTimers();
+	});
+
+	test('shows past-schedule standby copy when the interview time has passed', async () => {
+		jest.useFakeTimers({ shouldAdvanceTime: true });
+		getDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({
+				applicantId: 'app-123',
+				applicationId: 'application-99',
+				startTime: { toDate: () => new Date(Date.now() - 60000) },
+				status: 'confirmed',
+				firstName: 'Applicant',
+				lastName: 'Test',
+			}),
+		});
+		getDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({
+					applicantId: 'app-123',
+					applicationId: 'application-99',
+					startTime: { toDate: () => new Date(Date.now() - 60000) },
+					status: 'confirmed',
+				}),
+			})
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ firstName: 'Applicant', lastName: 'Test' }),
+			});
+
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		await act(async () => {
+			jest.advanceTimersByTime(1100);
+		});
+		expect(await screen.findByText(/should begin shortly/i)).toBeInTheDocument();
+		jest.useRealTimers();
+	});
+
+	test('surfaces a load failure when interview fetch throws', async () => {
+		getDoc.mockRejectedValueOnce(new Error('network'));
+		render(<WaitingRoom />);
+		expect(await screen.findByText(/could not load this interview/i)).toBeInTheDocument();
+	});
+
+	test('marks the interview missing when the realtime listener returns null', async () => {
+		let statusCallback;
+		getRealTimeDocument.mockImplementation((col, id, cb) => {
+			statusCallback = cb;
+			return jest.fn();
+		});
+		render(<WaitingRoom />);
+		await screen.findByText(/Interview Waiting Room/i);
+		act(() => {
+			statusCallback(null);
+		});
+		expect(await screen.findByText(/Unable to Open Waiting Room/i)).toBeInTheDocument();
 	});
 });

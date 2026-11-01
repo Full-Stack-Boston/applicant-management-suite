@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import GoogleAutoComplete, { buildManualPlace, hasGooglePlacesApiKey } from './GoogleAutoComplete';
 
 const mockGetPlacePredictions = jest.fn();
@@ -67,6 +67,7 @@ describe('GoogleAutoComplete', () => {
 		global.window.google.maps.places.AutocompleteService = mockAutocompleteService;
 		globalThis.google.maps.places.AutocompleteService = mockAutocompleteService;
 		mockAutocompleteService.mockClear();
+		document.getElementById('google-maps')?.remove();
 
 		document.querySelector = jest.fn((selector) => {
 			if (selector === '#google-maps') return document.createElement('div');
@@ -78,6 +79,8 @@ describe('GoogleAutoComplete', () => {
 	afterEach(() => {
 		process.env.REACT_APP_googleApiKey = originalEnvKey;
 		document.querySelector = originalQuerySelector;
+		document.getElementById('google-maps')?.remove();
+		delete globalThis.gm_authFailure;
 	});
 
 	test('fetches predictions when user types', async () => {
@@ -217,4 +220,78 @@ describe('GoogleAutoComplete', () => {
 			);
 		});
 	});
+
+	test('drops to manual entry on OVER_QUERY_LIMIT', async () => {
+		mockGetPlacePredictions.mockImplementation((request, callback) => {
+			callback([], 'OVER_QUERY_LIMIT');
+		});
+
+		render(<GoogleAutoComplete {...baseProps} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: 'quota' } });
+
+		await waitFor(() => {
+			expect(screen.getByText(/Google Places is not configured/i)).toBeInTheDocument();
+		});
+	});
+
+	test('handles gm_authFailure by switching to manual entry', async () => {
+		render(<GoogleAutoComplete {...baseProps} />);
+		await waitFor(() => {
+			expect(typeof globalThis.gm_authFailure).toBe('function');
+		});
+		act(() => {
+			globalThis.gm_authFailure();
+		});
+		expect(await screen.findByText(/Google Places is not configured/i)).toBeInTheDocument();
+	});
+
+	test('loads the Google Maps script when the tag is missing', async () => {
+		document.querySelector = jest.fn((selector) => {
+			if (selector === '#google-maps') return null;
+			if (selector === 'head') return document.head;
+			return originalQuerySelector(selector);
+		});
+		const appendSpy = jest.spyOn(document.head, 'appendChild');
+
+		render(<GoogleAutoComplete {...baseProps} />);
+
+		await waitFor(() => {
+			expect(appendSpy).toHaveBeenCalled();
+		});
+		const script = appendSpy.mock.calls.map((c) => c[0]).find((node) => node?.id === 'google-maps');
+		expect(script).toBeTruthy();
+		expect(script.src).toContain('maps.googleapis.com');
+		act(() => {
+			script.onload?.();
+		});
+		appendSpy.mockRestore();
+	});
+
+	test('marks Places unavailable when the Maps script fails to load', async () => {
+		document.querySelector = jest.fn((selector) => {
+			if (selector === '#google-maps') return null;
+			if (selector === 'head') return document.head;
+			return originalQuerySelector(selector);
+		});
+		const appendSpy = jest.spyOn(document.head, 'appendChild');
+
+		render(<GoogleAutoComplete {...baseProps} />);
+		await waitFor(() => {
+			expect(appendSpy).toHaveBeenCalled();
+		});
+		const script = appendSpy.mock.calls.map((c) => c[0]).find((node) => node?.id === 'google-maps');
+		act(() => {
+			script.onerror?.();
+		});
+		expect(await screen.findByText(/Google Places is not configured/i)).toBeInTheDocument();
+		appendSpy.mockRestore();
+	});
+
+	test('renders helperText and error props from the parent', () => {
+		render(<GoogleAutoComplete {...baseProps} error helperText='Parent helper' disabled />);
+		expect(screen.getByText('Parent helper')).toBeInTheDocument();
+		expect(screen.getByRole('combobox')).toBeDisabled();
+	});
+
 });
