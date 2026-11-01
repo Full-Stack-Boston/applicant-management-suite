@@ -207,5 +207,75 @@ describe('Navbar Component', () => {
 				})
 			);
 		});
+
+		it('saves preferences when the dialog callback receives form data', async () => {
+			render(<Navbar />);
+			fireEvent.click(screen.getByAltText('Profile'));
+			fireEvent.click(screen.getByText('Preferences'));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await act(async () => {
+				await callback({ email: false, sms: true, callMe: 'Pat', forwardingEnabled: true });
+			});
+			expect(firebase.saveCollectionData).toHaveBeenCalledWith(
+				'members',
+				'mem123',
+				expect.objectContaining({
+					callMe: 'Pat',
+					notifications: { email: false, sms: true, forwardingEnabled: true },
+				}),
+			);
+		});
+
+		it('ignores empty preferences form data', async () => {
+			render(<Navbar />);
+			fireEvent.click(screen.getByAltText('Profile'));
+			fireEvent.click(screen.getByText('Preferences'));
+			const callback = mockShowDialog.mock.calls[0][0].callback;
+			await act(async () => {
+				await callback(null);
+			});
+			expect(firebase.saveCollectionData).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Role and search blur edges', () => {
+		it('uses member picture for both role', () => {
+			useAuth.mockReturnValue({ user: { uid: '123' }, role: 'both' });
+			render(<Navbar />);
+			expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'my-face.jpg');
+		});
+
+		it('falls back to default avatar when member has no picture', () => {
+			useMailbox.mockReturnValue({
+				member: { ...defaultMember, picture: null },
+				unreadCount: 0,
+			});
+			render(<Navbar />);
+			expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'default.jpg');
+		});
+
+		it('clears search dropdown on blur after the close delay', async () => {
+			vi.useFakeTimers({ shouldAdvanceTime: true });
+			render(<Navbar />);
+			const input = screen.getByPlaceholderText('Search...');
+			fireEvent.change(input, { target: { value: 'valid search' } });
+			await act(async () => {
+				fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+			});
+			expect(screen.getByTestId('search-dropdown')).toBeInTheDocument();
+			fireEvent.blur(input);
+			await act(async () => {
+				vi.advanceTimersByTime(250);
+			});
+			expect(screen.queryByTestId('search-dropdown')).not.toBeInTheDocument();
+			vi.useRealTimers();
+		});
+
+		it('toggles to light mode when dark mode is active', () => {
+			useTheme.mockReturnValue({ darkMode: true, dispatch: mockDispatch });
+			render(<Navbar />);
+			fireEvent.click(screen.getByTestId('LightModeOutlinedIcon').closest('.item'));
+			expect(mockDispatch).toHaveBeenCalledWith({ type: 'TOGGLE' });
+		});
 	});
 });
