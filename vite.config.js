@@ -105,7 +105,7 @@ export default defineConfig(({ mode }) => ({
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      thresholds: { lines: 80 },
+      thresholds: { lines: 95 },
       exclude: [
         'node_modules/**',
         'src/**/*.{test,spec}.{js,jsx,ts,tsx}',

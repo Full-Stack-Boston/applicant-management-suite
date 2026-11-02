@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SiteSettings from './Settings';
 import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -41,9 +41,14 @@ vi.mock('../../config/data/firebase', () => ({
 	db: {},
 }));
 
+const { mockOnSnapshot, mockDoc } = vi.hoisted(() => ({
+	mockOnSnapshot: jest.fn(() => jest.fn()),
+	mockDoc: jest.fn(() => ({ path: 'videoBudget/status' })),
+}));
+
 vi.mock('firebase/firestore', () => ({
-	doc: jest.fn(() => ({ path: 'videoBudget/status' })),
-	onSnapshot: jest.fn(() => jest.fn()),
+	doc: mockDoc,
+	onSnapshot: mockOnSnapshot,
 }));
 
 // **FIX**: Added ApplicationType and other exports that Constants.js depends on
@@ -171,6 +176,9 @@ describe('SiteSettings Component', () => {
 
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockOnSnapshot.mockReset();
+		mockOnSnapshot.mockImplementation(() => jest.fn());
+		mockDoc.mockReturnValue({ path: 'videoBudget/status' });
 		useConfig.mockReturnValue(mockConfigData);
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 		useAlert.mockReturnValue({ showAlert: mockShowAlert, handleError: mockHandleError });
@@ -455,4 +463,78 @@ describe('SiteSettings Component', () => {
 			expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
 		});
 	});
+
+	test('hydrates video budget status from onSnapshot and tolerates missing docs', async () => {
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({ exists: () => true, data: () => ({ used: 120, period: '2026-11' }) });
+			return jest.fn();
+		});
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(await screen.findByText(/120/)).toBeInTheDocument();
+
+		cleanup();
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({ exists: () => false, data: () => ({}) });
+			return jest.fn();
+		});
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(screen.getByLabelText(/Video budget/i)).toBeInTheDocument();
+	});
+
+	test('warns when videoBudget status listen fails', async () => {
+		const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+		mockOnSnapshot.mockImplementation((_ref, _onNext, onError) => {
+			onError(new Error('status listen boom'));
+			return jest.fn();
+		});
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await waitFor(() => {
+			expect(warn).toHaveBeenCalled();
+			expect(String(warn.mock.calls.at(-1)[0])).toMatch(/videoBudget\/status listen failed/);
+		});
+		warn.mockRestore();
+	});
+
+
+	test('shows blocked video status chip and updates incomplete alert threshold', async () => {
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ used: 9000, period: '2026-11', blocked: true, allowed: 10000 }),
+			});
+			return jest.fn();
+		});
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(await screen.findByText(/blocked/i)).toBeInTheDocument();
+
+		// Enable incomplete alert and edit threshold (number path)
+		const switches = screen.getAllByRole('switch');
+		const incomplete = switches.find((el) => /Incomplete Count Alert/i.test(el.getAttribute('aria-label') || el.closest('label')?.textContent || ''));
+		// Toggle via label text
+		const incompleteSwitch = screen.getByRole('switch', { name: /Incomplete Count Alert/i });
+		if (!incompleteSwitch.checked) {
+			fireEvent.click(incompleteSwitch);
+		}
+		const threshold = await screen.findByLabelText(/Alert Threshold/i);
+		fireEvent.change(threshold, { target: { value: '25' } });
+		expect(threshold).toHaveValue(25);
+	});
+
+	test('changes videoBudget.mode via the Video budget select', async () => {
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(screen.getByLabelText(/Video budget/i)).toBeInTheDocument();
+		fireEvent.mouseDown(screen.getByLabelText(/Video budget/i));
+		const options = await screen.findAllByRole('option');
+		expect(options.length).toBeGreaterThan(1);
+		fireEvent.click(options[options.length - 1]);
+		// Changing mode should update local settings state (Save Settings still available)
+		expect(screen.getByRole('button', { name: /Save Settings/i })).toBeInTheDocument();
+	});
+
+
 });
