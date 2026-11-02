@@ -125,7 +125,7 @@ vi.mock('@mui/x-date-pickers', () => {
 					id: label,
 					'data-testid': `date-picker-${label}`,
 					value: value ? new Date(value).toISOString().split('T')[0] : '',
-					onChange: (e) => onChange(dayjs(e.target.value)),
+					onChange: (e) => onChange(e.target.value ? dayjs(e.target.value) : null),
 				})
 			),
 	};
@@ -333,5 +333,126 @@ describe('SiteSettings Component', () => {
 		await dialogCall.callback(true);
 
 		expect(mockHandleError).toHaveBeenCalledWith(testError, expect.stringContaining('adminAction'));
+	});
+
+	test('reports Parker rebrand save failures', async () => {
+		useConfig.mockReturnValue({
+			...mockConfigData,
+			WELCOME_MESSAGE: 'Welcome to Parker Memorial Fund',
+		});
+		const rebrandError = new Error('rebrand boom');
+		saveCollectionData.mockRejectedValueOnce(rebrandError);
+
+		render(<SiteSettings />);
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(rebrandError, 'rebrand-settings');
+		});
+	});
+
+	test('covers rebrand, grouping, save errors, and delivery controls', async () => {
+		useConfig.mockReturnValue({
+			...mockConfigData,
+			WELCOME_MESSAGE: 'Welcome to the Parker Fund',
+			MAIL_TO_GENERAL_EMAIL: 'general@test.com',
+			CONTACT_EMAIL_ALIAS: 'alias@test.com',
+			TAG_LIST: ['alpha', 'beta'],
+			automations: {
+				...mockConfigData.automations,
+				memberActivitySummary: {
+					enabled: true,
+					schedule: 'weekly',
+					recipients: 'legacy-not-array',
+				},
+			},
+		});
+
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		await waitFor(() => {
+			expect(saveCollectionData).toHaveBeenCalled();
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: expect.stringContaining('Parker branding') })
+			);
+		});
+
+		expect(screen.getByLabelText(/Mail To General Email/i)).toHaveValue('general@test.com');
+		expect(screen.getByLabelText(/Contact Email Alias/i)).toHaveValue('alias@test.com');
+
+		const tagInput = screen.getByLabelText(/Tag List/i);
+		fireEvent.change(tagInput, { target: { value: 'gamma, delta' } });
+		expect(tagInput).toHaveValue('gamma, delta');
+
+		const deliverySelect = screen.getAllByRole('combobox').find((el) => el.textContent?.includes('Demo') || el.getAttribute('aria-expanded') !== null);
+		fireEvent.mouseDown(deliverySelect || screen.getAllByRole('combobox')[0]);
+		fireEvent.click(await screen.findByRole('option', { name: /Connected/i }));
+
+		const saveError = new Error('save boom');
+		saveCollectionData.mockRejectedValueOnce(saveError);
+		fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(saveError, 'saveSettings');
+		});
+	});
+
+	test('covers applicant fetch errors, automation toggles, and template manager', async () => {
+		const fetchError = new Error('applicants boom');
+		getCollection.mockRejectedValueOnce(fetchError);
+
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(fetchError, 'fetchApplicants-settings');
+		});
+
+		fireEvent.click(screen.getByRole('switch', { name: /Incomplete Count Alert/i }));
+
+		await waitFor(() => {
+			expect(screen.getByLabelText(/Alert Threshold/i)).toBeInTheDocument();
+		});
+		fireEvent.change(screen.getByLabelText(/Alert Threshold/i), { target: { value: '25' } });
+
+		const scheduleSelect = screen.getAllByRole('combobox').find((el) => /weekly|daily/i.test(el.textContent || '')) || screen.getAllByRole('combobox')[0];
+		fireEvent.mouseDown(scheduleSelect);
+		fireEvent.click(await screen.findByRole('option', { name: /Daily/i }));
+
+		fireEvent.click(screen.getByRole('button', { name: /Manage Email Templates/i }));
+		expect(mockShowDialog).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'templateManager' })
+		);
+	});
+
+	test('covers parameterized admin action failures and date null clears', async () => {
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		const paramError = new Error('param boom');
+		mockWithParamsAction.mockRejectedValueOnce(paramError);
+		const actionCard = screen.getByText('Test Action (With Params)').closest('div');
+		fireEvent.click(within(actionCard).getByRole('button', { name: /Execute/i }));
+		const dialogCall = mockShowDialog.mock.calls[0][0];
+		await dialogCall.callback({ userId: 'app1', force: false });
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(paramError, 'adminAction-test-with-params');
+		});
+
+		const deadline = screen.getByLabelText(/Application Deadline/i);
+		fireEvent.change(deadline, { target: { value: '' } });
+	});
+
+	test('creates missing automation buckets when toggled', async () => {
+		useConfig.mockReturnValue({
+			...mockConfigData,
+			automations: {},
+		});
+
+		render(<SiteSettings />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		fireEvent.click(screen.getByRole('switch', { name: /Member Activity Summary/i }));
+		await waitFor(() => {
+			expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
+		});
 	});
 });
