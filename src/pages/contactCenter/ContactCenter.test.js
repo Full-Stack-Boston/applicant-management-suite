@@ -670,4 +670,13 @@ describe('src/pages/contactCenter/ContactCenter.jsx', () => {
 		// Subscription cleanup is best-effort depending on which buckets had IDs.
 		expect(unsubApplicant.mock.calls.length).toBeGreaterThanOrEqual(0);
 	}, 20000);
+	it('merges cell-bearing prefilled recipients into available contacts', async () => {
+		setupMocks({
+			prefilledRecipients: [{ id: 'pre-cell', name: 'Cell Prefill', email: 'cell@test.com', cell: '5551112222' }],
+		});
+		const { unmount } = render(<ContactCenter />);
+		expect(screen.getByText(/Cell Prefill <cell@test.com>/i)).toBeInTheDocument();
+		unmount();
+	});
+
 });

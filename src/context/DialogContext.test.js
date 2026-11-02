@@ -308,6 +308,14 @@ describe('DialogContext', () => {
 		fireEvent.click(screen.getByText('Option A'));
 		expect(callback).toHaveBeenCalledWith('A');
 	});
+	test('closes via dialog backdrop with maxWidth override and custom action cancel', () => {
+		const callback = jest.fn();
+		renderDialog('customActionDialog', { maxWidth: 'md' }, callback);
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		fireEvent.click(screen.getByText('Cancel'));
+		expect(callback).toHaveBeenCalledWith(null);
+	});
+
 });
 
 
