@@ -639,4 +639,44 @@ describe('CycleExpenses', () => {
 			expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
 		});
 	});
+
+	it('changes category via select and edits via the mobile unlock control', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+
+		// Prefer the last unlock control (mobile card twin of the same row)
+		const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+		await act(async () => {
+			fireEvent.click(unlocks[unlocks.length - 1]);
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0));
+
+		await act(async () => {
+			fireEvent.mouseDown(screen.getAllByRole('combobox').find((el) => /campership/i.test(el.textContent || '')) || screen.getAllByRole('combobox')[0]);
+		});
+		await waitFor(() => expect(screen.getByRole('option', { name: 'other' })).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByRole('option', { name: 'other' }));
+		});
+
+		await act(async () => {
+			const programInputs = screen.getAllByDisplayValue('Camp');
+			fireEvent.change(programInputs[programInputs.length - 1], { target: { value: 'Mobile Camp' } });
+			const amountInputs = screen.getAllByDisplayValue('100');
+			fireEvent.change(amountInputs[amountInputs.length - 1], { target: { value: '175' } });
+		});
+
+		await act(async () => {
+			const saves = screen.getAllByLabelText('Save expense row');
+			fireEvent.click(saves[saves.length - 1]);
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
+			const savedPayload = firebaseConfig.saveYearlyFinancesDoc.mock.calls.at(-1)[1];
+			expect(savedPayload.programExpenseItems[0].category).toBe('other');
+			expect(savedPayload.programExpenseItems[0].program).toBe('Mobile Camp');
+		});
+	});
 });

@@ -171,4 +171,162 @@ describe('MergeApplicantAccountsDialog', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(mockOnClose).toHaveBeenCalled();
 	});
+
+	it('handles merge callable failure', async () => {
+		mergeApplicantAccounts.mockRejectedValue(new Error('merge failed'));
+
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryApplicant, secondaryApplicant]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		await screen.findByText(/Alice Smith/);
+		fireEvent.click(screen.getByRole('button', { name: 'Merge Accounts' }));
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'merge-applicant-accounts');
+		});
+		expect(mockOnClose).not.toHaveBeenCalled();
+	});
+
+	it('selects secondary profile field values', async () => {
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryApplicant, secondaryApplicant]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		await screen.findByText(/Alice Smith/);
+		const secondaryRadios = screen.getAllByRole('radio', { name: 'Secondary' });
+		expect(secondaryRadios.length).toBeGreaterThan(0);
+		fireEvent.click(secondaryRadios[0]);
+		expect(secondaryRadios[0]).toBeChecked();
+	});
+
+	it('shows login keep options when both accounts have auth', async () => {
+		const secondaryWithAuth = {
+			...secondaryApplicant,
+			hasAuth: true,
+			authEmail: 'ally@example.com',
+		};
+		getApplicantsForMerge.mockResolvedValue({
+			data: { applicants: [primaryApplicant, secondaryWithAuth] },
+		});
+
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryApplicant, secondaryWithAuth]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		await screen.findByRole('heading', { name: 'Login to keep' });
+		const secondaryLogin = screen.getByRole('radio', { name: /Secondary.*ally@example.com/i });
+		fireEvent.click(secondaryLogin);
+		expect(secondaryLogin).toBeChecked();
+	});
+
+	it('shows empty applications message and formats picture/notifications', async () => {
+		const primaryRich = {
+			...primaryApplicant,
+			applications: [],
+			applicationsDetail: [],
+			picture: { displayName: 'Headshot.png' },
+			notifications: { email: true, sms: false },
+			callMe: '',
+			school: 'Demo High',
+		};
+		const secondarySparse = {
+			...secondaryApplicant,
+			applications: [],
+			applicationsDetail: [],
+			firstName: '',
+			email: '',
+			hasAuth: true,
+			authEmail: 'ally@example.com',
+		};
+		getApplicantsForMerge.mockResolvedValue({
+			data: { applicants: [primaryRich, secondarySparse] },
+		});
+
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryRich, secondarySparse]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		expect(await screen.findByText(/No applications on either account/i)).toBeInTheDocument();
+		expect(screen.getByText('Headshot.png')).toBeInTheDocument();
+		expect(screen.getByText(/Email: on, SMS: off/)).toBeInTheDocument();
+		expect(screen.getAllByText('(empty)').length).toBeGreaterThan(0);
+	});
+
+	it('skips lookup when an applicant id is missing', async () => {
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryApplicant, { ...secondaryApplicant, id: '' }]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(getApplicantsForMerge).not.toHaveBeenCalled();
+			expect(screen.queryByText('Loading account details…')).not.toBeInTheDocument();
+		});
+	});
+
+	it('defaults auth keep to secondary when only secondary has login', async () => {
+		const primaryNoAuth = { ...primaryApplicant, hasAuth: false, authEmail: null };
+		const secondaryAuth = { ...secondaryApplicant, hasAuth: true, authEmail: 'ally@example.com' };
+		getApplicantsForMerge.mockResolvedValue({
+			data: { applicants: [primaryNoAuth, secondaryAuth] },
+		});
+
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryNoAuth, secondaryAuth]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		await screen.findByText(/Login to keep/i);
+		expect(screen.getByRole('radio', { name: /Secondary.*ally@example.com/i })).toBeChecked();
+	});
+
+	it('uses application id fallbacks when applicationsDetail is missing', async () => {
+		const primaryIdsOnly = {
+			...primaryApplicant,
+			applicationsDetail: undefined,
+			applications: ['app-fallback-1'],
+		};
+		const secondaryIdsOnly = {
+			...secondaryApplicant,
+			applicationsDetail: undefined,
+			applications: ['app-fallback-2'],
+		};
+		getApplicantsForMerge.mockResolvedValue({
+			data: { applicants: [primaryIdsOnly, secondaryIdsOnly] },
+		});
+
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryIdsOnly, secondaryIdsOnly]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+
+		expect(await screen.findByText(/Application \(—\) — Unknown · Primary/)).toBeInTheDocument();
+		expect(screen.getByText(/Application \(—\) — Unknown · Secondary/)).toBeInTheDocument();
+	});
 });

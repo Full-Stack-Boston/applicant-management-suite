@@ -1,6 +1,6 @@
 // src/context/AlertContext.test.js
 import React, { useEffect } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { AlertProvider, useAlert } from './AlertContext';
 import { logEvent } from '../config/data/firebase';
 
@@ -146,5 +146,55 @@ describe('AlertContext', () => {
 
 		expect(await screen.findByText('Stable probe')).toBeInTheDocument();
 		expect(new Set(identities).size).toBe(1);
+	});
+
+	test('rejects invalid showAlert parameters', () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		render(
+			<AlertProvider>
+				<TestConsumer trigger={({ showAlert }) => showAlert('saved')} />
+			</AlertProvider>
+		);
+		expect(errorSpy).toHaveBeenCalledWith('❌ Invalid alert parameters passed to showAlert.');
+		errorSpy.mockRestore();
+	});
+
+	test('falls back when predefined category/type is unknown', async () => {
+		render(
+			<AlertProvider>
+				<TestConsumer trigger={({ showAlert }) => showAlert('missing', 'success')} />
+			</AlertProvider>
+		);
+		expect(await screen.findByText('Unknown alert')).toBeInTheDocument();
+	});
+
+	test('closes the snackbar via the alert close control', async () => {
+		render(
+			<AlertProvider>
+				<TestConsumer trigger={({ showAlert }) => showAlert({ message: 'Closeable', type: 'info' })} />
+			</AlertProvider>
+		);
+		expect(await screen.findByText('Closeable')).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: /close/i }));
+		expect(screen.queryByText('Closeable')).not.toBeInTheDocument();
+	});
+
+	test('handleError can suppress the snackbar while still logging', () => {
+		const mockError = { message: 'Quiet failure' };
+		render(
+			<AlertProvider>
+				<TestConsumer trigger={({ handleError }) => handleError(mockError, 'quiet', false)} />
+			</AlertProvider>
+		);
+		expect(logEvent).toHaveBeenCalledWith('Error: quiet', mockError);
+		expect(screen.queryByText('Quiet failure')).not.toBeInTheDocument();
+	});
+
+	test('useAlert throws outside of AlertProvider', () => {
+		const Outside = () => {
+			useAlert();
+			return null;
+		};
+		expect(() => render(<Outside />)).toThrow('useAlert must be used within an AlertProvider');
 	});
 });
