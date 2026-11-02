@@ -1228,6 +1228,11 @@ describe('src/config/data/firebase.js', () => {
 		cleanup();
 	});
 
+	it('getApplicationsByIDs returns null when the query fails', async () => {
+		mockGetDoc.mockRejectedValueOnce(new Error('apps-by-ids boom'));
+		await expect(FirebaseConfig.getApplicationsByIDs(['app-x'])).resolves.toBeNull();
+	});
+
 	it('migrateDeadlinesToCycleYear backfills cycleYear and site config', async () => {
 		mockGetDocs.mockResolvedValueOnce({
 			docs: [

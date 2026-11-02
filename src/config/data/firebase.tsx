@@ -755,19 +755,11 @@ export const getAllApplicantsSimple = async () => {
 	}));
 };
 
-export const getApplicationsForApplicant = async (
-	applicantId: string,
-	statuses: ApplicationStatusValue[] | null = [ApplicationStatus.eligible, ApplicationStatus.completed],
-) => {
+export const getApplicationsForApplicant = async (applicantId: string) => {
 	const appsRef = collection(db, collections.applications);
-	const q =
-		statuses === null
-			? query(appsRef, where('completedBy', '==', applicantId))
-			: query(appsRef, where('completedBy', '==', applicantId), where('status', 'in', statuses));
+	const q = query(appsRef, where('completedBy', '==', applicantId), where('status', 'in', ['Eligible', 'Completed']));
 	const snapshot = await getDocs(q);
-	return snapshot.docs
-		.map((doc) => ({ id: doc.id, ...doc.data() }))
-		.filter((app) => (app as DocumentData).status !== ApplicationStatus.deleted);
+	return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 };
 
 // --- 8. Applications (CRUD & Status) ---
@@ -2247,17 +2239,12 @@ export const getRealTimeDashboardApplicantOutlook = (callback: RealtimeCallback<
 		}
 	};
 
-	void getConfigFromDb()
-		.then((config) => {
-			cycleYear = siteConfigCycleYear(config);
-			configLoaded = true;
-			publish();
-		})
-		.catch((error) => {
-			logEvent('Error loading config for getRealTimeDashboardApplicantOutlook', error);
-			configLoaded = true;
-			publish();
-		});
+	// getConfigFromDb already swallows/logs failures and resolves null — no outer .catch needed.
+	void getConfigFromDb().then((config) => {
+		cycleYear = siteConfigCycleYear(config);
+		configLoaded = true;
+		publish();
+	});
 
 	try {
 		const unsubApps = onSnapshot(collection(db, collections.applications), (snapshot) => {

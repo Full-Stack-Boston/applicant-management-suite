@@ -27,6 +27,7 @@ import {
 	ViewRequestButton,
 	ViewEmailButton,
 	JoinInterviewButton,
+	ContactButton,
 } from './tableConfig';
 
 import * as FirebaseService from '../data/firebase';
@@ -1108,7 +1109,33 @@ describe('tableConfig.js', () => {
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: 'Interview deleted.' }));
 		});
 
-		it('covers empty and error activity states', async () => {
+	
+		it('ContactButton builds recipients for attachment and applicant name rows', async () => {
+			mockShowDialog.mockClear();
+			render(<ContactButton row={{ id: 'a1', attachmentType: 'essay', name: 'Essay Person', email: 'e@x.com', cell: '1' }} />);
+			fireEvent.click(screen.getByText('Contact'));
+			expect(mockShowDialog).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: 'contactDialog',
+					data: expect.objectContaining({
+						recipients: [expect.objectContaining({ name: 'Essay Person', email: 'e@x.com' })],
+					}),
+				}),
+			);
+
+			cleanup();
+			mockShowDialog.mockClear();
+			render(<ContactButton row={{ id: 'a2', applicantName: 'App Name', email: 'a@x.com', cell: '2' }} />);
+			fireEvent.click(screen.getByText('Contact'));
+			expect(mockShowDialog).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						recipients: [expect.objectContaining({ name: 'App Name' })],
+					}),
+				}),
+			);
+		});
+	it('covers empty and error activity states', async () => {
 			render(<UserLastLogin userId='' />);
 			expect(screen.getByText('N/A')).toBeInTheDocument();
 
