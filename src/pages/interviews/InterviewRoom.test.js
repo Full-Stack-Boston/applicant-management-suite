@@ -523,4 +523,57 @@ describe('InterviewRoom Component', () => {
 			expect(mockSetParticipantDetails).toHaveBeenCalled();
 		});
 	});
+
+	test('handles participant updated and left events', async () => {
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+
+		const updatedHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-updated')?.[1];
+		const leftHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-left')?.[1];
+		expect(updatedHandler).toEqual(expect.any(Function));
+		expect(leftHandler).toEqual(expect.any(Function));
+
+		await act(async () => {
+			updatedHandler({
+				participant: {
+					session_id: 'remote-1',
+					user_name: 'Remote User',
+					user_data: { role: 'member', picture_url: 'http://remote.pic' },
+				},
+			});
+			leftHandler({ participant: { session_id: 'remote-1' } });
+		});
+		expect(mockSetParticipantDetails).toHaveBeenCalled();
+	});
+
+	test('leaves call object when interview ends while still in meeting', async () => {
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+		useConfig.mockReturnValue({ AUTO_DELIBERATE: false });
+		mockCallObject.meetingState.mockReturnValue('joined-meeting');
+
+		let snapshotCallback;
+		onSnapshot.mockImplementation((_ref, onNext) => {
+			snapshotCallback = onNext;
+			onNext({ exists: () => true, data: () => ({ status: 'in-progress' }) });
+			return jest.fn();
+		});
+
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+
+		await act(async () => {
+			snapshotCallback({ exists: () => true, data: () => ({ status: 'completed' }) });
+		});
+		await waitFor(() => {
+			expect(mockCallObject.leave).toHaveBeenCalled();
+		});
+	});
 });
