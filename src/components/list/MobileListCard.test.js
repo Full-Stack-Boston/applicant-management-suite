@@ -176,4 +176,19 @@ describe('MobileListCard', () => {
 		expect(screen.queryByText('ghost')).not.toBeInTheDocument();
 		expect(screen.getByText('z')).toBeInTheDocument();
 	});
+
+	test('closes overflow menu via backdrop/onClose', () => {
+		render(
+			<MobileListCard item={{ id: 1 }} actionKeys={['a', 'b', 'c']} primaryCount={1}>
+				<div>Content</div>
+			</MobileListCard>
+		);
+		fireEvent.click(screen.getByLabelText('More actions'));
+		expect(screen.getByText('b')).toBeInTheDocument();
+		const backdrop = document.querySelector('.MuiBackdrop-root');
+		expect(backdrop).toBeTruthy();
+		fireEvent.click(backdrop);
+		expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+	});
 });
+

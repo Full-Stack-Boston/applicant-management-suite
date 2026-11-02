@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RescheduleDialog from './RescheduleDialog';
 import { httpsCallable } from 'firebase/functions';
 import { useAlert } from '../../context/AlertContext';
@@ -85,6 +85,22 @@ describe('RescheduleDialog', () => {
 			});
 			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Success', type: 'success' });
 			expect(mockOnSuccess).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it('returns early when interview is missing and surfaces reschedule errors', async () => {
+		render(<RescheduleDialog interview={null} onSuccess={mockOnSuccess} onCancel={mockOnCancel} />);
+		fireEvent.change(screen.getByLabelText('New Interview Time'), { target: { value: '2025-12-02T11:00' } });
+		fireEvent.click(screen.getByText('Schedule Only'));
+		expect(firebase.rescheduleInterview).not.toHaveBeenCalled();
+		cleanup();
+
+		firebase.rescheduleInterview.mockRejectedValueOnce(new Error('reschedule boom'));
+		render(<RescheduleDialog interview={mockInterview} onSuccess={mockOnSuccess} onCancel={mockOnCancel} />);
+		fireEvent.change(screen.getByLabelText('New Interview Time'), { target: { value: '2025-12-02T12:00' } });
+		fireEvent.click(screen.getByText('Schedule Only'));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'Failed to reschedule interview.');
 		});
 	});
 });
