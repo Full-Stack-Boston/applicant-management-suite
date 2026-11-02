@@ -105,4 +105,17 @@ describe('Single Component', () => {
 
 		expect(screen.getByTestId('not-found')).toBeInTheDocument();
 	});
+
+	test('renders NotFound when fetch rejects', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		useParams.mockReturnValue({ id: mockId });
+		getCollectionData.mockRejectedValue(new Error('fetch boom'));
+
+		render(<Single type='validType' />);
+
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(screen.getByTestId('not-found')).toBeInTheDocument();
+		expect(consoleSpy).toHaveBeenCalled();
+		consoleSpy.mockRestore();
+	});
 });
