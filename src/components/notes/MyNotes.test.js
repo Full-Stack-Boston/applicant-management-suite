@@ -159,4 +159,35 @@ describe('MyNotes Component', () => {
 		// Falls back to '/' in getParentPage
 		expect(mockNavigate).toHaveBeenCalledWith('/');
 	});
+
+	test('navigates to applicant parent pages', async () => {
+		useAuth.mockReturnValue({ member: { id: '1' } });
+		getNotesByAuthor.mockResolvedValue([
+			{
+				id: 'n2',
+				text: 'Applicant note',
+				createdAt: mockDate,
+				parent: { collection: 'applicants_collection', name: 'Applicant 1', id: 'applicant1' },
+			},
+		]);
+
+		render(<MyNotes />);
+		await screen.findByText('Applicant note');
+		fireEvent.click(screen.getByText('Applicant 1'));
+		expect(mockNavigate).toHaveBeenCalledWith('/applicant/applicant1');
+	});
+
+	test('handles notes fetch failure', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		useAuth.mockReturnValue({ member: { id: '1' } });
+		getNotesByAuthor.mockRejectedValue(new Error('notes down'));
+
+		await act(async () => {
+			render(<MyNotes />);
+		});
+
+		expect(await screen.findByText("You haven't written any notes yet.")).toBeInTheDocument();
+		expect(errorSpy).toHaveBeenCalled();
+		errorSpy.mockRestore();
+	});
 });

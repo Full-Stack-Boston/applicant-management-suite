@@ -56,4 +56,45 @@ describe('RequestForm Component', () => {
 			expect(mockAlert.showAlert).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 		});
 	});
+
+	test('handles application dropdown load failure', async () => {
+		getCollectionData.mockRejectedValue(new Error('profile fail'));
+		render(<RequestForm />);
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'Error loading applications for dropdown');
+		});
+	});
+
+	test('handles save failure', async () => {
+		getCollectionData.mockImplementation((id, col) => {
+			if (col === 'applications') return { completedBy: 'user1', attachments: 'att1' };
+			if (col === 'applicants') return { firstName: 'John', lastName: 'Doe' };
+			if (col === 'attachments') return {};
+			return {};
+		});
+		saveCollectionData.mockRejectedValue(new Error('save fail'));
+
+		render(<RequestForm />);
+		fireEvent.click(screen.getByText('Submit Request'));
+
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'Error saving request');
+		});
+	});
+
+	test('initializes from an existing request payload', async () => {
+		render(
+			<RequestForm
+				request={{
+					id: 'req-existing',
+					applicationID: 'app1',
+					attachmentType: 'letter',
+					pinCode: '123456',
+				}}
+			/>
+		);
+		await waitFor(() => {
+			expect(screen.getByText('Submit Request')).toBeInTheDocument();
+		});
+	});
 });
