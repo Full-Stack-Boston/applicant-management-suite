@@ -87,6 +87,25 @@ describe('Home marketing sections', () => {
 		expect(mockNavigate).toHaveBeenCalledWith('/board-registration');
 	});
 
+	it('navigates from the apply-now CTA on HomeSupportSection', () => {
+		wrap(<HomeSupportSection sectionId='support-apply' />);
+		const applyLabel = homePageContent.information.bottomSections.applyNow.button.label;
+		fireEvent.click(screen.getByRole('button', { name: applyLabel }));
+		expect(mockNavigate).toHaveBeenCalled();
+	});
+
+	it('returns null when HomeSupport bottom sections are disabled', () => {
+		const bottom = homePageContent.information.bottomSections;
+		const previous = bottom.enabled;
+		bottom.enabled = false;
+		try {
+			const { container } = wrap(<HomeSupportSection sectionId='support-off' />);
+			expect(container.querySelector('#support-off')).toBeNull();
+		} finally {
+			bottom.enabled = previous;
+		}
+	});
+
 	it('renders about, trust, requirements, support, and contact sections', () => {
 		wrap(
 			<>

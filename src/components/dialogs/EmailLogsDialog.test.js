@@ -21,6 +21,12 @@ vi.mock('../../config/data/firebase', () => ({
 			to: ['q@w.e'],
 			message: { subject: 'Queued' },
 		},
+		{
+			id: '4',
+			to: ['p@r.s'],
+			message: { subject: 'Processing' },
+			delivery: { state: 'PROCESSING' },
+		},
 	]),
 }));
 
@@ -33,5 +39,7 @@ describe('EmailLogsDialog', () => {
 		});
 		expect(screen.getByText('Fail')).toBeInTheDocument();
 		expect(screen.getByText('Queued')).toBeInTheDocument();
+		expect(screen.getByText('Processing')).toBeInTheDocument();
+		expect(screen.getByText('PROCESSING')).toBeInTheDocument();
 	});
 });

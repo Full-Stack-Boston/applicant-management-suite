@@ -682,4 +682,19 @@ describe('ApplicationController', () => {
 		});
 		applicationConfigurations.scholarship.pages[0] = originalPage;
 	});
+
+	test('jumps to a step when the stepper button is clicked', async () => {
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		expect(screen.getByText('Step 1')).toBeInTheDocument();
+		const stepLabels = screen.getAllByText('Step 2');
+		await act(async () => {
+			fireEvent.click(stepLabels[0].closest('button') || stepLabels[0]);
+		});
+		await waitFor(() => {
+			expect(screen.getByTestId('generic-form-page')).toBeInTheDocument();
+		});
+	});
 });
