@@ -581,4 +581,111 @@ describe('InterviewRoom Component', () => {
 			expect(mockCallObject.leave).toHaveBeenCalled();
 		});
 	});
+
+	test('returns guests home and covers participant/app-message/applicant edges', async () => {
+		const { getRealTimeMeetings } = await import('../../config/data/firebase');
+		getRealTimeMeetings.mockImplementation((_uid, _onlyUpcoming, cb) => {
+			cb([
+				{
+					id: 'next-b',
+					status: 'confirmed',
+					deliberation: false,
+					startTime: { toDate: () => new Date('2026-01-02T12:00:00Z') },
+				},
+				{
+					id: 'next-a',
+					status: 'confirmed',
+					deliberation: false,
+					startTime: { toDate: () => new Date('2026-01-01T12:00:00Z') },
+				},
+			]);
+			return jest.fn();
+		});
+
+		useAuth.mockReturnValue({
+			user: { uid: 'guest-1' },
+			member: null,
+			applicant: null,
+		});
+		onSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({ exists: () => true, data: () => ({ status: 'completed' }) });
+			return jest.fn();
+		});
+		const { unmount } = render(<InterviewRoom />);
+		fireEvent.click(await screen.findByText(/Return to Dashboard/i));
+		expect(mockNavigate).toHaveBeenCalledWith('/home');
+		unmount();
+
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+		getDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ applications: ['app-doc-1'] }),
+			})
+			.mockResolvedValueOnce({
+				exists: () => true,
+				id: 'app-doc-1',
+				data: () => ({ type: 'Scholarship' }),
+			})
+			.mockRejectedValueOnce(new Error('picture boom'));
+
+		onSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ status: 'in-progress', applicantId: 'applicant-1' }),
+			});
+			return jest.fn();
+		});
+
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+
+		const joinedHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-joined')?.[1];
+		const messageHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'app-message')?.[1];
+		expect(joinedHandler).toEqual(expect.any(Function));
+		expect(messageHandler).toEqual(expect.any(Function));
+
+		await act(async () => {
+			joinedHandler({
+				participant: { local: false, session_id: 'remote-9', user_id: 'mem-remote' },
+			});
+			messageHandler({
+				fromId: 'remote-9',
+				data: { type: 'USER_DETAILS', payload: { role: 'member', name: 'Remote' } },
+			});
+		});
+		await waitFor(() => {
+			expect(consoleSpy).toHaveBeenCalled();
+			expect(mockSetParticipantDetails).toHaveBeenCalled();
+		});
+		consoleSpy.mockRestore();
+	});
+
+	test('surfaces applicant detail fetch failures for members', async () => {
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+		getDoc.mockRejectedValueOnce(new Error('applicant boom'));
+		onSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ status: 'in-progress', applicantId: 'applicant-1' }),
+			});
+			return jest.fn();
+		});
+		render(<InterviewRoom />);
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'fetch-applicant-details');
+		});
+	});
+
 });
