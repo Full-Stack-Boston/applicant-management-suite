@@ -408,6 +408,50 @@ describe('InterviewRoom Component', () => {
 		});
 	});
 
+	test('navigates to the next interview when complete-and-next finishes', async () => {
+		const { getRealTimeMeetings } = await import('../../config/data/firebase');
+		getRealTimeMeetings.mockImplementation((_uid, _onlyUpcoming, cb) => {
+			cb([{ id: 'next-interview-9', status: 'confirmed' }]);
+			return jest.fn();
+		});
+		endInterview.mockResolvedValue(undefined);
+		updateInterviewStatus.mockResolvedValue(undefined);
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+
+		let snapshotCallback;
+		onSnapshot.mockImplementation((_ref, onNext) => {
+			snapshotCallback = onNext;
+			onNext({ exists: () => true, data: () => ({ status: 'in-progress' }) });
+			return jest.fn();
+		});
+
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await waitFor(() => expect(screen.getByTestId('call-ui')).toBeInTheDocument());
+
+		fireEvent.click(screen.getByText('Complete And Next'));
+		await waitFor(() => {
+			expect(endInterview).toHaveBeenCalled();
+		});
+
+		await act(async () => {
+			snapshotCallback({ exists: () => true, data: () => ({ status: 'completed' }) });
+		});
+
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: expect.stringMatching(/Moving to the next interview/) })
+			);
+			expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining('next-interview-9'));
+		});
+	});
+
 	test('returns applicants to apply from the concluded screen', async () => {
 		onSnapshot.mockImplementation((ref, onNext) => {
 			onNext({ exists: () => true, data: () => ({ status: 'completed' }) });
