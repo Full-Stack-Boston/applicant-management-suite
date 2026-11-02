@@ -646,9 +646,71 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockGetDocs).toHaveBeenCalled();
 	});
 
+	it('getMeetings resolves applicant display names for committee view', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'm1', data: () => ({ applicantId: 'a1', status: 'scheduled' }) },
+				{ id: 'm2', data: () => ({ applicantId: 'missing', status: 'scheduled' }) },
+				{ id: 'm3', data: () => ({ applicantId: 'err', status: 'scheduled' }) },
+				{ id: 'm4', data: () => ({ status: 'scheduled' }) },
+			],
+		});
+		mockGetDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ callMe: 'Ace', firstName: 'Ada', lastName: 'Lovelace' }),
+			})
+			.mockResolvedValueOnce({
+				exists: () => false,
+				data: () => ({}),
+			})
+			.mockRejectedValueOnce(new Error('name fail'));
+
+		const meetings = await FirebaseConfig.getMeetings('committee', true);
+		expect(meetings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: 'm1', displayName: 'Ace | Ada Lovelace' }),
+				expect.objectContaining({ id: 'm2', displayName: 'Unknown Applicant' }),
+				expect.objectContaining({ id: 'm3', displayName: 'Error fetching name' }),
+				expect.objectContaining({ id: 'deliberation', deliberation: true }),
+			])
+		);
+	});
+
 	it('getRealTimeMeetings', () => {
 		FirebaseConfig.getRealTimeMeetings('1', true, jest.fn());
 		expect(mockOnSnapshot).toHaveBeenCalled();
+	});
+
+	it('getRealTimeMeetings enriches applicant names and swallows lookup failures', async () => {
+		const cb = jest.fn();
+		mockGetDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ callMe: 'Bo', firstName: 'Bob', lastName: 'Builder' }),
+			})
+			.mockRejectedValueOnce(new Error('rt name fail'));
+		mockOnSnapshot.mockImplementationOnce((_q, onNext) => {
+			onNext({
+				docs: [
+					{ id: 'rt1', data: () => ({ applicantId: 'a1' }) },
+					{ id: 'rt2', data: () => ({ applicantId: 'err' }) },
+					{ id: 'rt3', data: () => ({}) },
+				],
+			});
+			return jest.fn();
+		});
+
+		FirebaseConfig.getRealTimeMeetings('u1', false, cb);
+		await vi.waitFor(() => expect(cb).toHaveBeenCalled());
+		const payload = cb.mock.calls.at(-1)[0];
+		expect(payload).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: 'rt1', displayName: 'Bo | Bob Builder' }),
+				expect.objectContaining({ id: 'rt2' }),
+				expect.objectContaining({ id: 'rt3' }),
+			])
+		);
 	});
 
 	it('getSchedulableInterviews', async () => {
