@@ -146,6 +146,7 @@ vi.mock('../data/firebase', () => ({
 	bulkUpdateInterviewStatus: jest.fn(),
 	createDeliberationRoom: jest.fn(),
 	deleteDeliberationRoom: jest.fn(),
+	bulkDeleteInterviews: jest.fn(),
 	db: {},
 	functions: {},
 }));
@@ -580,6 +581,59 @@ describe('tableConfig.js', () => {
 
 			await updateAction.onClick(['int1'], [], { showDialog: mockShowDialog, showAlert: mockShowAlert, handleError: mockHandleError });
 			expect(FirebaseService.bulkUpdateInterviewStatus).toHaveBeenCalledWith({ interviewIds: ['int1'], newStatus: 'Completed' });
+		});
+
+		it('Request/Scheduler Toolbar: bulk action failure edges', async () => {
+			const awaitConfirm = async ({ callback }) => {
+				await callback(true);
+			};
+			const requestActions = TableConfig.getRequestToolbarActions({ config: { APPLICATION_DEADLINE: '2026-12-31' } });
+			const resend = requestActions.find((a) => a.label === 'Resend');
+			const cancel = requestActions.find((a) => a.label === 'Cancel');
+			FirebaseService.updateCollectionData.mockRejectedValueOnce(new Error('resend fail'));
+			resend.onClick(
+				['req1'],
+				[{ id: 'req1' }],
+				{
+					showDialog: awaitConfirm,
+					showAlert: mockShowAlert,
+					handleError: mockHandleError,
+					config: { APPLICATION_DEADLINE: '2026-12-31' },
+				}
+			);
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-resend-requests');
+			});
+
+			mockBatchCommit.mockRejectedValueOnce(new Error('cancel fail'));
+			cancel.onClick(
+				['req1'],
+				[{ id: 'req1' }],
+				{
+					showDialog: awaitConfirm,
+					showAlert: mockShowAlert,
+					handleError: mockHandleError,
+				}
+			);
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-cancel-requests');
+			});
+
+			const schedulerActions = TableConfig.getSchedulerToolbarActions({});
+			const deleteSelected = schedulerActions.find((a) => a.label === 'Delete Selected');
+			FirebaseService.bulkDeleteInterviews.mockRejectedValueOnce(new Error('delete slots fail'));
+			deleteSelected.onClick(
+				['int1'],
+				[{ id: 'int1' }],
+				{
+					showDialog: awaitConfirm,
+					showAlert: mockShowAlert,
+					handleError: mockHandleError,
+				}
+			);
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'Failed to delete interviews.');
+			});
 		});
 
 		it('Interview Toolbar: deliberation open/close and update failure edges', async () => {
