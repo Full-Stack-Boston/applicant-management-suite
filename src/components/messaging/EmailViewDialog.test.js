@@ -143,4 +143,51 @@ describe('EmailViewDialog', () => {
 		});
 		expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
 	});
+
+	it('handles toggle-read failure', async () => {
+		updateEmailReadStatus.mockRejectedValueOnce(new Error('toggle fail'));
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
+		fireEvent.click(screen.getByRole('button', { name: 'Mark as Unread' }));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'toggle-read-status-dialog');
+		});
+	});
+
+	it('handles delete failure', async () => {
+		deleteZohoEmail.mockRejectedValueOnce(new Error('delete fail'));
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
+		fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'delete-email-dialog');
+		});
+		expect(mockOnClose).not.toHaveBeenCalled();
+	});
+
+	it('handles attachment download failure', async () => {
+		fetchAttachmentContent.mockRejectedValueOnce(new Error('download fail'));
+		HTMLAnchorElement.prototype.click = jest.fn();
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
+		fireEvent.click(screen.getByRole('button', { name: /Attachments \(1\)/i }));
+		await userEvent.click(await screen.findByText(/document.pdf/i));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'download-attachment');
+		});
+	});
+
+	it('renders N/A for missing header fields and marks unread as read', async () => {
+		const sparseEmail = {
+			...mockEmail,
+			isRead: false,
+			headerContent: { Subject: [], From: [], To: [], Cc: [], Date: [] },
+			attachments: [],
+		};
+		render(<MemoryRouter><EmailViewDialog email={sparseEmail} onClose={mockOnClose} /></MemoryRouter>);
+		expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
+		fireEvent.click(screen.getByRole('button', { name: 'Mark as Read' }));
+		await waitFor(() => {
+			expect(updateEmailReadStatus).toHaveBeenCalledWith(
+				expect.objectContaining({ status: 'read' })
+			);
+		});
+	});
 });
