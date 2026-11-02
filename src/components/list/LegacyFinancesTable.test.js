@@ -16,8 +16,8 @@ describe('LegacyFinancesTable', () => {
 			total_allotted_disbursement: 5000,
 			prior_year_clawback: 0,
 			renewable_scholarships: [{ recipient_name: 'Applicant A', grade: 12, total_disbursement: 1000 }],
-			non_renewable_grants: [],
-			non_sg_items: [],
+			non_renewable_grants: [{ recipient_name: 'Grant Kid', grade: 10, grant_amount: 500 }],
+			non_sg_items: [{ program: 'Summer Camp', request: 200, disbursement: 180 }],
 			financial_summary: {
 				scholarships_grants: { amount_available: 4000 },
 				non_scholarship_items: { amount_available: 1000 },
@@ -46,6 +46,8 @@ describe('LegacyFinancesTable', () => {
 		// Check for content inside the collapsible area
 		expect(screen.getByText('Renewable Scholarships')).toBeInTheDocument();
 		expect(screen.getByText('Applicant A')).toBeInTheDocument();
+		expect(screen.getByText('Summer Camp')).toBeInTheDocument();
+		expect(screen.getByText('Grant Kid')).toBeInTheDocument();
 	});
 
 	test('renders provided title if prop passed', () => {
