@@ -1642,4 +1642,25 @@ describe('src/config/data/firebase.js', () => {
 		FirebaseConfig.getRealTimeInterviewsByWindow(2026, cb);
 		FirebaseConfig.getRealTimeNewApplicantsThisYear(cb, 2);
 	});
+
+	it('getRequestData returns null on fetch errors', async () => {
+		mockGetDoc.mockRejectedValueOnce(new Error('request boom'));
+		await expect(FirebaseConfig.getRequestData('req-1')).resolves.toBeNull();
+	});
+
+	it('getRealTimeApplicantsByApplicationID cleanup unsubscribes listeners', () => {
+		const unsub = jest.fn();
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				id: 'u1',
+				data: () => ({ firstName: 'Ada' }),
+			});
+			return unsub;
+		});
+		const cleanup = FirebaseConfig.getRealTimeApplicantsByApplicationID(['app-1'], jest.fn());
+		expect(typeof cleanup).toBe('function');
+		cleanup();
+		expect(unsub).toHaveBeenCalled();
+	});
 });

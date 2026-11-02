@@ -148,4 +148,19 @@ describe('ComposeEmailDialog', () => {
 			expect(btn).not.toBeDisabled();
 		});
 	});
+
+	it('warns when recipients are missing and surfaces send failures', async () => {
+		render(<ComposeEmailDialog onSuccess={mockOnSuccess} onClose={mockOnClose} />);
+		fireEvent.click(screen.getByRole('button', { name: 'Send Email' }));
+		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Please specify at least one recipient.', type: 'warning' });
+		expect(sendZohoEmail).not.toHaveBeenCalled();
+
+		sendZohoEmail.mockRejectedValueOnce(new Error('send boom'));
+		fireEvent.change(screen.getByLabelText(/To/i), { target: { value: 'ok@example.com' } });
+		fireEvent.click(screen.getByRole('button', { name: 'Send Email' }));
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'send-zoho-email');
+		});
+	});
 });
+
