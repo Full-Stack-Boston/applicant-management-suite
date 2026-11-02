@@ -967,6 +967,10 @@ describe('tableConfig.js', () => {
 			FirebaseService.getUserAuthRecord.mockRejectedValueOnce(new Error('login unavailable'));
 			render(<UserActivityStack userId='missing' />);
 			expect((await screen.findAllByText('Never')).length).toBeGreaterThan(0);
+
+			cleanup();
+			render(<UserActivityStack userId='' />);
+			expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
 		});
 
 		it('handles picture and date helper edge values', () => {

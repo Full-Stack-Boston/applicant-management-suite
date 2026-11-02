@@ -185,4 +185,28 @@ describe('AuthContext', () => {
 		expect(logoutUser).toHaveBeenCalled();
 		expect(screen.getByTestId('user-email')).toHaveTextContent('No User');
 	});
+
+	test('marks profiles ready when realtime listeners are unavailable', async () => {
+		getRealTimeDocument.mockReturnValue(undefined);
+		render(
+			<AuthProvider>
+				<TestConsumer />
+			</AuthProvider>
+		);
+
+		await act(async () => {
+			mockAuthStateCallback({ uid: 'no-listen', email: 'ghost@test.com' });
+		});
+
+		expect(screen.getByTestId('user-email')).toHaveTextContent('ghost@test.com');
+		expect(screen.getByTestId('user-role')).toHaveTextContent('No Role');
+	});
+
+	test('useAuth throws outside AuthProvider', () => {
+		const Outside = () => {
+			useAuth();
+			return null;
+		};
+		expect(() => render(<Outside />)).toThrow('useAuth must be used within an AuthProvider');
+	});
 });
