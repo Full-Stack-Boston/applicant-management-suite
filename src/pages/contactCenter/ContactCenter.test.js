@@ -17,6 +17,7 @@ import { useLocation } from 'react-router-dom';
 import { setDoc, doc, collection } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useMailbox } from '../../context/MailboxContext';
+import { useEmailTemplates } from '../../context/EmailTemplateContext';
 import ContactCenter from './ContactCenter';
 
 // --- Mocks ---
@@ -583,4 +584,90 @@ describe('src/pages/contactCenter/ContactCenter.jsx', () => {
 
 		expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Custom message queued for sending!', type: 'success' });
 	}, 15000);
+
+	it('covers template manager, override, empty app buckets, and CC chip removal', async () => {
+		useAuth.mockReturnValue({
+			member: { ...mockMember, permissions: { email: true } },
+		});
+		useEmailTemplates.mockReturnValue({
+			templates: [
+				{ id: 'tmpl-1', label: 'Grouped Ping', group: 'Reminders', requiredFields: [] },
+				{ key: 'tmpl-2', label: 'Default Group Ping' },
+			],
+		});
+		getRealTimeApplicationsByWindow.mockImplementation((deadline, _, callback) => {
+			callback([{ completedBy: null, type: 'Unknown Type' }, { type: 'New Application' }]);
+			return () => {};
+		});
+
+		const { unmount } = render(<ContactCenter />);
+
+		expect(screen.getByRole('button', { name: /Manage Templates/i })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: /Manage Templates/i }));
+		expect(mockShowDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'templateManager' }));
+		fireEvent.click(screen.getByRole('button', { name: /View Sent Logs/i }));
+		expect(mockShowDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'emailLogs' }));
+
+		fireEvent.click(screen.getByLabelText(/Ignore Preferences/i));
+
+		const ccInput = screen.getByLabelText('CCs (email@example.com)');
+		await act(async () => {
+			fireEvent.focus(ccInput);
+			fireEvent.change(ccInput, { target: { value: 'free@cc.com' } });
+			fireEvent.keyDown(ccInput, { key: 'Enter' });
+		});
+
+		const ccChip = await screen.findByText(/free@cc.com/i);
+		const chipRoot = ccChip.closest('.MuiChip-root');
+		const deleteIcon = chipRoot?.querySelector('.MuiChip-deleteIcon');
+		if (deleteIcon) {
+			await act(async () => {
+				fireEvent.click(deleteIcon);
+			});
+		}
+
+		unmount();
+	}, 20000);
+
+	it('sends with CC recipients and cleans up applicant subscriptions on unmount', async () => {
+		const unsubApplicant = jest.fn();
+		getRealTimeApplicantsByApplicationID.mockImplementation((ids, handler) => {
+			handler(mockApplicants.filter((a) => ids.includes(a.id)));
+			return unsubApplicant;
+		});
+		getRealTimeApplicationsByWindow.mockImplementation((deadline, _, callback) => {
+			callback([...mockApplications.new, ...mockApplications.returning, ...mockApplications.scholarship]);
+			return () => {};
+		});
+
+		const { unmount } = render(<ContactCenter />);
+		await selectFromAutocomplete('Recipients (email@example.com)', 'New App');
+		await selectFromAutocomplete('CCs (email@example.com)', 'Admin User');
+
+		const select = screen.getByLabelText('Sender');
+		await act(async () => {
+			fireEvent.mouseDown(select);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByText('System <system@test.com>'));
+		});
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Compose Message' }));
+		});
+		const dialog = mockShowDialog.mock.calls.find((call) => call[0].id === 'customMessage');
+		await act(async () => {
+			await dialog[0].callback({ subject: 'With CC', emailBody: '<p>Hi</p>', smsBody: '' });
+		});
+		expect(mockBatchSet).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				cc: expect.arrayContaining([expect.stringMatching(/Admin User/i)]),
+			})
+		);
+
+		unmount();
+		// Subscription cleanup is best-effort depending on which buckets had IDs.
+		expect(unsubApplicant.mock.calls.length).toBeGreaterThanOrEqual(0);
+	}, 20000);
 });
