@@ -1132,12 +1132,7 @@ const CycleExpenses = () => {
 					) : null}
 				</Box>
 
-				<Button
-					startIcon={<AddIcon />}
-					onClick={addExpense}
-					size='small'
-					sx={{ mb: 3 }}
-					disabled={editingExpenseIndex !== null}>
+				<Button startIcon={<AddIcon />} onClick={addExpense} size='small' sx={{ mb: 3 }}>
 					Add program expense
 				</Button>
 

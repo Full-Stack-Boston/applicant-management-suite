@@ -182,5 +182,12 @@ describe('ManualUploader Component', () => {
 		});
 		expect(screen.getByText(/MB/i)).toBeInTheDocument();
 	});
+
+	test('navigates back from the Cancel action button', () => {
+		render(<ManualUploader />);
+		fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(mockNavigate).toHaveBeenCalledWith(-1);
+	});
+
 });
 

@@ -51,20 +51,23 @@ const firebaseMocks = vi.hoisted(() => ({
 	mockBatchDelete: vi.fn(),
 	mockBatchUpdate: vi.fn(),
 	mockBatchCommit: vi.fn(),
+	mockIsAnalyticsSupported: vi.fn(() => Promise.resolve(false)),
+	mockGetAnalytics: vi.fn(() => ({})),
+	mockAuthState: { currentUser: { uid: 'test-uid' } },
 }));
-const { mockGetDoc, mockGetDocs, mockSetDoc, mockUpdateDoc, mockAddDoc, mockDeleteDoc, mockQuery, mockCollection, mockWhere, mockOrderBy, mockLimit, mockOnSnapshot, mockDoc, mockGetCountFromServer, mockHttpsCallable, mockSignIn, mockSignOut, mockCreateUser, mockUploadBytes, mockGetDownloadURL, mockDeleteObject, mockWriteBatch, mockBatchDelete, mockBatchUpdate, mockBatchCommit } = firebaseMocks;
+const { mockGetDoc, mockGetDocs, mockSetDoc, mockUpdateDoc, mockAddDoc, mockDeleteDoc, mockQuery, mockCollection, mockWhere, mockOrderBy, mockLimit, mockOnSnapshot, mockDoc, mockGetCountFromServer, mockHttpsCallable, mockSignIn, mockSignOut, mockCreateUser, mockUploadBytes, mockGetDownloadURL, mockDeleteObject, mockWriteBatch, mockBatchDelete, mockBatchUpdate, mockBatchCommit, mockIsAnalyticsSupported, mockGetAnalytics, mockAuthState } = firebaseMocks;
 let FirebaseConfig;
 
 
 // --- MOCKS ---
 		vi.mock('firebase/app', () => ({ initializeApp: vi.fn() }));
 		vi.mock('firebase/analytics', () => ({
-			getAnalytics: vi.fn(),
-			isSupported: vi.fn(() => Promise.resolve(false)),
+			getAnalytics: mockGetAnalytics,
+			isSupported: mockIsAnalyticsSupported,
 		}));
 
 		vi.mock('firebase/auth', () => ({
-			getAuth: jest.fn(() => ({ currentUser: { uid: 'test-uid' } })),
+			getAuth: jest.fn(() => mockAuthState),
 			signInWithEmailAndPassword: mockSignIn,
 			createUserWithEmailAndPassword: mockCreateUser,
 			signOut: mockSignOut,
@@ -177,14 +180,16 @@ let FirebaseConfig;
 			SearchableCollections: {
 				test: { collection: 'testCol', fields: ['name'] },
 			},
-			applicationSpecificCollections: ['applications'],
+			applicationSpecificCollections: ['applications', 'attachments'],
 		}));
 
 describe('src/config/data/firebase.js', () => {
 	beforeEach(async () => {
 		vi.resetModules();
 		vi.clearAllMocks();
-
+		mockAuthState.currentUser = { uid: 'test-uid' };
+		mockIsAnalyticsSupported.mockResolvedValue(false);
+		delete process.env.REACT_APP_ENABLE_ANALYTICS;
 
 		FirebaseConfig = await import('./firebase');
 
@@ -1828,4 +1833,631 @@ describe('src/config/data/firebase.js', () => {
 		mockUpdateDoc.mockRejectedValueOnce(new Error('invalidate boom'));
 		await expect(FirebaseConfig.invalidateRequest('req-x')).resolves.toBe(false);
 	});
+
+	it('bulk8 empty application IDs and string CYCLE_YEAR', async () => {
+		const cb = jest.fn();
+		const emptyCleanup = FirebaseConfig.getRealTimeApplicationsByIDs([], cb);
+		expect(cb).toHaveBeenCalledWith([]);
+		expect(typeof emptyCleanup).toBe('function');
+		emptyCleanup();
+
+		const emptyCleanup2 = FirebaseConfig.getRealTimeApplicationsByIDs(null, cb);
+		expect(cb).toHaveBeenCalledWith([]);
+		emptyCleanup2();
+
+		expect(FirebaseConfig.siteConfigCycleYear({ CYCLE_YEAR: '2027' })).toBe(2027);
+		expect(FirebaseConfig.siteConfigCycleYear({ CYCLE_YEAR: ' 2028 ' })).toBe(2028);
+
+		await expect(FirebaseConfig.searchCollections([])).rejects.toThrow(/non-empty array/);
+		await expect(FirebaseConfig.searchCollections(null)).rejects.toThrow(/non-empty array/);
+
+		mockQuery.mockImplementationOnce(() => {
+			throw new Error('legacy query boom');
+		});
+		const legacyCb = jest.fn();
+		const legacyUnsub = FirebaseConfig.getRealTimeLegacyFinances(legacyCb, { collection: 'legacyFinances' });
+		expect(legacyCb).toHaveBeenCalledWith([]);
+		expect(typeof legacyUnsub).toBe('function');
+		mockQuery.mockReset();
+		mockQuery.mockImplementation((...args) => args);
+
+		mockUpdateDoc.mockRejectedValueOnce(new Error('link boom'));
+		expect(await FirebaseConfig.linkAwardToYearlyFinances(2026, 'award-1')).toBe(false);
+		mockUpdateDoc.mockRejectedValueOnce(new Error('unlink boom'));
+		expect(await FirebaseConfig.unlinkAwardFromYearlyFinances(2026, 'award-1')).toBe(false);
+
+		// profiles miss first, then applicants/members path uses address/city/state/zip parts
+		mockGetDoc
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) })
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ firstName: 'Ada', lastName: 'Lovelace', address: '1 Main', city: 'Boston', state: 'MA', zip: '02118' }),
+			});
+		const addr = await FirebaseConfig.getMemberOrApplicantAddress('u-addr');
+		expect(addr.name).toMatch(/Ada/);
+		expect(addr.address).toMatch(/Boston/);
+	});
+
+	it('covers request status ranking via realtime requests for cycle year', async () => {
+		const cb = jest.fn();
+		const errorHandlers = [];
+		let snapIdx = 0;
+		mockOnSnapshot.mockImplementation((_q, onNext, onError) => {
+			errorHandlers.push(onError);
+			if (snapIdx === 0) {
+				onNext({
+					docs: [
+						{ id: 'r1', data: () => ({ name: 'B', completed: true, attempts: 0, applicationID: 'a1' }) },
+						{ id: 'r2', data: () => ({ name: 'A', completed: false, attempts: 5, applicationID: 'a1' }) },
+						{ id: 'r3', data: () => ({ name: 'C', completed: false, attempts: 1, applicationID: 'a1' }) },
+					],
+				});
+			} else {
+				onNext({
+					docs: [{ id: 'a1', data: () => ({ cycleYear: 2026, status: 'Eligible' }) }],
+				});
+			}
+			snapIdx += 1;
+			return jest.fn();
+		});
+		const cleanup = FirebaseConfig.getRealTimeRequestsForCycleYear(2026, cb);
+		expect(cb).toHaveBeenCalled();
+		const ranked = cb.mock.calls.at(-1)[0];
+		// rank: pending(0) < attempts>=5(1) < completed(2)
+		expect(ranked.map((r) => r.name)).toEqual(['C', 'A', 'B']);
+		errorHandlers[0]?.(new Error('requests boom'));
+		errorHandlers[1]?.(new Error('apps boom'));
+		expect(typeof cleanup).toBe('function');
+		cleanup();
+	});
+
+	it('covers subscribeUserLastSeen null callback path and award realtime empty guard', () => {
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({ exists: () => false, data: () => null });
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u-missing', cb);
+		expect(cb).toHaveBeenCalledWith(null);
+	});
+
+	it('bulk9 guards: empty prefs/ids/email, notes auth, applicants by id null', async () => {
+		await expect(FirebaseConfig.updateUserPreferences('', 'users', { theme: 'x' })).resolves.toBeUndefined();
+		await expect(FirebaseConfig.updateUserPreferences('u1', '', { theme: 'x' })).resolves.toBeUndefined();
+		await expect(FirebaseConfig.getDocumentsByIDs('users', [])).resolves.toEqual([]);
+		await expect(FirebaseConfig.getDocumentsByIDs('users', null)).resolves.toEqual([]);
+		await expect(FirebaseConfig.findApplicantAccountsByEmail('   ')).resolves.toEqual([]);
+		await expect(FirebaseConfig.findApplicantAccountsByEmail('')).resolves.toEqual([]);
+
+		const savedUser = FirebaseConfig.auth.currentUser;
+		FirebaseConfig.auth.currentUser = null;
+		expect(typeof FirebaseConfig.getRealTimeNotes('users', 'u1', jest.fn())).toBe('function');
+		FirebaseConfig.auth.currentUser = savedUser;
+
+		await expect(FirebaseConfig.getNotesByAuthor('')).resolves.toEqual([]);
+		await expect(FirebaseConfig.getNotesByAuthor(null)).resolves.toEqual([]);
+
+		expect(FirebaseConfig.getRealTimeApplicantsByApplicationID([], jest.fn())).toBeNull();
+		expect(FirebaseConfig.getRealTimeApplicantsByApplicationID(null, jest.fn())).toBeNull();
+		expect(FirebaseConfig.getRealTimeApplicantsByApplicationID(undefined, jest.fn())).toBeNull();
+	});
+
+	it('bulk9 findApplicantAccountsByEmail excludeId and dual-case queries', async () => {
+		mockGetDocs.mockResolvedValue({
+			empty: false,
+			docs: [
+				{ id: 'keep', data: () => ({ email: 'Ada@Example.com' }) },
+				{ id: 'skip-me', data: () => ({ email: 'Ada@Example.com' }) },
+			],
+		});
+		const matches = await FirebaseConfig.findApplicantAccountsByEmail('Ada@Example.com', 'skip-me');
+		expect(matches.every((m) => m.id !== 'skip-me')).toBe(true);
+		expect(matches.some((m) => m.id === 'keep')).toBe(true);
+	});
+
+	it('bulk9 migrateDeadlines timestamp window/deadline and siteConfig write + catch', async () => {
+		const ts = { toDate: () => new Date('2024-06-15T12:00:00Z') };
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'ts-app', data: () => ({ window: ts }) }, // cycleYear+deadline from timestamp
+				{ id: 'num-app', data: () => ({ window: 2023 }) }, // number parseCycleYear
+				{ id: 'date-deadline', data: () => ({ deadline: new Date('2022-03-01') }) },
+				{ id: 'bad-window', data: () => ({ window: { notATimestamp: true } }) },
+			],
+		});
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CONFIG_ID: 'cfg-ts', APPLICATION_DEADLINE: '2027-11-01' }),
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		mockUpdateDoc.mockResolvedValueOnce(true);
+		const ok = await FirebaseConfig.migrateDeadlinesToCycleYear();
+		expect(ok.applications).toBeGreaterThanOrEqual(1);
+		expect(ok.siteConfig).toBe(true);
+
+		mockGetDocs.mockResolvedValueOnce({ docs: [] });
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CONFIG_ID: 'cfg-fail', APPLICATION_DEADLINE: '2027-11-01' }),
+		});
+		mockUpdateDoc.mockRejectedValueOnce(new Error('siteConfig write boom'));
+		const fail = await FirebaseConfig.migrateDeadlinesToCycleYear();
+		expect(fail.errors.some((e) => /SiteConfig/.test(e))).toBe(true);
+	});
+
+	it('bulk9 backfillApplicantGradYears hits final normalize null for odd objects', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'odd', data: () => ({ gradYear: { seconds: 1 } }) }, // object without toDate
+				{ id: 'nullish', data: () => ({ gradYear: null }) },
+				{ id: 'bool', data: () => ({ gradYear: true }) },
+			],
+		});
+		const results = await FirebaseConfig.backfillApplicantGradYears();
+		expect(results.skipped).toBeGreaterThanOrEqual(3);
+	});
+
+	it('bulk9 logEvent console paths for errors and catch debug', async () => {
+		const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		const dbgSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+		const prevEnv = process.env.REACT_APP_environment;
+		process.env.REACT_APP_environment = 'development';
+
+		await FirebaseConfig.logEvent('with error details', new Error('detail boom'));
+		expect(errSpy).toHaveBeenCalled();
+
+		const savedUser = FirebaseConfig.auth.currentUser;
+		FirebaseConfig.auth.currentUser = null;
+		await FirebaseConfig.logEvent('anon with error', new Error('anon boom'));
+		expect(errSpy).toHaveBeenCalled();
+		FirebaseConfig.auth.currentUser = savedUser;
+
+		mockAddDoc.mockRejectedValueOnce(new Error('addDoc boom'));
+		await FirebaseConfig.logEvent('failing log', new Error('still logging'));
+		expect(dbgSpy).toHaveBeenCalled();
+
+		process.env.REACT_APP_environment = prevEnv;
+		errSpy.mockRestore();
+		dbgSpy.mockRestore();
+	});
+
+	it('bulk9 purgeUserRecords attachments refLoc and empty related requests', async () => {
+		mockDeleteObject.mockResolvedValue(true);
+		let getDocsCalls = 0;
+		mockGetDocs.mockImplementation(async () => {
+			getDocsCalls += 1;
+			// applicationSpecificCollections mock order: applications, then attachments
+			if (getDocsCalls === 1) {
+				return { empty: true, size: 0, docs: [] }; // applications empty → processSnapshot early return
+			}
+			if (getDocsCalls === 2) {
+				return {
+					empty: false,
+					size: 1,
+					docs: [
+						{
+							id: 'att1',
+							ref: { path: 'attachments/att1' },
+							data: () => ({
+								file: { refLoc: 'uploads/a.pdf' },
+								other: 'skip',
+								nested: { noRef: true },
+							}),
+						},
+					],
+				};
+			}
+			// Related requests query → empty
+			return { empty: true, size: 0, docs: [] };
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		mockHttpsCallable.mockResolvedValue({ data: { ok: true } });
+		const res = await FirebaseConfig.purgeUserRecords({ userId: 'purge-u', expel: true });
+		expect(res.message).toMatch(/purged/i);
+		expect(mockDeleteObject).toHaveBeenCalled();
+		expect(mockBatchDelete).toHaveBeenCalled();
+	});
+
+	it('bulk9 catch blocks via getDocs/onSnapshot throws for count helpers', async () => {
+		const cb = jest.fn();
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CYCLE_YEAR: 2026, CONFIG_ID: 'c1' }),
+		});
+
+		mockGetDocs.mockRejectedValueOnce(new Error('current count boom'));
+		await expect(FirebaseConfig.getCurrentApplicationCount()).resolves.toBeNull();
+
+		mockGetDocs.mockRejectedValueOnce(new Error('eligible boom'));
+		await expect(FirebaseConfig.getCurrentlyEligibleApplicationsCount()).resolves.toBeNull();
+
+		mockGetDocs.mockRejectedValueOnce(new Error('by type boom'));
+		await expect(FirebaseConfig.getCurrentlyEligibleApplicationsCountByType('New Applicant')).resolves.toBeNull();
+
+		mockGetDocs.mockRejectedValueOnce(new Error('by year boom'));
+		const byYear = await FirebaseConfig.getApplicationsByYear();
+		expect(Array.isArray(byYear)).toBe(true);
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('rt current count boom');
+		});
+		await expect(FirebaseConfig.getRealTimeCurrentApplicationCount(cb)).resolves.toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('status count boom');
+		});
+		expect(FirebaseConfig.getRealTimeApplicationCountByStatus('Submitted', cb)).toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('apps boom');
+		});
+		expect(FirebaseConfig.getRealTimeApplications(false, cb)).toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('rejected boom');
+		});
+		expect(FirebaseConfig.getRealTimeRejectedApplications(cb, 2026)).toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('nonneg type boom');
+		});
+		await expect(FirebaseConfig.getRealTimeCurrentNonNegatedApplicationsCountByType('New Applicant', cb)).resolves.toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('nonneg cycle boom');
+		});
+		expect(FirebaseConfig.getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear('New Applicant', 2026, cb)).toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('nonneg status boom');
+		});
+		await expect(FirebaseConfig.getRealTimeCurrentNonNegatedApplicationsCountByStatus('Submitted', cb)).resolves.toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('app status boom');
+		});
+		await expect(FirebaseConfig.getRealTimeCurrentApplicationCountByStatus('Submitted', cb)).resolves.toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('rejected count boom');
+		});
+		await expect(FirebaseConfig.getRealTimeCurrentRejectedApplicationsCount(cb)).resolves.toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('eligible type window boom');
+		});
+		expect(FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('New Applicant', 2026, cb)).toBeNull();
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('presence subscribe boom');
+		});
+		const presenceCleanup = FirebaseConfig.getRealTimeActiveAuthenticatedUsersCount(cb);
+		expect(typeof presenceCleanup).toBe('function');
+		presenceCleanup();
+	});
+
+	it('bulk9 snapshot reduce branches: year mismatch, pipeline/negatable filters, deleted', async () => {
+		const cb = jest.fn();
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CYCLE_YEAR: 2026, CONFIG_ID: 'c1' }),
+		});
+
+		const docs = [
+			{ id: 'a', data: () => ({ cycleYear: 2026, status: 'Completed', type: 'New Applicant' }) },
+			{ id: 'b', data: () => ({ cycleYear: 2025, status: 'Completed', type: 'New Applicant' }) },
+			{ id: 'c', data: () => ({ cycleYear: 2026, status: 'Started', type: 'New Applicant' }) },
+			{ id: 'd', data: () => ({ cycleYear: 2026, status: 'Deleted', type: 'New Applicant' }) },
+			{ id: 'e', data: () => ({ cycleYear: 2026, status: 'Ineligible', type: 'New Applicant' }) },
+			{ id: 'f', data: () => ({ cycleYear: 2026, status: 'Deferred', type: 'New Applicant' }) },
+			{ id: 'g', data: () => ({ cycleYear: 2023, status: 'Deleted', type: 'New Applicant' }) },
+			{ id: 'h', data: () => ({ status: 'Eligible' }) }, // null cycle year
+		];
+
+		mockOnSnapshot.mockImplementation((_q, onNext) => {
+			onNext({ docs, size: docs.length });
+			return jest.fn();
+		});
+		mockGetDocs.mockResolvedValue({ docs, empty: false, size: docs.length });
+
+		await FirebaseConfig.getCurrentApplicationCount();
+		await FirebaseConfig.getCurrentlyEligibleApplicationsCount();
+		await FirebaseConfig.getCurrentlyEligibleApplicationsCountByType('New Applicant');
+		await FirebaseConfig.getEligibleApplicationsCountByTypeAndWindow('New Applicant', 2026);
+		await FirebaseConfig.getApplicationsByYear();
+		await FirebaseConfig.getRealTimeCurrentEligibleApplicationsCountByType('New Applicant', cb);
+		await FirebaseConfig.getRealTimeCurrentEligibleApplicationsCountByType('Submitted', cb);
+		await FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('New Applicant', 2026, cb);
+		await FirebaseConfig.getRealTimeEligibleApplicationsCountByTypeAndWindow('Submitted', 2026, cb);
+		await FirebaseConfig.getRealTimeCurrentNonNegatedApplicationsCountByType('New Applicant', cb);
+		FirebaseConfig.getRealTimeNonNegatedApplicationsCountByTypeAndCycleYear('New Applicant', 2026, cb);
+		await FirebaseConfig.getRealTimeCurrentNonNegatedApplicationsCountByStatus('Completed', cb);
+		await FirebaseConfig.getRealTimeCurrentApplicationCountByStatus('Completed', cb);
+		await FirebaseConfig.getRealTimeCurrentRejectedApplicationsCount(cb);
+
+		// filterApplicationsForCycleYear deleted + year via applications-by-window realtime
+		FirebaseConfig.getRealTimeApplicationsByWindow(2026, false, cb);
+		FirebaseConfig.getRealTimeApplicationsByWindow(2026, true, cb);
+		FirebaseConfig.getRealTimeApplicationsByType('New Applicant', 2026, false, cb);
+	});
+
+	it('bulk9 subscribeUserLastSeen empty uid cleanup and snapshot error path', () => {
+		const cb = jest.fn();
+		const noop = FirebaseConfig.subscribeUserLastSeen('', cb);
+		expect(cb).toHaveBeenCalledWith(null);
+		expect(typeof noop).toBe('function');
+		noop();
+
+		mockOnSnapshot.mockImplementation((_ref, _onNext, onError) => {
+			onError?.(new Error('presence snap boom'));
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u1', cb);
+		expect(cb).toHaveBeenCalledWith(null);
+
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ lastSeen: null }),
+			});
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u2', cb);
+		expect(cb).toHaveBeenCalledWith(null);
+	});
+
+	it('bulk9 requests ranking same-status name sort and missing applicationID filter', () => {
+		const cb = jest.fn();
+		let snapIdx = 0;
+		mockOnSnapshot.mockImplementation((_q, onNext) => {
+			if (snapIdx === 0) {
+				onNext({
+					docs: [
+						{ id: 'r1', data: () => ({ name: 'Zed', completed: false, attempts: 0, applicationID: 'a1' }) },
+						{ id: 'r2', data: () => ({ name: 'Amy', completed: false, attempts: 0, applicationID: 'a1' }) },
+						{ id: 'r3', data: () => ({ name: 'NoApp', completed: false, attempts: 0 }) },
+						{ id: 'r4', data: () => ({ name: 'Missing', completed: false, attempts: 0, applicationID: 'gone' }) },
+					],
+				});
+			} else {
+				onNext({
+					docs: [{ id: 'a1', data: () => ({ cycleYear: 2026 }) }],
+				});
+			}
+			snapIdx += 1;
+			return jest.fn();
+		});
+		FirebaseConfig.getRealTimeRequestsForCycleYear(2026, cb);
+		const ranked = cb.mock.calls.at(-1)[0];
+		expect(ranked.map((r) => r.name)).toEqual(['Amy', 'Zed']);
+	});
+
+	it('bulk9 getOrderBy variants via legacy finances and yearly finances', () => {
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementation((_q, onNext, onError) => {
+			onNext({ docs: [{ id: '2024', data: () => ({ total: 1 }) }] });
+			onError?.(new Error('legacy listen boom'));
+			return jest.fn();
+		});
+		FirebaseConfig.getRealTimeLegacyFinances(cb, { collection: 'legacyFinances', orderBy: ['cycleYear', 'desc'] });
+		FirebaseConfig.getRealTimeLegacyFinances(cb, { collection: 'legacyFinances', orderBy: [['cycleYear', 'desc'], ['id', 'asc']] });
+		FirebaseConfig.getRealTimeLegacyFinances(cb, { collection: 'legacyFinances', orderBy: null });
+		FirebaseConfig.getRealTimeLegacyFinances(cb, { collection: 'legacyFinances', orderBy: [] });
+		FirebaseConfig.getRealTimeYearlyFinances(cb);
+		expect(cb).toHaveBeenCalled();
+	});
+
+	it('bulk9 outlook helpers: missing applicant fallback, toDate account year, ineligible/graduated, award year null', () => {
+		const applicantsById = new Map([
+			// display name falls back to id when undefined applicant is skipped; include empty-name applicant
+			['empty-name', { email: 'e@x.com', accountCreated: { toDate: () => new Date('2026-01-01') }, gradYear: 2028 }],
+			// graduated / over award cap → outlook ineligible (section null)
+			['graduated', { firstName: 'Grad', lastName: 'Out', accountCreated: new Date('2020-01-01'), gradYear: 2020 }],
+			[
+				'maxed',
+				{ firstName: 'Max', lastName: 'Awards', accountCreated: new Date('2018-01-01'), gradYear: 2030 },
+			],
+			// lost-in-weeds false when completed ever
+			['done', { firstName: 'Done', lastName: 'App', accountCreated: new Date('2020-01-01'), gradYear: 2030 }],
+			// returning scholarship / grant award display with null cycle year skipped in lastAwarded
+			[
+				'scholar',
+				{ firstName: 'Scholar', lastName: 'Ship', accountCreated: new Date('2019-01-01'), gradYear: 2030 },
+			],
+			[
+				'grant',
+				{ firstName: 'Grant', lastName: 'Return', accountCreated: new Date('2019-01-01'), gradYear: 2030 },
+			],
+			// brand new with wrong cycle status for sort by lastCycleYear
+			['zz', { firstName: 'Zed', lastName: 'Last', accountCreated: { seconds: 1770000000 }, gradYear: 2028 }],
+			['aa', { firstName: 'Ann', lastName: 'First', accountCreated: { seconds: 1770000000 }, gradYear: 2028 }],
+		]);
+		const apps = [
+			{ completedBy: 'maxed', cycleYear: 2020, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'maxed', cycleYear: 2021, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'maxed', cycleYear: 2022, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'maxed', cycleYear: 2023, type: 'New Applicant', status: 'Awarded' },
+			{ completedBy: 'done', cycleYear: 2024, type: 'New Applicant', status: 'Submitted' },
+			{ completedBy: 'scholar', cycleYear: 2024, type: 'Scholarship Check In', status: 'Awarded' },
+			{ completedBy: 'scholar', cycleYear: null, type: 'Scholarship Check In', status: 'Awarded' },
+			{ completedBy: 'grant', cycleYear: 2023, type: 'Returning Grant', status: 'Awarded' },
+			{ completedBy: 'grant', status: 'Awarded', type: 'Returning Grant' }, // null year
+			{ completedBy: 'zz', cycleYear: 2026, type: 'New Applicant', status: 'Started' },
+			{ completedBy: 'aa', cycleYear: 2026, type: 'New Applicant', status: 'Started' },
+			{ completedBy: 'empty-name', cycleYear: 2026, type: 'New Applicant', status: 'Started' },
+		];
+		const outlook = FirebaseConfig.buildDashboardApplicantOutlook(apps, applicantsById, 2026);
+		expect(outlook.sections.length).toBe(5);
+		const allRows = outlook.sections.flatMap((s) => s.applicants);
+		expect(allRows.some((r) => r.applicantId === 'empty-name')).toBe(true);
+		expect(allRows.some((r) => r.applicantId === 'graduated')).toBe(false);
+		expect(allRows.some((r) => r.applicantId === 'maxed')).toBe(false);
+	});
+
+	it('bulk9 getParentNameForNote missing parent and getNotesByAuthor without parent ref', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{
+					id: 'n1',
+					data: () => ({ text: 'orphan', authorId: 'a1' }),
+					ref: { parent: { parent: null } },
+				},
+				{
+					id: 'n2',
+					data: () => ({ text: 'missing-parent', authorId: 'a1' }),
+					ref: {
+						parent: {
+							parent: { id: 'ghost', path: 'applicants/ghost' },
+						},
+					},
+				},
+			],
+		});
+		mockGetDoc.mockResolvedValueOnce({ exists: () => false, data: () => ({}) });
+		const notes = await FirebaseConfig.getNotesByAuthor('a1');
+		expect(notes[0].parent.name).toBe('Unknown');
+		expect(notes[1].parent.name).toBe('ghost');
+	});
+
+	it('bulk9 getMemberOrApplicantAddress profile mailing and members fallback', async () => {
+		mockGetDoc.mockResolvedValueOnce({
+			exists: () => true,
+			data: () => ({
+				applicantFirstName: 'Pat',
+				applicantLastName: 'Lee',
+				applicantMailingAddress: '9 Beacon St, Boston, MA',
+			}),
+		});
+		const fromProfile = await FirebaseConfig.getMemberOrApplicantAddress('u-p', { profileId: 'p1' });
+		expect(fromProfile.name).toMatch(/Pat/);
+		expect(fromProfile.address).toMatch(/Beacon/);
+
+		mockGetDoc
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) }) // profiles
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) }) // applicants
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({
+					callMe: 'MemberOnly',
+					mailingAddress: { description: '100 Mass Ave, Cambridge' },
+				}),
+			});
+		const fromMember = await FirebaseConfig.getMemberOrApplicantAddress('u-m');
+		expect(fromMember.name).toMatch(/MemberOnly/);
+		expect(fromMember.address).toMatch(/Cambridge/);
+
+		mockGetDoc
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) })
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) })
+			.mockResolvedValueOnce({ exists: () => false, data: () => ({}) });
+		const missing = await FirebaseConfig.getMemberOrApplicantAddress('nobody');
+		expect(missing).toEqual({ name: 'Unknown', address: 'No mailing address on file' });
+	});
+
+	it('bulk9 formatApplicantMailingAddress email description and empty structured', () => {
+		expect(
+			FirebaseConfig.formatApplicantMailingAddress({
+				description: 'person@example.com',
+				structured_formatting: { main_text: '42 Main', secondary_text: 'Boston' },
+			}),
+		).toBe('42 Main, Boston');
+		expect(
+			FirebaseConfig.formatApplicantMailingAddress({
+				description: 'person@example.com',
+				street: '7 Park',
+				postalCode: '02115',
+			}),
+		).toMatch(/7 Park/);
+		expect(FirebaseConfig.formatApplicantMailingAddress(42)).toBeNull();
+		expect(FirebaseConfig.formatApplicantMailingAddress({ structured_formatting: {} })).toBeNull();
+	});
+
+	it('bulk10 analytics init supported and rejected paths', async () => {
+		process.env.REACT_APP_ENABLE_ANALYTICS = 'true';
+		mockIsAnalyticsSupported.mockResolvedValueOnce(true);
+		vi.resetModules();
+		const modSupported = await import('./firebase');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(mockGetAnalytics).toHaveBeenCalled();
+		expect(modSupported.analytics).toBeTruthy();
+
+		mockGetAnalytics.mockClear();
+		mockIsAnalyticsSupported.mockRejectedValueOnce(new Error('analytics unsupported'));
+		vi.resetModules();
+		await import('./firebase');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(mockGetAnalytics).not.toHaveBeenCalled();
+		delete process.env.REACT_APP_ENABLE_ANALYTICS;
+	});
+
+	it('bulk10 migrate deadline Date window, empty requests after apps, firestoreValueToDate seconds', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [{ id: 'date-win', data: () => ({ window: new Date('2021-05-01T00:00:00Z') }) }],
+		});
+		mockGetDoc.mockResolvedValue({
+			exists: () => true,
+			data: () => ({ CONFIG_ID: 'cfg', CYCLE_YEAR: 2026 }),
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		const migrated = await FirebaseConfig.migrateDeadlinesToCycleYear();
+		expect(migrated.applications).toBeGreaterThanOrEqual(1);
+
+		// apps yield applicationIds; requests snapshot empty → line 925
+		let calls = 0;
+		mockGetDocs.mockImplementation(async () => {
+			calls += 1;
+			if (calls === 1) {
+				return {
+					empty: false,
+					size: 1,
+					docs: [{ id: 'app-del', ref: { path: 'applications/app-del' }, data: () => ({}) }],
+				};
+			}
+			if (calls === 2) return { empty: true, size: 0, docs: [] }; // attachments
+			return { empty: true, size: 0, docs: [] }; // requests
+		});
+		mockBatchCommit.mockResolvedValue(true);
+		await FirebaseConfig.purgeUserRecords({ userId: 'u-req', expel: false });
+
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({
+				exists: () => true,
+				data: () => ({ lastSeen: { seconds: 1700000000 } }),
+			});
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u-sec', cb);
+		expect(cb.mock.calls.at(-1)[0]).toBeInstanceOf(Date);
+
+		mockOnSnapshot.mockImplementation((_ref, onNext) => {
+			onNext({ exists: () => true, data: () => ({ lastSeen: '' }) });
+			return jest.fn();
+		});
+		FirebaseConfig.subscribeUserLastSeen('u-empty', cb);
+		expect(cb.mock.calls.at(-1)[0]).toBeNull();
+	});
+
+	it('bulk10 outlook sort by lastCycleYear and missing applicant display id', () => {
+		const applicantsById = new Map([
+			['no-name', { accountCreated: new Date('2020-01-01'), gradYear: 2030 }],
+			['s1', { firstName: 'Sam', lastName: 'One', accountCreated: new Date('2018-01-01'), gradYear: 2030 }],
+			['s2', { firstName: 'Sam', lastName: 'Two', accountCreated: new Date('2018-01-01'), gradYear: 2030 }],
+		]);
+		const apps = [
+			{ completedBy: 's1', cycleYear: 2024, type: 'Scholarship Check In', status: 'Awarded' },
+			{ completedBy: 's2', cycleYear: 2025, type: 'Scholarship Check In', status: 'Awarded' },
+			{ completedBy: 'no-name', cycleYear: 2022, type: 'New Applicant', status: 'Awarded' },
+			// awarded with null cycle year skipped in lastAwardedApplicationMatching
+			{ completedBy: 's1', type: 'Scholarship Check In', status: 'Awarded' },
+		];
+		const outlook = FirebaseConfig.buildDashboardApplicantOutlook(apps, applicantsById, 2026);
+		const scholarSection = outlook.sections.find((s) => s.id === 'expectedReturningScholarships');
+		expect(scholarSection.applicants[0].lastCycleYear).toBeGreaterThanOrEqual(scholarSection.applicants.at(-1).lastCycleYear);
+		const grantish = outlook.sections.flatMap((s) => s.applicants).find((r) => r.applicantId === 'no-name');
+		expect(grantish.name).toBe('no-name');
+	});
+
 });

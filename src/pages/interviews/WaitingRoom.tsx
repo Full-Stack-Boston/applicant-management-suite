@@ -82,6 +82,21 @@ const interviewExpectations = [
 
 type DeviceStatus = 'idle' | 'requesting' | 'granted' | 'error';
 
+/** Pure status copy for the standby panel — exported for unit coverage of rare branches. */
+export const resolveWaitingRoomStatusMessage = (
+	interviewStatus: string | undefined,
+	deviceStatus: DeviceStatus | string
+): string => {
+	if (interviewStatus === InterviewStatus.inProgress) {
+		return 'Connecting...';
+	}
+	if (deviceStatus === 'idle') return 'Use the device check panel to test your camera and microphone.';
+	if (deviceStatus === 'requesting') return 'Please grant permission to access your camera and mic.';
+	if (deviceStatus === 'granted') return 'All set! The committee will start the interview soon. Please standby.';
+	if (deviceStatus === 'error') return 'There seems to be an issue with your devices. Please check the device check panel.';
+	return 'The committee will start the interview soon. Please standby.';
+};
+
 interface WaitingRoomInterviewInfo {
 	status?: string;
 	fullName?: string;
@@ -649,16 +664,7 @@ export default function WaitingRoom() {
 
 	// --- Render States ---
 
-	const getStatusMessage = () => {
-		if (interviewInfo?.status === InterviewStatus.inProgress) {
-			return 'Connecting...';
-		}
-		if (deviceStatus === 'idle') return 'Use the device check panel to test your camera and microphone.';
-		if (deviceStatus === 'requesting') return 'Please grant permission to access your camera and mic.';
-		if (deviceStatus === 'granted') return 'All set! The committee will start the interview soon. Please standby.';
-		if (deviceStatus === 'error') return 'There seems to be an issue with your devices. Please check the device check panel.';
-		return 'The committee will start the interview soon. Please standby.';
-	};
+	const getStatusMessage = () => resolveWaitingRoomStatusMessage(interviewInfo?.status, deviceStatus);
 
 	if (isLoading) {
 		return (

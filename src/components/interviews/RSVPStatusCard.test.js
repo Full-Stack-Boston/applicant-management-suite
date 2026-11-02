@@ -309,4 +309,34 @@ describe('RSVPStatusCard', () => {
 		});
 	});
 
+	it('closes the RSVP menu via Menu onClose without changing status', async () => {
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([{ ...mockInterviewBase, rsvpStatus: 'yes', status: InterviewStatus.confirmed }]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		const chip = await screen.findByRole('button', { name: 'RSVP: Confirmed' });
+		const props = chip[Object.keys(chip).find((k) => k.startsWith('__reactProps'))];
+		await act(async () => {
+			props.onClick({ currentTarget: chip, target: chip, preventDefault() {}, stopPropagation() {} });
+		});
+		expect(await screen.findByRole('menuitem', { name: /Change to Unavailable/i })).toBeInTheDocument();
+		const menu = screen.getByRole('menu');
+		let onClose;
+		let el = menu;
+		while (el && !onClose) {
+			const key = Object.keys(el).find((k) => k.startsWith('__reactProps'));
+			if (key && typeof el[key].onClose === 'function') onClose = el[key].onClose;
+			el = el.parentElement;
+		}
+		expect(onClose).toEqual(expect.any(Function));
+		await act(async () => {
+			onClose({}, 'escapeKeyDown');
+		});
+		await waitFor(() => {
+			expect(screen.queryByRole('menuitem', { name: /Change to Unavailable/i })).not.toBeInTheDocument();
+		});
+		expect(updateDoc).not.toHaveBeenCalled();
+	});
+
 });

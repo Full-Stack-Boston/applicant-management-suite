@@ -33,6 +33,7 @@ vi.mock('../../../config/data/yearlyFinances', async (importOriginal) => {
 	return {
 		...actual,
 		downloadCouncilDisbursementPdf: vi.fn(() => 'Application-Management-Suite-2026-Disbursement.pdf'),
+		buildCouncilDisbursementHtml: vi.fn((...args) => actual.buildCouncilDisbursementHtml(...args)),
 	};
 });
 
@@ -393,7 +394,7 @@ describe('CycleExpenses', () => {
 		expect(mockNavigate).toHaveBeenCalledWith(-1);
 	});
 
-	it('disables add while an expense row is already editing', async () => {
+	it('warns when adding while an expense row is already editing', async () => {
 		await act(async () => {
 			renderPage();
 		});
@@ -401,7 +402,18 @@ describe('CycleExpenses', () => {
 		await act(async () => {
 			fireEvent.click(screen.getAllByLabelText('Unlock expense row to edit')[0]);
 		});
-		await waitFor(() => expect(screen.getByText('Add program expense')).toBeDisabled());
+		await waitFor(() => expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getByText('Add program expense'));
+		});
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: 'warning',
+					message: expect.stringMatching(/Finish or cancel/),
+				})
+			);
+		});
 	});
 
 	it('cancels a blank new expense row and removes it', async () => {
@@ -843,4 +855,81 @@ describe('CycleExpenses', () => {
 			expect(screen.queryByText('Requested total')).not.toBeInTheDocument();
 		});
 	});
+
+	it('shifts the editing index when an earlier expense row is removed', async () => {
+		firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+			handler([
+				{
+					id: '2026',
+					cycleYear: 2026,
+					programExpenseItems: [
+						{ category: 'campership', program: 'Camp A', request: 100, disbursement: 100 },
+						{ category: 'other', program: 'Camp B', request: 50, disbursement: 50 },
+					],
+					awardIDs: [],
+					total_allotted_disbursement: 1000,
+					prior_year_clawback: 0,
+				},
+			]);
+			return () => {};
+		});
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+		// Unlock the second logical row (desktop unlocks appear first).
+		const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+		await act(async () => {
+			fireEvent.click(unlocks[1]);
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Remove expense').length).toBeGreaterThan(0));
+		await act(async () => {
+			// Remove an earlier row while second is editing — hits editingIndex > index branch.
+			fireEvent.click(screen.getAllByLabelText('Remove expense')[0]);
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
+		});
+	});
+
+	it('handles council email generate/toggle failures and Dialog onClose', async () => {
+		const yearly = await import('../../../config/data/yearlyFinances');
+		yearly.buildCouncilDisbursementHtml.mockImplementation(() => {
+			throw new Error('council html boom');
+		});
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getByText('Disbursement email')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Disbursement email'));
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'cycle-expenses-council-email');
+		});
+
+		// Successful open then toggle failure + Escape close
+		mockHandleError.mockClear();
+		let calls = 0;
+		yearly.buildCouncilDisbursementHtml.mockImplementation(() => {
+			calls += 1;
+			if (calls === 1) return '<p>ok</p>';
+			throw new Error('toggle boom');
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByText('Disbursement email'));
+		});
+		await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+		const checkbox = screen.getByRole('checkbox');
+		await act(async () => {
+			fireEvent.click(checkbox);
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'cycle-expenses-council-email-toggle');
+		});
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+		});
+	});
+
 });

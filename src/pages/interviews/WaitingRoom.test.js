@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act, within, cleanup } from '@testing-library/react';
-import WaitingRoom from './WaitingRoom';
+import WaitingRoom, { resolveWaitingRoomStatusMessage } from './WaitingRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useMeeting } from '../../context/MeetingContext';
@@ -816,6 +816,45 @@ describe('WaitingRoom Component', () => {
 			expect(screen.getAllByText(/No camera found|issue with your devices|Could not start devices/i).length).toBeGreaterThan(0);
 		});
 	});
+
+
+	test('stops prior preview tracks when device ids change after grant', async () => {
+		useMeeting.mockReturnValue({
+			videoDeviceId: 'cam-1',
+			audioDeviceId: 'mic-1',
+			setVideoDeviceId: mockSetVideoDeviceId,
+			setAudioDeviceId: mockSetAudioDeviceId,
+		});
+		const { rerender } = render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/All set! The committee will start the interview soon/i)).toBeInTheDocument();
+		});
+		const stopsBefore = mockStopTrack.mock.calls.length;
+		useMeeting.mockReturnValue({
+			videoDeviceId: 'cam-2',
+			audioDeviceId: 'mic-1',
+			setVideoDeviceId: mockSetVideoDeviceId,
+			setAudioDeviceId: mockSetAudioDeviceId,
+		});
+		rerender(<WaitingRoom />);
+		await waitFor(() => {
+			expect(mockStopTrack.mock.calls.length).toBeGreaterThan(stopsBefore);
+		});
+	});
+
+	test('resolveWaitingRoomStatusMessage covers Connecting and default fallbacks', () => {
+		expect(resolveWaitingRoomStatusMessage('in-progress', 'idle')).toBe('Connecting...');
+		expect(resolveWaitingRoomStatusMessage('confirmed', 'idle')).toMatch(/device check panel/i);
+		expect(resolveWaitingRoomStatusMessage('confirmed', 'requesting')).toMatch(/grant permission/i);
+		expect(resolveWaitingRoomStatusMessage('confirmed', 'granted')).toMatch(/All set/i);
+		expect(resolveWaitingRoomStatusMessage('confirmed', 'error')).toMatch(/issue with your devices/i);
+		expect(resolveWaitingRoomStatusMessage('confirmed', 'unexpected')).toMatch(/committee will start/i);
+	});
+
 
 });
 

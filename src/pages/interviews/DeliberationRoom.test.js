@@ -431,4 +431,28 @@ describe('DeliberationRoom Component', () => {
 		});
 	});
 
+
+	test('logs when participant picture fetch fails', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		getDoc.mockRejectedValue(new Error('member fetch boom'));
+		render(<DeliberationRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await screen.findByTestId('call-ui');
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('participant-joined', expect.any(Function)));
+		const joinedHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-joined')[1];
+		await act(async () => {
+			joinedHandler({ participant: { local: false, session_id: 'remote-x', user_id: 'member-x' } });
+		});
+		await waitFor(() => {
+			expect(
+				consoleSpy.mock.calls.some(
+					(args) => typeof args[0] === 'string' && args[0].includes('Failed to fetch member data for participant')
+				)
+			).toBe(true);
+		});
+		consoleSpy.mockRestore();
+	});
+
 });

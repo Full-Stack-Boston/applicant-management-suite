@@ -688,4 +688,37 @@ describe('InterviewRoom Component', () => {
 		});
 	});
 
+
+	test('logs when post-interview auto-deliberate path throws', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		useAuth.mockReturnValue({
+			user: { uid: 'mem-1' },
+			member: { id: 'mem-1' },
+			applicant: null,
+		});
+		useConfig.mockReturnValue({ AUTO_DELIBERATE: true });
+		mockShowAlert.mockImplementation(() => {
+			throw new Error('alert boom');
+		});
+
+		let snapshotCallback;
+		onSnapshot.mockImplementation((ref, onNext) => {
+			snapshotCallback = onNext;
+			onNext({ exists: () => true, data: () => ({ status: 'in-progress' }) });
+			return jest.fn();
+		});
+
+		render(<InterviewRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await act(async () => {
+			snapshotCallback({ exists: () => true, data: () => ({ status: 'completed' }) });
+		});
+		await waitFor(() => {
+			expect(consoleSpy).toHaveBeenCalledWith('Could not get post-interview action:', expect.any(Error));
+		});
+		consoleSpy.mockRestore();
+	});
+
 });

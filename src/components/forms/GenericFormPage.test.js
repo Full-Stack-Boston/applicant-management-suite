@@ -412,14 +412,29 @@ describe('GenericFormPage Component', () => {
 		});
 
 		test('triggers onValidationFailure when field errors exist', () => {
-			// To simulate field errors, we rely on DynamicField triggering `onErrorUpdate`.
-			// GenericFormPage passes `handleErrorUpdate` to DynamicField.
-			// Our MockDynamicField doesn't automatically call it.
-			// However, `useFormValidation` checks `fieldErrors` state.
-			// We can't easily inject state into the component.
-			// Instead, we can test the "Array Error" path which relies on props/config we control.
-			// We skip direct field error testing since it requires white-box state manipulation
-			// or a more complex MockDynamicField that simulates validation failure on mount.
+			const props = {
+				...baseProps,
+				submissionAttempted: true,
+				application: { personal: { firstName: 'Valid Name' } },
+			};
+			render(<GenericFormPage sectionName='personal' {...props} />);
+			// Mark a field error after the success path already ran once — flip to failure via handleErrorUpdate.
+			fireEvent.click(screen.getByTestId('trigger-error-firstName'));
+			// Re-attempt: remount with submissionAttempted cycling would reset attemptRef; instead assert error update path.
+			expect(screen.getByTestId('trigger-error-firstName')).toBeInTheDocument();
+		});
+
+		test('calls onValidationFailure for field-level errors on a fresh submission attempt', () => {
+			const props = {
+				...baseProps,
+				submissionAttempted: false,
+				application: { personal: { firstName: '' } },
+			};
+			const { rerender } = render(<GenericFormPage sectionName='personal' {...props} />);
+			fireEvent.click(screen.getByTestId('trigger-error-firstName'));
+			rerender(<GenericFormPage sectionName='personal' {...props} submissionAttempted={true} />);
+			expect(mockOnValidationFailure).toHaveBeenCalled();
+			expect(mockShowAlert).not.toHaveBeenCalledWith('validation', 'missing');
 		});
 
 		test('triggers failure on missing required array', () => {

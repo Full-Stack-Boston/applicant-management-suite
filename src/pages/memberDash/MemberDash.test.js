@@ -318,4 +318,18 @@ describe('MemberDash Component', () => {
 		expect(asyncWidgetUnsub).toHaveBeenCalled();
 		expect(asyncComparisonUnsub).toHaveBeenCalled();
 	});
+
+	test('applies comparisonFetcher counts into widget gain calculations', async () => {
+		render(<MemberDash />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		expect(comparisonCallback).toBeInstanceOf(Function);
+		await act(async () => {
+			comparisonCallback(5);
+			eligibleFetcher.mock.calls[0]?.[0]?.(12);
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Eligible Widget')).toBeInTheDocument();
+		});
+	});
+
 });

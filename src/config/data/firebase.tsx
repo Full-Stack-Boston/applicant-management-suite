@@ -342,6 +342,7 @@ export const migrateDeadlinesToCycleYear = async () => {
 	} = { applications: 0, awards: 0, interviews: 0, siteConfig: false, errors: [] };
 	const parseCycleYear = (val: unknown): number | null => {
 		if (typeof val === 'number') return val;
+		if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val.getFullYear();
 		if (typeof val === 'string') {
 			const d = new Date(val);
 			return Number.isNaN(d.getTime()) ? null : d.getFullYear();
@@ -795,13 +796,8 @@ export const updateCollectionData = async (collectionName: CollectionName, dataI
 };
 
 export const updateApplicationStatus = async (userID: string, applicationID: string, newStatus: string) => {
-	try {
-		await updateCollectionData(collections.applications, applicationID, { status: newStatus });
-		return true;
-	} catch (error) {
-		logEvent('Error updating application status:', error);
-		return false;
-	}
+	// updateCollectionData already catches and logs; bubble its boolean result
+	return updateCollectionData(collections.applications, applicationID, { status: newStatus });
 };
 
 export const getApplication = async (userID: string, applicationID: string) => {

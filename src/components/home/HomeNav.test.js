@@ -331,4 +331,19 @@ describe('HomeNav', () => {
 		expect(mockOnNavigateSection.mock.calls.length + mockNavigate.mock.calls.length).toBeGreaterThan(0);
 	});
 
+
+	it('closes burger menu via Menu onClose without navigating', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseAuth.mockReturnValue({
+			user: { uid: 'u1' },
+			applicant: { id: 'a1', firstName: 'Pat' },
+		});
+		renderNav({ variant: 'applicant' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		expect(screen.getByRole('menu')).toBeInTheDocument();
+		expect(screen.getByText('Settings')).toBeInTheDocument();
+		fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+		expect(mockOpenSettings).not.toHaveBeenCalled();
+	});
+
 });
