@@ -1203,6 +1203,31 @@ describe('src/config/data/firebase.js', () => {
 		expect(unsubApplicants).toHaveBeenCalled();
 	});
 
+	it('getRealTimeDashboardApplicantOutlook swallows publish callback failures', async () => {
+		const unsubApps = jest.fn();
+		const unsubApplicants = jest.fn();
+		mockGetDoc.mockResolvedValueOnce({
+			exists: () => true,
+			data: () => ({ cycleYear: 2026 }),
+		});
+		mockOnSnapshot
+			.mockImplementationOnce((_q, onNext) => {
+				onNext({ docs: [] });
+				return unsubApps;
+			})
+			.mockImplementationOnce((_q, onNext) => {
+				onNext({ docs: [] });
+				return unsubApplicants;
+			});
+		const cleanup = FirebaseConfig.getRealTimeDashboardApplicantOutlook(() => {
+			throw new Error('publish boom');
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(typeof cleanup).toBe('function');
+		cleanup();
+	});
+
 	it('migrateDeadlinesToCycleYear backfills cycleYear and site config', async () => {
 		mockGetDocs.mockResolvedValueOnce({
 			docs: [

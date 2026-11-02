@@ -681,5 +681,26 @@ describe('WaitingRoom Component', () => {
 
 
 
+	test('gates access when the initial fetch returns a cancelled interview', async () => {
+		getDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({
+					applicantId: 'app-123',
+					applicationId: 'application-99',
+					startTime: { toDate: () => new Date(Date.now() + 100000) },
+					status: 'Cancelled',
+					firstName: 'Applicant',
+					lastName: 'Test',
+				}),
+			})
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ firstName: 'Applicant', lastName: 'Test' }),
+			});
+		render(<WaitingRoom />);
+		expect(await screen.findAllByText(/This interview was cancelled/i)).not.toHaveLength(0);
+	});
+
 });
 

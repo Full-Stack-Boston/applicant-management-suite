@@ -665,7 +665,14 @@ describe('CycleExpenses', () => {
 			const programInputs = screen.getAllByDisplayValue('Camp');
 			fireEvent.change(programInputs[programInputs.length - 1], { target: { value: 'Mobile Camp' } });
 			const amountInputs = screen.getAllByDisplayValue('100');
-			fireEvent.change(amountInputs[amountInputs.length - 1], { target: { value: '175' } });
+			// Cover both request and disbursement draft setters (incl. empty → 0 coerce).
+			fireEvent.change(amountInputs[0], { target: { value: '' } });
+			fireEvent.change(amountInputs[0], { target: { value: '160' } });
+			if (amountInputs[1]) {
+				fireEvent.change(amountInputs[1], { target: { value: '175' } });
+			} else {
+				fireEvent.change(amountInputs[0], { target: { value: '175' } });
+			}
 		});
 
 		await act(async () => {

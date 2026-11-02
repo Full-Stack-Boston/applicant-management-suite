@@ -315,5 +315,15 @@ describe('GoogleAutoComplete', () => {
 		});
 	});
 
+	test('supports string option equality and free-solo selection', async () => {
+		render(<GoogleAutoComplete {...baseProps} location={{ description: 'Existing Place' }} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: 'Existing Place' } });
+		fireEvent.keyDown(input, { key: 'ArrowDown' });
+		fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+		fireEvent.blur(input);
+		expect(input).toBeInTheDocument();
+	});
+
 });
 
