@@ -43,7 +43,8 @@ const mockAppData = {
 		applicantFirstName: 'John',
 		applicantMiddleInitial: 'M',
 		applicantLastName: 'Doe',
-		applicantDOB: '2000-01-01T05:00:00Z',
+		// Future month-day forces calculateAge birthday-not-yet branch
+		applicantDOB: '2000-12-15T05:00:00Z',
 		applicantMailingAddress: { description: '123 Main St' },
 		applicantCellPhone: '555-1234',
 		applicantEmailAddress: 'john@test.com',
@@ -52,11 +53,14 @@ const mockAppData = {
 	// --- THIS IS THE FIX ---
 	// Using '2025-06-01' ensures new Date() parses it as local time in 2025,
 	// preventing the timezone bug where new Date('2025') becomes 2024.
-	education: { schoolName: 'Test University', major: 'CS', expectedGraduationDate: '2025-06-01', currentGPA: '4.0', previousSchools: ['Test High'] },
-	experience: { currentUnit: 0, collegeReservesFlag: false, experiences: [{ type: 'Club', number: '123', location: 'Anytown, USA', highestRank: 'Lead' }] },
-	expenses: { tuitionCost: '1000', roomAndBoardCost: '500', bookCost: '100', commutingCost: '50', otherExpenses: [] },
-	incomes: { summerEarnings: '100', fallEarnings: '100', winterEarnings: '100', springEarnings: '100', earningsAppliedToEducation: '10', savingsAppliedToEducation: '10', collegeAward: '10', loansAmount: '10', otherIncomeSources: [] },
-	contributions: { p1ExpectedAnnualIncome: '1000', p2ExpectedAnnualIncome: '1000', parentInvestmentIncome: '10', parentsOwnOrRentHome: 'Own', parentsMaritalStatus: 'Married', anyExtraordinaryExpenses: 'None', siblingSchools: [] },
+	education: { schoolName: 'Test University', major: 'CS', expectedGraduationDate: '2025-06-01', currentGPA: '4.0', previousSchools: ['Test High', { school: 'Prep Academy' }] },
+	experience: {
+		currentOrganization: '0',
+		positions: [{ type: 'Club', organization: 'Robotics', role: 'Lead', location: { description: 'Anytown, USA' } }],
+	},
+	expenses: { tuitionCost: '1000', roomAndBoardCost: '500', bookCost: '100', commutingCost: '50', otherExpenses: [{ title: 'Lab fees', amount: '75' }] },
+	incomes: { summerEarnings: '100', fallEarnings: '100', winterEarnings: '100', springEarnings: '100', earningsAppliedToEducation: '10', savingsAppliedToEducation: '10', collegeAward: '10', loansAmount: '10', otherIncomeSources: [{ title: 'Stipend', amount: '200' }] },
+	contributions: { p1ExpectedAnnualIncome: '1000', p2ExpectedAnnualIncome: '1000', parentInvestmentIncome: '10', parentsOwnOrRentHome: 'Own', parentsMaritalStatus: 'Married', anyExtraordinaryExpenses: 'None', siblingSchools: [{ title: 'Sibling U', cost: '5000' }] },
 	projections: { applicantEarnings: '10', applicantSavings: '10', applicantFamily: '10', requestForPF: '10' },
 	attachments: { applicantPersonalLetter: { home: 'http://test.com/letter' } },
 	awards: [{ awardID: '1', awardAmount: '1000', createdOn: '2024-11-01T10:00:00Z', type: 'Grant', message: 'Congrats' }],
@@ -142,5 +146,35 @@ describe('CollapsableTable', () => {
 			render(<CollapsableTable data={['app1']} />);
 		});
 		expect(screen.getByRole('progressbar')).toBeInTheDocument();
+	});
+
+	test('covers missing app and fetch errors', async () => {
+		mockGetApplication.mockResolvedValueOnce(null);
+		const { unmount } = render(<CollapsableTable data={['missing']} />);
+		await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+		unmount();
+
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		mockGetApplication.mockRejectedValueOnce(new Error('table fetch boom'));
+		render(<CollapsableTable data={['boom']} />);
+		await waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+		consoleSpy.mockRestore();
+	});
+
+	test('renders populated expense, income, sibling, and experience lists', async () => {
+		await act(async () => {
+			render(<CollapsableTable data={['app1']} attachments={true} />);
+		});
+		await waitFor(() => expect(screen.getByText('Scholarship')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'expand row' }));
+		});
+		await waitFor(() => {
+			expect(screen.getByText('Lab fees')).toBeInTheDocument();
+			expect(screen.getByText('Stipend')).toBeInTheDocument();
+			expect(screen.getByText('Sibling U')).toBeInTheDocument();
+			expect(screen.getByText('Club - Robotics')).toBeInTheDocument();
+			expect(screen.getByText('Prep Academy')).toBeInTheDocument();
+		});
 	});
 });
