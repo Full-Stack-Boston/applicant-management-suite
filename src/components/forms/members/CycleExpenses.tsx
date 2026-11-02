@@ -367,11 +367,10 @@ const CycleExpenses = () => {
 		const nextItems = (draft.programExpenseItems || []).filter((_, i) => i !== index);
 		const nextDraft = { ...draft, programExpenseItems: nextItems };
 		setDraft(nextDraft);
+		// Remove is only offered on the row being edited, so the active edit always matches `index`.
 		if (editingExpenseIndex === index) {
 			setEditingExpenseIndex(null);
 			setExpenseEditDraft(null);
-		} else if (editingExpenseIndex !== null && editingExpenseIndex > index) {
-			setEditingExpenseIndex(editingExpenseIndex - 1);
 		}
 		setSaving(true);
 		try {

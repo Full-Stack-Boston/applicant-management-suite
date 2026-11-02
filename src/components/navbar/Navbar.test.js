@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import Navbar from './Navbar';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -26,10 +26,13 @@ vi.mock('../../config/data/firebase', () => ({
 }));
 
 // Mock child component to verify search results rendering logic
-vi.mock('./SearchResultsDropdown', () => ({ default: ({ results, loading }) => (
+vi.mock('./SearchResultsDropdown', () => ({ default: ({ results, loading, onClose }) => (
 	<div data-testid='search-dropdown'>
 		{loading ? 'Loading...' : 'Results Loaded'}
 		{results?.error && <span data-testid='search-error'>{results.error}</span>}
+		<button type='button' data-testid='search-dropdown-close' onClick={onClose}>
+			Close search
+		</button>
 	</div>
 ) }));
 
@@ -314,5 +317,21 @@ describe('Navbar Component', () => {
 			});
 			expect(await screen.findByTestId('search-dropdown')).toBeInTheDocument();
 		});
+		it('closes search results via dropdown onClose', async () => {
+			render(<Navbar />);
+			const input = screen.getByPlaceholderText('Search...');
+			fireEvent.change(input, { target: { value: 'close me' } });
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('SearchOutlinedIcon'));
+			});
+			expect(await screen.findByTestId('search-dropdown')).toBeInTheDocument();
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('search-dropdown-close'));
+			});
+			await waitFor(() => {
+				expect(screen.queryByTestId('search-dropdown')).not.toBeInTheDocument();
+			});
+		});
+
 	});
 });

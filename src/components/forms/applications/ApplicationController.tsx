@@ -385,12 +385,8 @@ export default function ApplicationController() {
 		showAlert('validation', 'fields');
 	}, [showAlert]);
 
-	// Handler: "Next" Button Clicked
+	// Handler: "Next" Button Clicked (only rendered on non-last steps)
 	const handleComplete = () => {
-		if (isLastStep()) {
-			handleNext();
-			return;
-		}
 		if (siteConfig.VALIDATION_OVERRIDE) {
 			handleValidationSuccess();
 		} else {

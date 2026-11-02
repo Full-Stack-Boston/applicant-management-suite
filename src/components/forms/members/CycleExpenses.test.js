@@ -856,42 +856,6 @@ describe('CycleExpenses', () => {
 		});
 	});
 
-	it('shifts the editing index when an earlier expense row is removed', async () => {
-		firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
-			handler([
-				{
-					id: '2026',
-					cycleYear: 2026,
-					programExpenseItems: [
-						{ category: 'campership', program: 'Camp A', request: 100, disbursement: 100 },
-						{ category: 'other', program: 'Camp B', request: 50, disbursement: 50 },
-					],
-					awardIDs: [],
-					total_allotted_disbursement: 1000,
-					prior_year_clawback: 0,
-				},
-			]);
-			return () => {};
-		});
-		await act(async () => {
-			renderPage();
-		});
-		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
-		// Unlock the second logical row (desktop unlocks appear first).
-		const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
-		await act(async () => {
-			fireEvent.click(unlocks[1]);
-		});
-		await waitFor(() => expect(screen.getAllByLabelText('Remove expense').length).toBeGreaterThan(0));
-		await act(async () => {
-			// Remove an earlier row while second is editing — hits editingIndex > index branch.
-			fireEvent.click(screen.getAllByLabelText('Remove expense')[0]);
-		});
-		await waitFor(() => {
-			expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
-		});
-	});
-
 	it('handles council email generate/toggle failures and Dialog onClose', async () => {
 		const yearly = await import('../../../config/data/yearlyFinances');
 		yearly.buildCouncilDisbursementHtml.mockImplementation(() => {
@@ -931,5 +895,35 @@ describe('CycleExpenses', () => {
 			fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 		});
 	});
+
+
+	it('changes category via the mobile expense Select while editing', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+		const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+		await act(async () => {
+			fireEvent.click(unlocks[unlocks.length - 1]);
+		});
+		await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0));
+		await act(async () => {
+			const boxes = screen.getAllByRole('combobox');
+			fireEvent.mouseDown(boxes[boxes.length - 1]);
+		});
+		await waitFor(() => expect(screen.getByRole('option', { name: 'other' })).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByRole('option', { name: 'other' }));
+		});
+		await act(async () => {
+			const saves = screen.getAllByLabelText('Save expense row');
+			fireEvent.click(saves[saves.length - 1]);
+		});
+		await waitFor(() => {
+			const savedPayload = firebaseConfig.saveYearlyFinancesDoc.mock.calls.at(-1)[1];
+			expect(savedPayload.programExpenseItems[0].category).toBe('other');
+		});
+	});
+
 
 });

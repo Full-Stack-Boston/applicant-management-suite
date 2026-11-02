@@ -112,21 +112,17 @@ export const RouteGuard = ({ children, allowedRoles = [], permissions = [], allo
 	}, [user, member, role, loading, allowedRoles, permissions, location, allowUnauthed]);
 
 	// --- Render Logic ---
-
-	if (authState.status === 'LOADING') return <Loader />;
-
-	if (authState.status === 'AUTHORIZED') return children;
-
-	if (authState.status === 'REDIRECT_LOGIN') {
-		// Preserve the location they were trying to go to (state.from)
-		return <Navigate to={generatePath(paths.login)} state={{ from: location }} replace />;
+	switch (authState.status) {
+		case 'LOADING':
+			return <Loader />;
+		case 'AUTHORIZED':
+			return children;
+		case 'REDIRECT_LOGIN':
+			// Preserve the location they were trying to go to (state.from)
+			return <Navigate to={generatePath(paths.login)} state={{ from: location }} replace />;
+		case 'REDIRECT_ACCESS_DENIED':
+			return <Navigate to={authState.redirectPath || generatePath(paths.redirect)} state={{ from: location }} replace />;
 	}
-
-	if (authState.status === 'REDIRECT_ACCESS_DENIED' && authState.redirectPath) {
-		return <Navigate to={authState.redirectPath} state={{ from: location }} replace />;
-	}
-
-	return <Loader />;
 };
 
 RouteGuard.propTypes = {
