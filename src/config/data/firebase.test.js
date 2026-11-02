@@ -594,6 +594,11 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockDeleteObject).toHaveBeenCalled();
 	});
 
+	it('deleteFile returns false when storage delete fails', async () => {
+		mockDeleteObject.mockRejectedValueOnce(new Error('delete denied'));
+		await expect(FirebaseConfig.deleteFile('path/missing')).resolves.toBe(false);
+	});
+
 	it('getFile gets download url', async () => {
 		await FirebaseConfig.getFile('path');
 		expect(mockGetDownloadURL).toHaveBeenCalled();

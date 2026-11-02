@@ -304,6 +304,13 @@ describe('tableConfig.js', () => {
 				expect(screen.getByAltText('avatar')).toBeInTheDocument();
 				expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
 			});
+
+			it('falls back to default avatar when user is missing', async () => {
+				render(<DynamicApplicantProfilePicture />);
+				const avatar = await screen.findByAltText('avatar');
+				expect(avatar).toHaveAttribute('src', expect.any(String));
+				expect(FirebaseService.getCollectionData).not.toHaveBeenCalled();
+			});
 		});
 
 		describe('UserLastLogin', () => {
