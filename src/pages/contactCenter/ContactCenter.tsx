@@ -832,4 +832,5 @@ const ContactCenter = () => {
 	);
 };
 
+export { reducer as contactCenterReducer, processApplications as processContactApplications, combineUnique as combineContactUnique, contactId as contactCenterId };
 export default ContactCenter;

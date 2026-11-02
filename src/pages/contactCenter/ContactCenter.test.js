@@ -679,4 +679,150 @@ describe('src/pages/contactCenter/ContactCenter.jsx', () => {
 		unmount();
 	});
 
+	describe('exported reducer / processApplications helpers', () => {
+		it('SET_DATA_LISTS merges prefilled contacts including cell-bearing entries', async () => {
+			const { contactCenterReducer } = await import('./ContactCenter');
+			const next = contactCenterReducer(
+				{
+					recipients: [],
+					sender: '',
+					cc: [],
+					smsRecipients: [],
+					override: false,
+					applicantEmails: [],
+					applicantCells: [],
+					newApplicantEmails: [],
+					newApplicantCells: [],
+					returningApplicantEmails: [],
+					returningApplicantCells: [],
+					scholarshipApplicantEmails: [],
+					scholarshipApplicantCells: [],
+					memberEmails: [],
+					memberCells: [],
+					memberAliases: [],
+					allUserEmails: [],
+					allCC: [],
+					allUserCells: [],
+					availableSenders: [{ id: 'sys', email: 'sys@x.com', isSystem: true }, { id: 'm', email: 'm@x.com', isSystem: false }],
+				},
+				{
+					type: 'SET_DATA_LISTS',
+					payload: {
+						applicants: [{ id: 'a1', name: 'A', email: 'a@x.com', cell: '111' }],
+						members: [{ id: 'm1', name: 'M', email: 'm@x.com', cell: '222', alias: 'alias@x.com' }],
+						prefilled: [
+							{ id: 'p1', name: 'Pref', email: 'p@x.com', cell: '333' },
+							{ id: 'p2', name: 'NoCell', email: 'nc@x.com' },
+						],
+					},
+				}
+			);
+			expect(next.applicantEmails).toHaveLength(1);
+			expect(next.memberAliases[0].email).toBe('alias@x.com');
+			expect(next.allUserCells.some((c) => c.cell === '333')).toBe(true);
+			expect(next.allUserEmails.some((u) => u.email === 'p@x.com')).toBe(true);
+			expect(next.allCC.some((u) => u.email === 'm@x.com')).toBe(true);
+		});
+
+		it('PREFILL_DATA, RESET_FORM, INITIALIZE_SENDERS, and unhandled action paths', async () => {
+			const { contactCenterReducer } = await import('./ContactCenter');
+			const base = {
+				recipients: [{ id: 'r' }],
+				sender: { id: 's' },
+				cc: [{ id: 'c' }],
+				smsRecipients: [{ id: 'sms' }],
+				override: false,
+				applicantEmails: [],
+				applicantCells: [],
+				newApplicantEmails: [],
+				newApplicantCells: [],
+				returningApplicantEmails: [],
+				returningApplicantCells: [],
+				scholarshipApplicantEmails: [],
+				scholarshipApplicantCells: [],
+				memberEmails: [{ id: 'm', email: 'm@x.com' }],
+				memberCells: [],
+				memberAliases: [],
+				allUserEmails: [{ id: 'r', email: 'r@x.com' }],
+				allCC: [],
+				allUserCells: [],
+				availableSenders: [],
+			};
+			const prefilled = contactCenterReducer(base, {
+				type: 'PREFILL_DATA',
+				payload: {
+					prefilledRecipients: [{ id: 'pr', email: 'pr@x.com' }],
+					prefilledSms: [{ id: 'ps', cell: '999' }],
+				},
+			});
+			expect(prefilled.recipients[0].email).toBe('pr@x.com');
+			expect(prefilled.smsRecipients[0].cell).toBe('999');
+
+			const reset = contactCenterReducer(prefilled, { type: 'RESET_FORM' });
+			expect(reset.recipients).toEqual([]);
+			expect(reset.sender).toBe('');
+
+			const withSenders = contactCenterReducer(reset, {
+				type: 'INITIALIZE_SENDERS',
+				payload: [
+					{ id: 'sys', email: 'sys@x.com', isSystem: true },
+					{ id: 'human', email: 'h@x.com', isSystem: false },
+				],
+			});
+			expect(withSenders.availableSenders).toHaveLength(2);
+			expect(withSenders.allCC.some((c) => c.email === 'h@x.com')).toBe(true);
+
+			expect(() => contactCenterReducer(base, { type: 'NOPE' })).toThrow(/Unhandled action type/);
+		});
+
+		it('processApplications buckets applicants, handles empty buckets, and cleanup unsubscribes', async () => {
+			const { processContactApplications } = await import('./ContactCenter');
+			const unsubA = jest.fn();
+			const unsubB = jest.fn();
+			getRealTimeApplicantsByApplicationID
+				.mockImplementationOnce((ids, handler) => {
+					handler([{ id: ids[0], firstName: 'N', lastName: 'A' }]);
+					return unsubA;
+				})
+				.mockImplementationOnce((ids, handler) => {
+					handler([{ id: ids[0], firstName: 'R', lastName: 'G' }]);
+					return unsubB;
+				});
+
+			const newHandler = jest.fn();
+			const returningHandler = jest.fn();
+			const scholarshipHandler = jest.fn();
+			const cleanup = processContactApplications(
+				[
+					{ type: 'New Application', completedBy: 'app-1' },
+					{ type: 'Returning Grant', completedBy: 'app-2' },
+					{ type: 'Scholarship', completedBy: null },
+					{ type: 'Unknown', completedBy: 'x' },
+				],
+				{
+					'New Application': { ids: new Set(), handler: newHandler },
+					'Returning Grant': { ids: new Set(), handler: returningHandler },
+					Scholarship: { ids: new Set(), handler: scholarshipHandler },
+				}
+			);
+			expect(newHandler).toHaveBeenCalled();
+			expect(returningHandler).toHaveBeenCalled();
+			expect(scholarshipHandler).toHaveBeenCalledWith([]);
+			cleanup();
+			expect(unsubA).toHaveBeenCalled();
+			expect(unsubB).toHaveBeenCalled();
+		});
+
+		it('combineContactUnique and contactCenterId helpers', async () => {
+			const { combineContactUnique, contactCenterId } = await import('./ContactCenter');
+			expect(contactCenterId('raw-string')).toBe('raw-string');
+			expect(contactCenterId({ id: 'obj-id' })).toBe('obj-id');
+			const merged = combineContactUnique(
+				[{ id: '1', email: 'a@x.com' }, null],
+				[{ id: '2', email: 'a@x.com' }, { id: '3', email: 'b@x.com' }]
+			);
+			expect(merged).toHaveLength(2);
+		});
+	});
+
 });

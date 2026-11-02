@@ -234,4 +234,38 @@ describe('PDFApplication', () => {
 		render(<PDFApplication />);
 		await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/login'));
 	});
+
+	it('decrements age when birthday has not occurred yet this year', async () => {
+		vi.useFakeTimers({ now: new Date('2026-06-15T15:00:00.000Z') });
+		getCollectionData.mockImplementation((_userId, collectionName) => {
+			if (collectionName === 'profiles') {
+				// Birthday later in the year → calculateAge subtracts one.
+				return Promise.resolve({ ...records.profiles, applicantDOB: '2000-09-01' });
+			}
+			return Promise.resolve(records[collectionName]);
+		});
+
+		await act(async () => {
+			render(<PDFApplication />);
+		});
+
+		expect(await screen.findByText(/\(25 years old\)/)).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it('skips awards fetch when awards are empty and surfaces fetch errors', async () => {
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		getApplication.mockResolvedValueOnce({ ...application, awards: [] });
+
+		const { unmount } = render(<PDFApplication />);
+		expect(await screen.findByText('Applicant Information')).toBeInTheDocument();
+		expect(getAwardsData).not.toHaveBeenCalled();
+		expect(screen.queryByText('Award History')).not.toBeInTheDocument();
+		unmount();
+
+		getApplication.mockRejectedValueOnce(new Error('pdf-load-failed'));
+		render(<PDFApplication />);
+		await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+		errorSpy.mockRestore();
+	});
 });

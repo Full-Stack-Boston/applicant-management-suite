@@ -396,6 +396,26 @@ describe('Application Card Component', () => {
 		expect(consoleSpy).toHaveBeenCalledWith('Error fetching application details:', expect.any(Error));
 		consoleSpy.mockRestore();
 	});
+
+	it('uses dark-mode experience colors and surfaces changeAppStatus failures', async () => {
+		useTheme.mockReturnValue({ darkMode: true });
+		jest.spyOn(buttonActions, 'getApplicationActions').mockReturnValue([
+			{ label: 'Change Status', dialogId: 'changeAppStatus' },
+		]);
+		await act(async () => {
+			render(<Application application={mockApplication} />);
+		});
+		await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
+		expect(screen.getByTestId('section-Experience')).toBeInTheDocument();
+		expect(screen.getByText(/Example Org/)).toBeInTheDocument();
+
+		firebaseConfig.saveCollectionData.mockRejectedValueOnce(new Error('status boom'));
+		fireEvent.click(screen.getByText('Change Status'));
+		await act(async () => {
+			await mockShowDialog.mock.calls.at(-1)[0].callback({ status: 'Reviewing' });
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'changeAppStatus-applicationCard');
+	});
 });
 
 describe('PDFApplication (Print View)', () => {

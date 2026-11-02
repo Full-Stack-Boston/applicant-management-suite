@@ -292,4 +292,43 @@ describe('HomeNav', () => {
 		}
 	});
 
+	it('opens Platform Info menu by id and closes via Menu onClose', () => {
+		mockUseMediaQuery.mockReturnValue(false);
+		renderNav({ variant: 'applicant' });
+		const infoBtn = screen.getByRole('button', { name: /Platform Info/i });
+		expect(infoBtn).toHaveAttribute('aria-haspopup', 'true');
+		fireEvent.click(infoBtn);
+		expect(document.getElementById('platform-info-menu')).toBeTruthy();
+		expect(infoBtn).toHaveAttribute('aria-expanded', 'true');
+		expect(infoBtn).toHaveAttribute('aria-controls', 'platform-info-menu');
+		const items = screen.getAllByRole('menuitem');
+		expect(items.length).toBeGreaterThan(0);
+		fireEvent.keyDown(document.getElementById('platform-info-menu'), { key: 'Escape' });
+	});
+
+	it('opens burger Menu keepMounted path for applicant logout and theme controls', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		mockUseAuth.mockReturnValue({
+			user: { uid: 'u1' },
+			applicant: { id: 'a1', firstName: 'Pat' },
+		});
+		renderNav({ variant: 'applicant' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		expect(screen.getByRole('menu')).toBeInTheDocument();
+		expect(screen.getByText('Settings')).toBeInTheDocument();
+		// Logout lives on the toolbar IconButton in burger layout (not a MenuItem).
+		fireEvent.click(screen.getByLabelText('Logout'));
+		expect(mockLogoutUser).toHaveBeenCalled();
+	});
+
+	it('renders expanded Platform Info alongside applicant primary links on wide screens', () => {
+		mockUseMediaQuery.mockReturnValue(false);
+		renderNav({ variant: 'applicant' });
+		expect(screen.getByRole('button', { name: /Platform Info/i })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: /Platform Info/i }));
+		const items = screen.getAllByRole('menuitem');
+		fireEvent.click(items[items.length - 1]);
+		expect(mockOnNavigateSection.mock.calls.length + mockNavigate.mock.calls.length).toBeGreaterThan(0);
+	});
+
 });

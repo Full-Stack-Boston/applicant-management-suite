@@ -245,6 +245,173 @@ describe('CallUI (and sub-components)', () => {
 		});
 	});
 
+	describe('MediaStream attachment and fullscreen', () => {
+		const OriginalMediaStream = global.MediaStream;
+
+		afterEach(() => {
+			global.MediaStream = OriginalMediaStream;
+		});
+
+		it('attaches videoTrack and audioTrack MediaStream on participant tile', async () => {
+			const mediaStreamCtor = jest.fn(function MediaStreamMock(tracks) {
+				this.tracks = tracks;
+			});
+			global.MediaStream = mediaStreamCtor;
+
+			const videoTrack = { id: 'v-track', kind: 'video' };
+			const audioTrack = { id: 'a-track', kind: 'audio' };
+
+			useParticipantIds.mockReturnValue(['remote-id-1']);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'remote-id-1' && prop === 'user_name') return 'Remote User';
+				if (prop === 'tracks.audio.state') return 'on';
+				if (prop === 'tracks.video.state') return 'on';
+				if (prop === 'videoTrack') return videoTrack;
+				if (prop === 'audioTrack') return audioTrack;
+				if (prop === 'audio') return true;
+				if (prop === 'video') return true;
+				return null;
+			});
+
+			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			await waitFor(() => {
+				expect(mediaStreamCtor).toHaveBeenCalled();
+			});
+			const passedTracks = mediaStreamCtor.mock.calls[0][0];
+			expect(passedTracks).toEqual(expect.arrayContaining([videoTrack, audioTrack]));
+			const videoEl = container.querySelector('video');
+			expect(videoEl.srcObject).toBeTruthy();
+		});
+
+		it('clears participant tile MediaStream when tracks are missing', async () => {
+			useParticipantIds.mockReturnValue(['remote-id-1']);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'remote-id-1' && prop === 'user_name') return 'Remote User';
+				if (prop === 'tracks.audio.state') return 'on';
+				if (prop === 'tracks.video.state') return 'on';
+				if (prop === 'videoTrack') return null;
+				if (prop === 'audioTrack') return null;
+				return null;
+			});
+
+			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			await waitFor(() => {
+				const videoEl = container.querySelector('video');
+				expect(videoEl).toBeTruthy();
+				expect(videoEl.srcObject).toBeNull();
+			});
+		});
+
+		it('attaches playable screen share track plus screen audio MediaStream', async () => {
+			const mediaStreamCtor = jest.fn(function MediaStreamMock(tracks) {
+				this.tracks = tracks;
+			});
+			global.MediaStream = mediaStreamCtor;
+
+			const screenVideoTrack = { id: 'sv', kind: 'video' };
+			const screenAudioTrack = { id: 'sa', kind: 'audio' };
+
+			useScreenShare.mockReturnValue({ screens: [{ session_id: 'scr-1' }] });
+			useParticipantIds.mockReturnValue([]);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'scr-1' && prop === 'screenVideoTrack') return screenVideoTrack;
+				if (id === 'scr-1' && prop === 'tracks.screenVideo.state') return 'playable';
+				if (id === 'scr-1' && prop === 'tracks.screenAudioTrack') return screenAudioTrack;
+				return null;
+			});
+
+			render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			await waitFor(() => {
+				expect(mediaStreamCtor).toHaveBeenCalled();
+			});
+			expect(mediaStreamCtor.mock.calls[0][0]).toEqual(
+				expect.arrayContaining([screenVideoTrack, screenAudioTrack])
+			);
+		});
+
+		it('skips non-playable screen video track and clears empty screen MediaStream', async () => {
+			const mediaStreamCtor = jest.fn(function MediaStreamMock(tracks) {
+				this.tracks = tracks;
+			});
+			global.MediaStream = mediaStreamCtor;
+
+			useScreenShare.mockReturnValue({ screens: [{ session_id: 'scr-2' }] });
+			useParticipantIds.mockReturnValue([]);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'scr-2' && prop === 'screenVideoTrack') return { id: 'loading' };
+				if (id === 'scr-2' && prop === 'tracks.screenVideo.state') return 'loading';
+				if (id === 'scr-2' && prop === 'tracks.screenAudioTrack') return null;
+				return null;
+			});
+
+			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			await waitFor(() => {
+				const videos = container.querySelectorAll('video');
+				expect(videos.length).toBeGreaterThan(0);
+			});
+			expect(mediaStreamCtor).not.toHaveBeenCalled();
+		});
+
+		it('requests fullscreen from the screen share button and double-click', async () => {
+			global.MediaStream = jest.fn(function MediaStreamMock(tracks) {
+				this.tracks = tracks;
+			});
+			const requestFullscreen = jest.fn();
+			useScreenShare.mockReturnValue({ screens: [{ session_id: 'scr-fs' }] });
+			useParticipantIds.mockReturnValue([]);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'scr-fs' && prop === 'screenVideoTrack') return { id: 'sv' };
+				if (id === 'scr-fs' && prop === 'tracks.screenVideo.state') return 'playable';
+				return null;
+			});
+
+			const { container } = render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			const videoEl = await waitFor(() => {
+				const el = container.querySelector('video');
+				expect(el).toBeTruthy();
+				return el;
+			});
+			videoEl.requestFullscreen = requestFullscreen;
+
+			fireEvent.click(screen.getByTestId('FullscreenIcon').closest('button'));
+			expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+			fireEvent.doubleClick(videoEl);
+			expect(requestFullscreen).toHaveBeenCalledTimes(2);
+		});
+
+		it('shows picture avatar when video is off and pictureUrl is present', () => {
+			useMeeting.mockReturnValue({
+				participantDetails: {
+					'remote-id-1': { pictureUrl: 'https://example.com/face.png' },
+				},
+			});
+			useParticipantIds.mockReturnValue(['remote-id-1']);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (id === 'remote-id-1' && prop === 'user_name') return 'Remote User';
+				if (prop === 'tracks.video.state') return 'off';
+				if (prop === 'tracks.audio.state') return 'on';
+				return null;
+			});
+
+			render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			expect(screen.getByAltText('Remote User')).toHaveAttribute('src', 'https://example.com/face.png');
+			expect(screen.getByText('(Camera is off)')).toBeInTheDocument();
+		});
+
+		it('falls back to Guest label when user_name is missing', () => {
+			useParticipantIds.mockReturnValue(['remote-id-1']);
+			useParticipantProperty.mockImplementation((id, prop) => {
+				if (prop === 'tracks.audio.state') return 'on';
+				if (prop === 'tracks.video.state') return 'on';
+				if (prop === 'user_name') return null;
+				return null;
+			});
+			render(<CallUI isAdmin={false} />, { wrapper: MemoryRouter });
+			expect(screen.getByText('Guest')).toBeInTheDocument();
+		});
+	});
+
 	describe('CallAlerter events', () => {
 		it('alerts on join/leave/notify/eject events', () => {
 			jest.useFakeTimers();

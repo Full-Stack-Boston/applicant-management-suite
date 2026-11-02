@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within, cleanup } from '@testing-library/react';
 import WaitingRoom from './WaitingRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -700,6 +700,121 @@ describe('WaitingRoom Component', () => {
 			});
 		render(<WaitingRoom />);
 		expect(await screen.findAllByText(/This interview was cancelled/i)).not.toHaveLength(0);
+	});
+
+	test('changes the Camera select after devices are granted', async () => {
+		cleanup();
+		vi.useRealTimers();
+		useAuth.mockReturnValue({
+			applicant: { firstName: 'John', lastName: 'Doe' },
+			member: null,
+			user: { uid: 'app-123' },
+		});
+		getDoc.mockReset().mockResolvedValue({
+			exists: () => true,
+			data: () => ({
+				applicantId: 'app-123',
+				applicationId: 'application-99',
+				startTime: { toDate: () => new Date(Date.now() + 100000) },
+				status: 'confirmed',
+				firstName: 'Applicant',
+				lastName: 'Test',
+			}),
+		});
+		getRealTimeDocument.mockImplementation((_col, _id, callback) => {
+			callback({ status: 'confirmed' });
+			return jest.fn();
+		});
+		mockGetUserMedia.mockResolvedValue({
+			getTracks: () => [{ stop: mockStopTrack }],
+			getVideoTracks: () => [{ enabled: true, stop: mockStopTrack }],
+			getAudioTracks: () => [{ enabled: true, stop: mockStopTrack }],
+		});
+		mockEnumerateDevices.mockResolvedValue([
+			{ kind: 'videoinput', deviceId: 'cam-1', label: 'Camera 1' },
+			{ kind: 'videoinput', deviceId: 'cam-2', label: 'Camera 2' },
+			{ kind: 'audioinput', deviceId: 'mic-1', label: 'Mic 1' },
+		]);
+		useMeeting.mockReturnValue({
+			videoDeviceId: 'cam-1',
+			audioDeviceId: 'mic-1',
+			setVideoDeviceId: mockSetVideoDeviceId,
+			setAudioDeviceId: mockSetAudioDeviceId,
+		});
+		render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/Devices connected/i)).toBeInTheDocument();
+		});
+		const cameraSelect = screen.getAllByRole('combobox')[0];
+		fireEvent.mouseDown(cameraSelect);
+		const listbox = await screen.findByRole('listbox');
+		fireEvent.click(within(listbox).getByText('Camera 2'));
+		expect(mockSetVideoDeviceId).toHaveBeenCalledWith('cam-2');
+	});
+
+	test('shows granted standby copy after successful device setup', async () => {
+		render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		expect(screen.getByText(/Use the device check panel/i)).toBeInTheDocument();
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/All set! The committee will start the interview soon/i)).toBeInTheDocument();
+		});
+	});
+
+	test('shows device error standby copy when permissions fail', async () => {
+		mockGetUserMedia.mockRejectedValueOnce(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+		render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/issue with your devices/i)).toBeInTheDocument();
+		});
+	});
+
+	test('surfaces Connecting status message when interview flips to in-progress before redirect UI', async () => {
+		let statusCallback;
+		getRealTimeDocument.mockImplementation((_col, _id, cb) => {
+			statusCallback = cb;
+			cb({ status: 'confirmed' });
+			return jest.fn();
+		});
+		render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		act(() => {
+			statusCallback({ status: 'in-progress', startTime: { toDate: () => new Date(Date.now() + 60000) } });
+		});
+		// Either the brief Connecting... copy or the Interview starting countdown is acceptable.
+		await waitFor(() => {
+			expect(
+				screen.queryByText(/Connecting\.\.\./i) || screen.getByText(/Interview starting/i)
+			).toBeTruthy();
+		});
+	});
+
+	test('falls back when both video and audio individual streams fail after NotFoundError', async () => {
+		mockGetUserMedia
+			.mockRejectedValueOnce(Object.assign(new Error('not found'), { name: 'NotFoundError' }))
+			.mockRejectedValueOnce(Object.assign(new Error('no cam'), { name: 'NotFoundError' }))
+			.mockRejectedValueOnce(Object.assign(new Error('no mic'), { name: 'NotFoundError' }));
+		// No enumerated devices → DevicePreview throws after empty fallback streams.
+		mockEnumerateDevices.mockResolvedValue([]);
+		render(<WaitingRoom />);
+		await screen.findByTestId('auth-form-card');
+		await act(async () => {
+			fireEvent.click(screen.getByText(/Set up camera & mic/i));
+		});
+		await waitFor(() => {
+			expect(screen.getAllByText(/No camera found|issue with your devices|Could not start devices/i).length).toBeGreaterThan(0);
+		});
 	});
 
 });

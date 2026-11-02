@@ -304,5 +304,15 @@ describe('Navbar Component', () => {
 			fireEvent.click(screen.getByTestId('LightModeOutlinedIcon').closest('.item'));
 			expect(mockDispatch).toHaveBeenCalledWith({ type: 'TOGGLE' });
 		});
+
+		it('runs search when the search icon is clicked', async () => {
+			render(<Navbar />);
+			const input = screen.getByPlaceholderText('Search...');
+			fireEvent.change(input, { target: { value: 'icon search' } });
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('SearchOutlinedIcon'));
+			});
+			expect(await screen.findByTestId('search-dropdown')).toBeInTheDocument();
+		});
 	});
 });

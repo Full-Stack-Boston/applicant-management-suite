@@ -98,6 +98,12 @@ const contrastRatio = (foreground: string, background: string): number => {
 
 const MIN_CONTENT_CONTRAST = 4.5;
 
+/** Test seam for the near-dead contrast fallback path in resolveContentAccent. */
+let minContentContrastThreshold = MIN_CONTENT_CONTRAST;
+export const __setMinContentContrastForTests = (value: number | null) => {
+	minContentContrastThreshold = value == null ? MIN_CONTENT_CONTRAST : value;
+};
+
 /** Pick a readable accent for icons/eyebrows on neutral section surfaces. */
 export const resolveContentAccent = (mode: 'light' | 'dark', primaryKey: string): string => {
 	const surface = mode === 'dark' ? colors.darkPaper : colors.lightPaper;
@@ -113,7 +119,7 @@ export const resolveContentAccent = (mode: 'light' | 'dark', primaryKey: string)
 	];
 
 	for (const candidate of candidates) {
-		if (contrastRatio(candidate, surface) >= MIN_CONTENT_CONTRAST) {
+		if (contrastRatio(candidate, surface) >= minContentContrastThreshold) {
 			return candidate;
 		}
 	}

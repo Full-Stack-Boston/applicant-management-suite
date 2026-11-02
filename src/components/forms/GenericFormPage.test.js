@@ -40,6 +40,11 @@ vi.mock('./DynamicField', () => ({
 			<div data-testid={`dynamic-field-${fieldConfig.name}`}>
 				<label>{fieldConfig.label}</label>
 				<input data-testid={`input-${fieldConfig.name}`} onChange={(e) => onFieldUpdate(fieldPath, e.target.value)} />
+				{(fieldConfig.options || []).map((opt) => (
+					<span key={`${fieldConfig.name}-${opt.value}`} data-testid={`option-${fieldConfig.name}-${opt.value}`}>
+						{opt.label}
+					</span>
+				))}
 				{/* Mock triggers for file actions */}
 				<button
 					data-testid={`trigger-upload-${fieldConfig.name}`}
@@ -130,11 +135,34 @@ vi.mock('../../config/ui/formConfig', () => ({
 			},
 			layout: {},
 		},
+		places: {
+			name: 'places',
+			intro: { title: 'Places', description: 'Locations' },
+			arrayField: {
+				name: 'items',
+				label: 'Places',
+				prompt: 'Add a place',
+				fields: [
+					{ name: 'label', type: 'text', label: 'Label', required: true },
+					{ name: 'location', type: 'text', label: 'Location' },
+					{ name: 'alt', type: 'text', label: 'Alt' },
+				],
+				cardDisplay: {
+					title: 'label',
+					subtitle: 'relation',
+					details: ['location', 'alt', 'empty'],
+				},
+			},
+			layout: {},
+		},
 		// Config for testing optionsSource
 		education: {
 			name: 'education',
 			intro: { title: 'Edu', description: 'Desc' },
-			fields: [{ name: 'selectedJob', type: 'dropdown', label: 'Select Job', optionsSource: 'jobs' }],
+			fields: [
+				{ name: 'selectedJob', type: 'dropdown', label: 'Select Job', optionsSource: 'jobs' },
+				{ name: 'staticPick', type: 'dropdown', label: 'Static', options: [{ label: 'A', value: 'a' }] },
+			],
 			layout: {},
 		},
 		// Config for testing validation logic on arrays
@@ -458,6 +486,108 @@ describe('GenericFormPage Component', () => {
 			fireEvent.click(errBtn);
 		}
 		expect(true).toBe(true);
+	});
+
+	describe('Card detail formatting and dynamic options edges', () => {
+		test('formats description and structured_formatting object card details', () => {
+			const props = {
+				...baseProps,
+				sectionName: 'places',
+				application: {
+					places: {
+						items: [
+							{
+								id: 'p1',
+								label: 'Home',
+								relation: 'Primary',
+								location: { description: '1 Main St, Boston' },
+								alt: { structured_formatting: { main_text: 'Alt Main' } },
+								empty: null,
+							},
+							{
+								id: 'p2',
+								label: { description: 'Work HQ' },
+								relation: { structured_formatting: { main_text: 'Office' } },
+								location: '',
+								alt: { structured_formatting: {} },
+							},
+							'plain-string-entry',
+						],
+					},
+				},
+			};
+			render(<GenericFormPage {...props} />);
+			expect(screen.getByText('Home')).toBeInTheDocument();
+			expect(screen.getByText(/Primary · 1 Main St, Boston · Alt Main/)).toBeInTheDocument();
+			expect(screen.getByText('Work HQ')).toBeInTheDocument();
+			expect(screen.getByText(/Office/)).toBeInTheDocument();
+			expect(screen.getByText('plain-string-entry')).toBeInTheDocument();
+		});
+
+		test('shows empty array prompt and falls back to school/fullName titles', () => {
+			const { unmount } = render(
+				<GenericFormPage
+					{...baseProps}
+					sectionName='places'
+					application={{ places: { items: [] } }}
+				/>
+			);
+			expect(screen.getByText('Nothing added yet')).toBeInTheDocument();
+			expect(screen.getByText('Add a place')).toBeInTheDocument();
+			unmount();
+
+			render(
+				<GenericFormPage
+					{...baseProps}
+					sectionName='places'
+					application={{
+						places: {
+							items: [
+								{ id: 's1', school: 'MIT', relation: 'Alum' },
+								{ id: 's2', fullName: 'Ada Lovelace' },
+								{ id: 's3', title: 'Legacy Title' },
+							],
+						},
+					}}
+				/>
+			);
+			expect(screen.getByText('MIT')).toBeInTheDocument();
+			expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+			expect(screen.getByText('Legacy Title')).toBeInTheDocument();
+		});
+
+		test('builds dynamic optionsSource entries including Not Active sentinel', () => {
+			const props = {
+				...baseProps,
+				sectionName: 'education',
+				application: {
+					education: {
+						jobs: [
+							{ type: 'FullTime', organization: 'Acme', role: 'Eng' },
+							{ type: 'PartTime', organization: 'Beta', role: 'Intern' },
+						],
+					},
+				},
+			};
+			render(<GenericFormPage {...props} />);
+			expect(screen.getByTestId('dynamic-field-selectedJob')).toBeInTheDocument();
+			expect(screen.getByText('Not Active')).toBeInTheDocument();
+			expect(screen.getByText('FullTime | Acme (Eng)')).toBeInTheDocument();
+			expect(screen.getByText('PartTime | Beta (Intern)')).toBeInTheDocument();
+			expect(screen.getByTestId('dynamic-field-staticPick')).toBeInTheDocument();
+		});
+
+		test('handles missing optionsSource array gracefully', () => {
+			render(
+				<GenericFormPage
+					{...baseProps}
+					sectionName='education'
+					application={{ education: {} }}
+				/>
+			);
+			expect(screen.getByTestId('dynamic-field-selectedJob')).toBeInTheDocument();
+			expect(screen.getByText('Not Active')).toBeInTheDocument();
+		});
 	});
 
 });

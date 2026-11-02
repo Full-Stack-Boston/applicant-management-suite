@@ -501,6 +501,41 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockOnSnapshot).toHaveBeenCalled();
 	});
 
+	it('getRealTimeAwardsByIDs merges exists/delete branches, error callback, and cleanup', () => {
+		const cb = jest.fn();
+		const unsubs = [jest.fn(), jest.fn()];
+		let call = 0;
+		const errorHandlers = [];
+		mockOnSnapshot.mockImplementation((_ref, onNext, onError) => {
+			errorHandlers.push(onError);
+			const idx = call++;
+			if (idx === 0) {
+				onNext({ exists: () => true, id: 'a1', data: () => ({ amount: 10 }) });
+				onNext({ exists: () => false, id: 'a1', data: () => ({}) });
+			} else {
+				onNext({ exists: () => true, id: 'a2', data: () => ({ amount: 20 }) });
+			}
+			return unsubs[idx] || jest.fn();
+		});
+		const cleanup = FirebaseConfig.getRealTimeAwardsByIDs(['a1', 'a2'], cb);
+		expect(cb).toHaveBeenCalled();
+		errorHandlers[0]?.(new Error('award snapshot boom'));
+		cleanup();
+		expect(unsubs[0]).toHaveBeenCalled();
+		expect(unsubs[1]).toHaveBeenCalled();
+	});
+
+	it('getRealTimeAwardsByIDs rejects empty awardIDs', () => {
+		expect(() => FirebaseConfig.getRealTimeAwardsByIDs([], jest.fn())).toThrow(/non-empty array/);
+		expect(() => FirebaseConfig.getRealTimeAwardsByIDs(null, jest.fn())).toThrow(/non-empty array/);
+	});
+
+	it('getAwardsData rejects non-array and rethrows fetch errors', async () => {
+		await expect(FirebaseConfig.getAwardsData('u1', null)).rejects.toThrow(/must be an array/);
+		mockGetDoc.mockRejectedValueOnce(new Error('awards fetch boom'));
+		await expect(FirebaseConfig.getAwardsData('u1', ['x'])).rejects.toThrow('awards fetch boom');
+	});
+
 	// --- AUTH & USERS ---
 
 	it('getUserProfiles fetches member and applicant', async () => {
@@ -802,6 +837,47 @@ describe('src/config/data/firebase.js', () => {
 	it('getApplicationsForApplicant', async () => {
 		await FirebaseConfig.getApplicationsForApplicant('1');
 		expect(mockGetDocs).toHaveBeenCalled();
+	});
+
+	it('getApplicationsForApplicant uses default statuses and filters deleted apps', async () => {
+		mockWhere.mockClear();
+		mockQuery.mockClear();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'keep', data: () => ({ completedBy: 'u1', status: 'Eligible' }) },
+				{ id: 'gone', data: () => ({ completedBy: 'u1', status: 'Deleted' }) },
+				{ id: 'done', data: () => ({ completedBy: 'u1', status: 'Completed' }) },
+			],
+		});
+		const apps = await FirebaseConfig.getApplicationsForApplicant('u1');
+		expect(mockWhere).toHaveBeenCalledWith('completedBy', '==', 'u1');
+		expect(mockWhere).toHaveBeenCalledWith('status', 'in', expect.any(Array));
+		expect(apps.map((a) => a.id)).toEqual(['keep', 'done']);
+		expect(apps.find((a) => a.id === 'gone')).toBeUndefined();
+	});
+
+	it('getApplicationsForApplicant with statuses=null omits status-in filter', async () => {
+		mockWhere.mockClear();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{ id: 'any', data: () => ({ completedBy: 'u2', status: 'Started' }) },
+				{ id: 'del', data: () => ({ completedBy: 'u2', status: 'Deleted' }) },
+			],
+		});
+		const apps = await FirebaseConfig.getApplicationsForApplicant('u2', null);
+		expect(mockWhere).toHaveBeenCalledWith('completedBy', '==', 'u2');
+		expect(mockWhere.mock.calls.some((c) => c[0] === 'status' && c[1] === 'in')).toBe(false);
+		expect(apps).toEqual([{ id: 'any', completedBy: 'u2', status: 'Started' }]);
+	});
+
+	it('getApplicationsForApplicant accepts an explicit statuses array', async () => {
+		mockWhere.mockClear();
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [{ id: 'inv', data: () => ({ completedBy: 'u3', status: 'Invited' }) }],
+		});
+		const apps = await FirebaseConfig.getApplicationsForApplicant('u3', ['Invited', 'Deferred']);
+		expect(mockWhere).toHaveBeenCalledWith('status', 'in', ['Invited', 'Deferred']);
+		expect(apps).toHaveLength(1);
 	});
 
 	it('generateICSDownloadURL handles missing file via Cloud Function', async () => {

@@ -188,9 +188,15 @@ describe('src/config/ui/theme.js', () => {
 	it('falls back for low-contrast accents and exposes MuiLink hover styles', async () => {
 		const themeMod = await import('./theme');
 		theme = themeMod.default;
-		const { resolveContentAccent, resolveContentLink } = themeMod;
+		const { resolveContentAccent, resolveContentLink, __setMinContentContrastForTests, colors } = themeMod;
 		expect(resolveContentAccent('light', 'not-a-real-key')).toBeTruthy();
 		expect(resolveContentLink('dark', 'not-a-real-key')).toBeTruthy();
+
+		// Force every candidate below threshold so the final mode fallback runs.
+		__setMinContentContrastForTests(99);
+		expect(resolveContentAccent('light', 'blue')).toBe(colors.lightTextPrimary);
+		expect(resolveContentAccent('dark', 'blue')).toBe(colors.darkTextPrimary);
+		__setMinContentContrastForTests(null);
 
 		const built = theme(false, 'green');
 		const linkOverride = built.components?.MuiLink?.styleOverrides?.root;

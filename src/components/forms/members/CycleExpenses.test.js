@@ -686,4 +686,161 @@ describe('CycleExpenses', () => {
 			expect(savedPayload.programExpenseItems[0].program).toBe('Mobile Camp');
 		});
 	});
+
+	describe('Mobile card Requested/Disbursed fields and program totals', () => {
+		it('edits Requested and Disbursed TextFields from the last (mobile) unlock control', async () => {
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+
+			const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+			await act(async () => {
+				fireEvent.click(unlocks[unlocks.length - 1]);
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0));
+
+			expect(screen.getAllByText('Requested').length).toBeGreaterThan(0);
+			expect(screen.getAllByText('Disbursed').length).toBeGreaterThan(0);
+
+			await act(async () => {
+				const amountInputs = screen.getAllByDisplayValue('100');
+				expect(amountInputs.length).toBeGreaterThanOrEqual(2);
+				// Drive every Requested/Disbursed number field (desktop + mobile twins).
+				for (const input of amountInputs) {
+					fireEvent.change(input, { target: { value: '' } });
+					fireEvent.change(input, { target: { value: '222' } });
+				}
+			});
+
+			await act(async () => {
+				const saves = screen.getAllByLabelText('Save expense row');
+				fireEvent.click(saves[saves.length - 1]);
+			});
+			await waitFor(() => {
+				expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
+				const savedPayload = firebaseConfig.saveYearlyFinancesDoc.mock.calls.at(-1)[1];
+				expect(savedPayload.programExpenseItems[0].request).toBe(222);
+				expect(savedPayload.programExpenseItems[0].disbursement).toBe(222);
+			});
+		});
+
+		it('cancels a mobile expense edit without saving', async () => {
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+			const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+			await act(async () => {
+				fireEvent.click(unlocks[unlocks.length - 1]);
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Cancel expense edit').length).toBeGreaterThan(0));
+
+			await act(async () => {
+				const amountInputs = screen.getAllByDisplayValue('100');
+				fireEvent.change(amountInputs[amountInputs.length - 1], { target: { value: '999' } });
+			});
+			await act(async () => {
+				const cancels = screen.getAllByLabelText('Cancel expense edit');
+				fireEvent.click(cancels[cancels.length - 1]);
+			});
+			await waitFor(() => {
+				expect(screen.queryAllByLabelText('Cancel expense edit').length).toBe(0);
+			});
+			expect(firebaseConfig.saveYearlyFinancesDoc).not.toHaveBeenCalled();
+		});
+
+		it('removes an expense from the mobile card remove control', async () => {
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(1));
+			const unlocks = screen.getAllByLabelText('Unlock expense row to edit');
+			await act(async () => {
+				fireEvent.click(unlocks[unlocks.length - 1]);
+			});
+			await waitFor(() => expect(screen.getAllByLabelText('Remove expense').length).toBeGreaterThan(0));
+			await act(async () => {
+				const removes = screen.getAllByLabelText('Remove expense');
+				fireEvent.click(removes[removes.length - 1]);
+			});
+			await waitFor(() => {
+				expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
+				const savedPayload = firebaseConfig.saveYearlyFinancesDoc.mock.calls.at(-1)[1];
+				expect(savedPayload.programExpenseItems).toEqual([]);
+			});
+		});
+
+		it('shows Requested/Disbursed program expense totals on the mobile summary card', async () => {
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => {
+				expect(screen.getAllByText('Requested total').length).toBeGreaterThan(0);
+				expect(screen.getAllByText('Disbursed total').length).toBeGreaterThan(0);
+			});
+		});
+
+		it('adds a program expense via the mobile Add program expense button when unlocked', async () => {
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => expect(screen.getAllByText('Add program expense').length).toBeGreaterThan(0));
+			const addButtons = screen.getAllByText('Add program expense');
+			await act(async () => {
+				fireEvent.click(addButtons[addButtons.length - 1]);
+			});
+			await waitFor(() => {
+				expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0);
+			});
+		});
+
+		it('renders legacy renewable_scholarships and non_renewable_grants alert copy', async () => {
+			firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+				handler([
+					{
+						id: '2026',
+						cycleYear: 2026,
+						programExpenseItems: [{ category: 'campership', program: 'Camp', request: 50, disbursement: 40 }],
+						awardIDs: [],
+						renewable_scholarships: [{ id: 'rs-1' }, { id: 'rs-2' }],
+						non_renewable_grants: [{ id: 'ng-1' }],
+						total_allotted_disbursement: 1000,
+						prior_year_clawback: 0,
+					},
+				]);
+				return () => {};
+			});
+
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => {
+				expect(screen.getByText(/2 renewable, 1 grants/i)).toBeInTheDocument();
+				expect(screen.getByText(/historical embedded scholarship\/grant rows/i)).toBeInTheDocument();
+			});
+			expect(screen.getAllByText('Requested total').length).toBeGreaterThan(0);
+		});
+
+		it('hides program totals card when there are no program expense items', async () => {
+			firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+				handler([
+					{
+						id: '2026',
+						cycleYear: 2026,
+						programExpenseItems: [],
+						awardIDs: [],
+						total_allotted_disbursement: 1000,
+						prior_year_clawback: 0,
+					},
+				]);
+				return () => {};
+			});
+			await act(async () => {
+				renderPage();
+			});
+			await waitFor(() => expect(screen.getByText('Add program expense')).toBeInTheDocument());
+			expect(screen.queryByText('Requested total')).not.toBeInTheDocument();
+		});
+	});
 });

@@ -1182,5 +1182,38 @@ describe('tableConfig.js', () => {
 			rerender(<StackedDateCell value='not a date' />);
 			expect(screen.getByText('Invalid Date')).toBeInTheDocument();
 		});
+
+		it('markEligible opens dialog and updates status via callback', async () => {
+			mockShowDialog.mockClear();
+			mockShowAlert.mockClear();
+			FirebaseService.updateCollectionData.mockReset();
+			FirebaseService.updateCollectionData.mockResolvedValue(true);
+			render(<TableConfig.MarkEligibleButton row={row} />);
+			fireEvent.click(screen.getByText('Evaluate'));
+			const dialogArgs = mockShowDialog.mock.calls.find((c) => c[0]?.id === 'markEligibility')?.[0];
+			expect(dialogArgs).toEqual(
+				expect.objectContaining({
+					id: 'markEligibility',
+					data: { app: row },
+					callback: expect.any(Function),
+				})
+			);
+			await act(async () => {
+				await dialogArgs.callback('Eligible');
+			});
+			expect(FirebaseService.updateCollectionData).toHaveBeenCalledWith('applications', 'row-1', { status: 'Eligible' });
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: expect.stringContaining('Eligible'), type: 'success' })
+			);
+		});
+
+		it('joinInterview navigates into the interview room', () => {
+			mockNavigate.mockClear();
+			generatePath.mockReturnValue('/interviews/interview-room/row-1');
+			render(<JoinInterviewButton row={row} />);
+			fireEvent.click(screen.getByText('Enter'));
+			expect(generatePath).toHaveBeenCalled();
+			expect(mockNavigate).toHaveBeenCalledWith('/interviews/interview-room/row-1');
+		});
 	});
 });

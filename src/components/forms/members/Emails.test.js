@@ -161,4 +161,33 @@ describe('EmailForm Component', () => {
 		fireEvent.click(screen.getByText('Cancel'));
 		expect(mockNavigate).toHaveBeenCalledWith(-1);
 	});
+
+	test('changes the From alias via the select control', async () => {
+		useComposeEmailOptions.mockReturnValue({
+			fromOptions: [
+				{ value: 'test@example.com', label: 'Test <test@example.com>' },
+				{ value: 'alias@example.com', label: 'Alias <alias@example.com>' },
+			],
+			signatureOptions: [],
+			defaultFrom: 'test@example.com',
+			permittedAliases: ['test@example.com', 'alias@example.com'],
+		});
+		render(<EmailForm />);
+
+		const fromSelect = screen.getByLabelText(/From/i);
+		fireEvent.mouseDown(fromSelect);
+		await waitFor(() => expect(screen.getByRole('option', { name: /Alias/i })).toBeInTheDocument());
+		fireEvent.click(screen.getByRole('option', { name: /Alias/i }));
+		await waitFor(() => expect(fromSelect).toHaveTextContent(/Alias/i));
+
+		const toInput = screen.getByLabelText('To');
+		fireEvent.change(toInput, { target: { value: 'recipient@test.com' } });
+		fireEvent.keyDown(toInput, { key: 'Enter' });
+		fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'From alias' } });
+		fireEvent.click(screen.getByText('Send'));
+
+		await waitFor(() => {
+			expect(sendZohoEmail).toHaveBeenCalledWith(expect.objectContaining({ fromAddress: 'alias@example.com' }));
+		});
+	});
 });
