@@ -947,6 +947,10 @@ describe('tableConfig.js', () => {
 			expect(screen.getByText('N/A')).toBeInTheDocument();
 
 			cleanup();
+			render(<UserLastSeen userId='' />);
+			expect(screen.getByText('N/A')).toBeInTheDocument();
+
+			cleanup();
 			FirebaseService.getUserAuthRecord.mockRejectedValueOnce(new Error('auth unavailable'));
 			render(<UserLastLogin userId='missing' />);
 			expect(await screen.findByText('Never')).toBeInTheDocument();

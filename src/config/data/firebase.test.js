@@ -641,6 +641,16 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockUpdateDoc).toHaveBeenCalled();
 	});
 
+	it('getDownloadLinkForFile and getFile cover null and failure paths', async () => {
+		await expect(FirebaseConfig.getDownloadLinkForFile(null)).resolves.toBeNull();
+		mockGetDownloadURL.mockRejectedValueOnce(new Error('missing object'));
+		await expect(FirebaseConfig.getDownloadLinkForFile('path/to/file')).resolves.toBeNull();
+
+		mockGetDownloadURL.mockResolvedValueOnce('https://storage.example/file.pdf');
+		await expect(FirebaseConfig.getFile('path/to/file')).resolves.toBe('https://storage.example/file.pdf');
+		await expect(FirebaseConfig.getFile('')).rejects.toThrow('Missing refLoc path');
+	});
+
 	it('getMeetings fetches meetings', async () => {
 		await FirebaseConfig.getMeetings('1', false);
 		expect(mockGetDocs).toHaveBeenCalled();
