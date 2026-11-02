@@ -661,6 +661,41 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockGetDocs).toHaveBeenCalled();
 	});
 
+	it('getInterviewsByWindow resolves applicant names and empty windows', async () => {
+		mockGetDocs.mockResolvedValueOnce({ empty: true, docs: [] });
+		await expect(FirebaseConfig.getInterviewsByWindow('2024')).resolves.toEqual([]);
+
+		mockGetDocs.mockResolvedValueOnce({
+			empty: false,
+			docs: [
+				{ id: 'i1', data: () => ({ applicantId: 'a1', startTime: 't' }) },
+				{ id: 'i2', data: () => ({ applicantId: '', startTime: 't' }) },
+				{ id: 'i3', data: () => ({ applicantId: 'missing', startTime: 't' }) },
+				{ id: 'i4', data: () => ({ applicantId: 'err', startTime: 't' }) },
+			],
+		});
+		mockGetDoc
+			.mockResolvedValueOnce({
+				exists: () => true,
+				data: () => ({ firstName: 'Ada', lastName: 'Lovelace' }),
+			})
+			.mockResolvedValueOnce({
+				exists: () => false,
+				data: () => ({}),
+			})
+			.mockRejectedValueOnce(new Error('lookup fail'));
+
+		const rows = await FirebaseConfig.getInterviewsByWindow('2024');
+		expect(rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: 'i1', applicantName: 'Ada Lovelace' }),
+				expect.objectContaining({ id: 'i2', applicantName: 'Unknown Applicant' }),
+				expect.objectContaining({ id: 'i3', applicantName: 'Unknown Applicant' }),
+				expect.objectContaining({ id: 'i4', applicantName: 'Error fetching name' }),
+			])
+		);
+	});
+
 	it('getRealTimeInterviewsByWindow', () => {
 		FirebaseConfig.getRealTimeInterviewsByWindow('2024', jest.fn());
 		expect(mockOnSnapshot).toHaveBeenCalled();
