@@ -525,6 +525,11 @@ describe('InterviewRoom Component', () => {
 	});
 
 	test('handles participant updated and left events', async () => {
+		let detailsState = { 'remote-1': { role: 'applicant' } };
+		mockSetParticipantDetails.mockImplementation((updater) => {
+			detailsState = typeof updater === 'function' ? updater(detailsState) : updater;
+		});
+
 		render(<InterviewRoom />);
 		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
 		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
@@ -545,7 +550,7 @@ describe('InterviewRoom Component', () => {
 			});
 			leftHandler({ participant: { session_id: 'remote-1' } });
 		});
-		expect(mockSetParticipantDetails).toHaveBeenCalled();
+		expect(detailsState['remote-1']).toBeUndefined();
 	});
 
 	test('leaves call object when interview ends while still in meeting', async () => {
