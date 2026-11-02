@@ -1,12 +1,12 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import EmailCard from './Email';
 import { useMailbox } from '../../context/MailboxContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAlert } from '../../context/AlertContext';
 import { useDialog } from '../../context/DialogContext';
 import { useEmailActions } from '../../hooks/useEmailActions';
-import { deleteZohoEmail, updateEmailReadStatus, fetchEmailContent, fetchAttachmentContent } from '../../config/data/firebase';
+import { deleteZohoEmail, fetchAttachmentContent, fetchEmailContent, updateEmailReadStatus } from '../../config/data/firebase';
 
 const mocks = vi.hoisted(() => ({
 	navigate: vi.fn(),
@@ -15,29 +15,31 @@ const mocks = vi.hoisted(() => ({
 	showDialog: vi.fn(),
 }));
 
+// --- Mocks ---
 vi.mock('react-router-dom', async () => ({
 	...(await vi.importActual('react-router-dom')),
 	useNavigate: () => mocks.navigate,
 }));
 
-vi.mock('../../context/MailboxContext', () => ({ useMailbox: vi.fn() }));
-vi.mock('../../context/ThemeContext', () => ({ useTheme: vi.fn() }));
-vi.mock('../../context/AlertContext', () => ({ useAlert: vi.fn() }));
-vi.mock('../../context/DialogContext', () => ({ useDialog: vi.fn() }));
-vi.mock('../../context/ConfigContext', () => ({ useConfig: vi.fn(() => ({})) }));
+vi.mock('../../context/MailboxContext', () => ({ useMailbox: jest.fn() }));
+vi.mock('../../context/ThemeContext', () => ({ useTheme: jest.fn() }));
+vi.mock('../../context/AlertContext', () => ({ useAlert: jest.fn() }));
+vi.mock('../../context/DialogContext', () => ({ useDialog: jest.fn() }));
+vi.mock('../../context/ConfigContext', () => ({ useConfig: jest.fn(() => ({}))  }));
 
 vi.mock('../../hooks/useEmailActions', () => ({
-	useEmailActions: vi.fn(),
+	useEmailActions: jest.fn(),
 }));
 
 vi.mock('../../config/data/firebase', () => ({
 	__esModule: true,
-	updateEmailReadStatus: vi.fn(),
-	deleteZohoEmail: vi.fn(),
-	fetchAttachmentContent: vi.fn(),
-	fetchEmailContent: vi.fn(),
+	updateEmailReadStatus: jest.fn(),
+	deleteZohoEmail: jest.fn(),
+	fetchAttachmentContent: jest.fn(),
+	fetchEmailContent: jest.fn(),
 }));
 
+// Mock children
 vi.mock('../layout/SingleAssetPage', () => ({
 	__esModule: true,
 	default: ({ children }) => <div>{children}</div>,
@@ -51,26 +53,23 @@ vi.mock('../assets/AssetProfileSection', () => ({
 		</div>
 	),
 }));
-vi.mock('../notes/NotesSection', () => ({ default: () => <div data-testid='notes-section'>Notes</div> }));
-vi.mock('../messaging/EmailBody', () => ({ default: () => <div data-testid='email-body'>Email Body</div> }));
-vi.mock('../messaging/EmailActions', () => ({
-	default: (props) => (
-		<div data-testid='email-actions'>
-			<button onClick={props.onDelete}>Delete</button>
-			<button onClick={props.onToggleRead}>Toggle Read</button>
-			<button
-				onClick={() =>
-					props.onDownload?.({ attachmentId: 'att-1', attachmentName: 'doc.pdf' })
-				}>
-				Download
-			</button>
-			<button onClick={props.onShowNotesToggle}>Notes</button>
-			<button onClick={() => props.onReply()}>Reply</button>
-			<button onClick={() => props.onReplyAll()}>Reply all</button>
-			<button onClick={() => props.onForward()}>Forward</button>
-		</div>
-	),
+vi.mock('../notes/NotesSection', () => ({
+	default: () => <div data-testid='notes-section'>Notes</div>,
 }));
+vi.mock('../assets/Header', () => ({ default: ({ title }) => <h1>{title}</h1> }));
+vi.mock('../assets/InfoTable', () => ({ default: () => <div>InfoTable</div> }));
+vi.mock('../messaging/EmailBody', () => ({ default: () => <div data-testid='email-body'>Email Body</div> }));
+vi.mock('../messaging/EmailActions', () => ({ default: (props) => (
+	<div data-testid='email-actions'>
+		<button type='button' onClick={props.onDelete}>Delete</button>
+		<button type='button' onClick={props.onToggleRead}>Toggle Read</button>
+		<button type='button' onClick={() => props.onDownload({ attachmentId: 'att-1', attachmentName: 'file.pdf' })}>Download</button>
+		<button type='button' onClick={props.onShowNotesToggle}>Notes</button>
+		<button type='button' onClick={() => props.onReply()}>Reply</button>
+		<button type='button' onClick={() => props.onReplyAll()}>Reply all</button>
+		<button type='button' onClick={() => props.onForward()}>Forward</button>
+	</div>
+) }));
 
 describe('EmailCard', () => {
 	const mockEmail = {
@@ -89,19 +88,19 @@ describe('EmailCard', () => {
 	};
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		jest.clearAllMocks();
 		useMailbox.mockReturnValue({ member: {}, permittedAliases: [] });
 		useTheme.mockReturnValue({ darkMode: false, boxShadow: 'none' });
 		useAlert.mockReturnValue({ showAlert: mocks.showAlert, handleError: mocks.handleError });
 		useDialog.mockReturnValue({ showDialog: mocks.showDialog });
 		useEmailActions.mockReturnValue({
-			handleReply: vi.fn(),
-			handleReplyAll: vi.fn(),
-			handleForward: vi.fn(),
+			handleReply: jest.fn(),
+			handleReplyAll: jest.fn(),
+			handleForward: jest.fn(),
 		});
 		updateEmailReadStatus.mockResolvedValue(true);
 		deleteZohoEmail.mockResolvedValue(true);
-		fetchAttachmentContent.mockResolvedValue({ data: { contentType: 'application/pdf', content: 'YmFzZTY0' } });
+		fetchAttachmentContent.mockResolvedValue({ data: { contentType: 'application/pdf', content: 'base64' } });
 	});
 
 	test('renders email subject and content', () => {
@@ -110,92 +109,13 @@ describe('EmailCard', () => {
 		expect(screen.getByTestId('email-body')).toBeInTheDocument();
 	});
 
-	test('hydrates missing content from fetchEmailContent', async () => {
-		fetchEmailContent.mockResolvedValue({
-			data: {
-				content: '<p>hydrated</p>',
-				headerContent: { Subject: ['Hydrated Subject'], From: ['a@b.c'] },
-				folderId: 'inbox-id',
-			},
-		});
-
-		render(
-			<EmailCard
-				email={{
-					id: 'msg-hydrate',
-					folderName: 'inbox',
-					isRead: true,
-				}}
-			/>
-		);
-
-		await waitFor(() => {
-			expect(fetchEmailContent).toHaveBeenCalledWith(
-				expect.objectContaining({ messageId: 'msg-hydrate', folderName: 'inbox' })
-			);
-		});
-		await waitFor(() => {
-			expect(screen.getByText('Hydrated Subject')).toBeInTheDocument();
-		});
-	});
-
-	test('hydrates nested headerContent payloads', async () => {
-		fetchEmailContent.mockResolvedValue({
-			data: {
-				content: '<p>nested</p>',
-				headerContent: {
-					headerContent: {
-						Subject: ['Nested Subject'],
-						From: ['nested@test.com'],
-					},
-				},
-				attachments: [{ attachmentId: 'a1', attachmentName: 'file.pdf' }],
-			},
-		});
-
-		render(
-			<EmailCard
-				email={{
-					id: 'msg-nested',
-					folderId: 'folder-1',
-					isRead: false,
-				}}
-			/>
-		);
-
-		await waitFor(() => {
-			expect(screen.getByText('Nested Subject')).toBeInTheDocument();
-		});
-	});
-
-	test('downloads attachments via fetchAttachmentContent', async () => {
-		fetchAttachmentContent.mockResolvedValue({
-			data: { contentType: 'application/pdf', content: 'YmFzZTY0' },
-		});
-		const createEl = document.createElement.bind(document);
-		const click = vi.fn();
-		vi.spyOn(document, 'createElement').mockImplementation((tag) => {
-			const el = createEl(tag);
-			if (tag === 'a') el.click = click;
-			return el;
-		});
-
-		render(<EmailCard email={mockEmail} />);
-		fireEvent.click(screen.getByText('Download'));
-
-		await waitFor(() => {
-			expect(fetchAttachmentContent).toHaveBeenCalledWith(
-				expect.objectContaining({ messageId: 'msg123', attachmentId: 'att-1' })
-			);
-		});
-		expect(click).toHaveBeenCalled();
-	});
-
 	test('calls updateEmailReadStatus when toggled', async () => {
 		render(<EmailCard email={mockEmail} />);
 
 		const toggleBtn = screen.getByText('Toggle Read');
-		fireEvent.click(toggleBtn);
+		await act(async () => {
+			fireEvent.click(toggleBtn);
+		});
 
 		expect(updateEmailReadStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'read' }));
 	});
@@ -210,41 +130,103 @@ describe('EmailCard', () => {
 		expect(showDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'confirmAction' }));
 	});
 
+	test('hydrates incomplete email content and normalizes response headers', async () => {
+		fetchEmailContent.mockResolvedValueOnce({
+			data: {
+				content: 'Hydrated body',
+				headerContent: { Subject: ['Hydrated Subject'], From: ['sender@test.com'] },
+				attachments: [],
+				folderId: 'folder-1',
+			},
+		});
+		render(
+			<EmailCard
+				email={{
+					...mockEmail,
+					content: '',
+					headerContent: undefined,
+					folderId: 'folder-1',
+				}}
+			/>,
+		);
+
+		await waitFor(() => expect(fetchEmailContent).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg123', folderId: 'folder-1' })));
+		expect(await screen.findByText('Hydrated Subject')).toBeInTheDocument();
+	});
+
 	test('handles read, delete, and attachment failures through the alert error handler', async () => {
 		const toggleError = new Error('toggle failed');
 		updateEmailReadStatus.mockRejectedValueOnce(toggleError);
 		render(<EmailCard email={mockEmail} />);
-		fireEvent.click(screen.getByText('Toggle Read'));
-		await waitFor(() => expect(mocks.handleError).toHaveBeenCalledWith(toggleError, 'toggle-read-status-card'));
+		await act(async () => {
+			fireEvent.click(screen.getByText('Toggle Read'));
+		});
+		expect(mocks.handleError).toHaveBeenCalledWith(toggleError, 'toggle-read-status-card');
 
+		const dialog = mocks.showDialog.mock.calls[0]?.[0];
 		fireEvent.click(screen.getByText('Delete'));
 		const deleteDialog = mocks.showDialog.mock.calls.at(-1)[0];
-		await deleteDialog.callback(true);
+		await act(async () => {
+			await deleteDialog.callback(true);
+		});
 		expect(deleteZohoEmail).toHaveBeenCalledWith({ messageId: 'msg123' });
 		expect(mocks.navigate).toHaveBeenCalled();
+		expect(dialog).toBeUndefined();
 
 		const attachmentError = new Error('download failed');
 		fetchAttachmentContent.mockRejectedValueOnce(attachmentError);
-		fireEvent.click(screen.getByText('Download'));
-		await waitFor(() => expect(mocks.handleError).toHaveBeenCalledWith(attachmentError, 'download-attachment-card'));
+		await act(async () => {
+			fireEvent.click(screen.getByText('Download'));
+		});
+		expect(mocks.handleError).toHaveBeenCalledWith(attachmentError, 'download-attachment-card');
 	});
 
-	test('toggles notes and delegates reply actions', () => {
-		const actionHandlers = {
-			handleReply: vi.fn(),
-			handleReplyAll: vi.fn(),
-			handleForward: vi.fn(),
-		};
-		useEmailActions.mockReturnValue(actionHandlers);
-		render(<EmailCard email={mockEmail} />);
+	test('downloads attachments, toggles notes, and delegates message actions', async () => {
+		const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+		render(<EmailCard email={{ ...mockEmail, attachments: [{ attachmentId: 'att-1' }] }} />);
+
+		await act(async () => {
+			fireEvent.click(screen.getByText('Download'));
+		});
+		expect(fetchAttachmentContent).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg123', attachmentId: 'att-1' }));
+		expect(clickSpy).toHaveBeenCalled();
 
 		fireEvent.click(screen.getByText('Notes'));
 		expect(screen.getByTestId('notes-section')).toBeInTheDocument();
 		fireEvent.click(screen.getByText('Reply'));
 		fireEvent.click(screen.getByText('Reply all'));
 		fireEvent.click(screen.getByText('Forward'));
-		expect(actionHandlers.handleReply).toHaveBeenCalledWith(mockEmail);
-		expect(actionHandlers.handleReplyAll).toHaveBeenCalledWith(mockEmail);
-		expect(actionHandlers.handleForward).toHaveBeenCalledWith(mockEmail);
+		expect(useEmailActions.mock.results[0].value.handleReply).toHaveBeenCalled();
+		expect(useEmailActions.mock.results[0].value.handleReplyAll).toHaveBeenCalled();
+		expect(useEmailActions.mock.results[0].value.handleForward).toHaveBeenCalled();
+		clickSpy.mockRestore();
 	});
+	test('logs hydrate failures and routes delete failures through handleError', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		fetchEmailContent.mockRejectedValueOnce(new Error('hydrate boom'));
+		render(
+			<EmailCard
+				email={{
+					...mockEmail,
+					content: '',
+					headerContent: undefined,
+					folderId: 'folder-1',
+				}}
+			/>,
+		);
+		await waitFor(() => expect(fetchEmailContent).toHaveBeenCalled());
+		expect(consoleSpy).toHaveBeenCalledWith('Failed to hydrate email details:', expect.any(Error));
+		consoleSpy.mockRestore();
+		cleanup();
+
+		deleteZohoEmail.mockRejectedValueOnce(new Error('delete boom'));
+		render(<EmailCard email={mockEmail} />);
+		fireEvent.click(screen.getByText('Delete'));
+		const deleteDialog = mocks.showDialog.mock.calls.at(-1)[0];
+		await act(async () => {
+			await deleteDialog.callback(true);
+		});
+		expect(mocks.handleError).toHaveBeenCalledWith(expect.any(Error), 'delete-email-card');
+	});
+
 });

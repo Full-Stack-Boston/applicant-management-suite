@@ -157,6 +157,7 @@ vi.mock('../data/firebase', () => ({
 	createDeliberationRoom: jest.fn(),
 	deleteDeliberationRoom: jest.fn(),
 	bulkDeleteInterviews: jest.fn(),
+	deleteSingleInterview: jest.fn(),
 	db: {},
 	functions: {},
 }));
@@ -574,8 +575,7 @@ describe('tableConfig.js', () => {
 
 		it('DeleteInterviewButton: Handles errors gracefully', async () => {
 			const row = { id: 'int1' };
-			const mockDelete = jest.fn().mockRejectedValue(new Error('Delete failed'));
-			httpsCallable.mockReturnValue(mockDelete);
+			FirebaseService.deleteSingleInterview.mockRejectedValueOnce(new Error('Delete failed'));
 
 			mockShowDialog.mockImplementation(({ callback }) => callback(true));
 
@@ -1081,6 +1081,31 @@ describe('tableConfig.js', () => {
 
 			const { container } = render(<TableConfig.ActionCellButton actionKey='not-a-real-action' row={row} />);
 			expect(container).toBeEmptyDOMElement();
+		});
+
+	
+		it('WaitingRoomButton navigates and interview actions open dialogs', async () => {
+			mockShowDialog.mockClear();
+			render(<TableConfig.WaitingRoomButton row={{ ...row, status: 'Confirmed' }} />);
+			fireEvent.click(screen.getByText('Wait'));
+			expect(mockNavigate).toHaveBeenCalled();
+
+			cleanup();
+			render(<TableConfig.RescheduleInterviewButton row={row} />);
+			fireEvent.click(screen.getByText('Reschedule'));
+			expect(mockShowDialog).toHaveBeenCalledWith(expect.objectContaining({ id: 'rescheduleInterview' }));
+
+			cleanup();
+			mockShowDialog.mockClear();
+			FirebaseService.deleteSingleInterview.mockResolvedValueOnce({});
+			render(<TableConfig.DeleteInterviewButton row={row} />);
+			fireEvent.click(screen.getByText('Delete'));
+			const dialog = mockShowDialog.mock.calls.at(-1)[0];
+			await act(async () => {
+				await dialog.callback(true);
+			});
+			expect(FirebaseService.deleteSingleInterview).toHaveBeenCalledWith({ interviewId: 'row-1' });
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: 'Interview deleted.' }));
 		});
 
 		it('covers empty and error activity states', async () => {

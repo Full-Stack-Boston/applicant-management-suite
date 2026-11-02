@@ -351,6 +351,38 @@ describe('Application Card Component', () => {
 	});
 
 	// --- Error Handling ---
+	it('surfaces dialog save failures and unknown dialog ids', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		jest.spyOn(buttonActions, 'getApplicationActions').mockReturnValue([
+			{ label: 'Mark Eligible', dialogId: 'markEligibility' },
+			{ label: 'Add Award', dialogId: 'addAward' },
+			{ label: 'Mystery', dialogId: 'unknownDialog' },
+		]);
+
+		await act(async () => {
+			render(<Application application={mockApplication} />);
+		});
+		await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
+
+		firebaseConfig.saveCollectionData.mockRejectedValueOnce(new Error('eligible boom'));
+		fireEvent.click(screen.getByText('Mark Eligible'));
+		await act(async () => {
+			await mockShowDialog.mock.calls.at(-1)[0].callback('Approved');
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'markEligibility-applicationCard');
+
+		firebaseConfig.saveCollectionData.mockRejectedValueOnce(new Error('award boom'));
+		fireEvent.click(screen.getByText('Add Award'));
+		await act(async () => {
+			await mockShowDialog.mock.calls.at(-1)[0].callback({ awardName: 'Grant', awardAmount: 500 });
+		});
+		expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'addAward-applicationCard');
+
+		fireEvent.click(screen.getByText('Mystery'));
+		expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(/No dialog handler/));
+		consoleSpy.mockRestore();
+	});
+
 	it('handles data fetch errors gracefully', async () => {
 		// Mock a failure for one call
 		firebaseConfig.getCollectionData.mockRejectedValueOnce(new Error('Fetch failed'));

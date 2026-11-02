@@ -274,4 +274,22 @@ describe('HomeNav', () => {
 			expect(mockNavigate.mock.calls.length + mockOnNavigateSection.mock.calls.length).toBeGreaterThan(0);
 		}
 	});
+	it('closes burger menu from GitHub item and opens platform info menu', () => {
+		mockUseMediaQuery.mockReturnValue(true);
+		renderNav({ variant: 'public' });
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		const githubItem = screen.getByRole('menuitem', { name: /GitHub/i });
+		fireEvent.click(githubItem);
+		// Menu close handler runs; reopening should still work
+		fireEvent.click(screen.getByLabelText('Open menu'));
+		expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(0);
+
+		const infoBtn = screen.queryByRole('button', { name: /Platform Info/i });
+		if (infoBtn) {
+			fireEvent.click(infoBtn);
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+			fireEvent.click(document.body);
+		}
+	});
+
 });

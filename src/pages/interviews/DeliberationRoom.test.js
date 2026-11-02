@@ -368,6 +368,11 @@ describe('DeliberationRoom Component', () => {
 	});
 
 	test('tracks remote participant join and leave events', async () => {
+		mockSetParticipantDetails.mockImplementation((updater) => {
+			if (typeof updater === 'function') {
+				updater({ 'remote-1': { name: 'Remote' }, keep: { name: 'Keep' } });
+			}
+		});
 		render(<DeliberationRoom />);
 		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
 		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
@@ -391,4 +396,39 @@ describe('DeliberationRoom Component', () => {
 		});
 		expect(mockSetParticipantDetails).toHaveBeenCalled();
 	});
+	test('surfaces schedule processing failures and empty join tokens', async () => {
+		getRealTimeMeetings.mockImplementation((uid, bool, callback) => {
+			callback([
+				{
+					id: 'bad-a',
+					status: 'confirmed',
+					startTime: {
+						toDate: () => {
+							throw new Error('schedule boom');
+						},
+					},
+				},
+				{
+					id: 'bad-b',
+					status: 'confirmed',
+					startTime: { toDate: () => new Date('2026-01-02') },
+				},
+			]);
+			return jest.fn();
+		});
+		render(<DeliberationRoom />);
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'deliberation-process-meetings');
+		});
+		expect(screen.getByText(/Could not process the interview schedule/i)).toBeInTheDocument();
+	});
+
+	test('rejects join payloads missing token or room URL', async () => {
+		generateJoinToken.mockResolvedValueOnce({ data: { token: '', roomUrl: '' } });
+		render(<DeliberationRoom />);
+		await waitFor(() => {
+			expect(screen.getByTestId('video-unavailable')).toBeInTheDocument();
+		});
+	});
+
 });
