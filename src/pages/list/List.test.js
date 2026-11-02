@@ -52,6 +52,7 @@ vi.mock('../../config/admin/lists', () => ({
 			columns: [
 				{ field: 'senderSubject', headerName: 'Subject' },
 				{ field: 'tags', headerName: 'Tags' },
+				{ field: 'date', headerName: 'Date' },
 			],
 		},
 		legacyFinances: {
@@ -320,6 +321,8 @@ describe('List Page Component', () => {
 
 		expect(screen.getByTestId('col-senderSubject')).toHaveTextContent('Recipient / Subject');
 		expect(screen.getByTestId('col-tags')).toHaveTextContent('Sent By');
+		// Unmapped sent-folder columns keep their original header (fallthrough return).
+		expect(screen.getByTestId('col-date')).toHaveTextContent('Date');
 		expect(screen.getByTestId('getter-senderSubject')).toHaveTextContent('to@x.com Subj');
 		expect(screen.getByTestId('recipient-subject')).toHaveTextContent('to@x.com');
 		fireEvent.click(screen.getByTestId('folder-change'));

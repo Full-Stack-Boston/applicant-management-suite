@@ -316,6 +316,15 @@ describe('DialogContext', () => {
 		expect(callback).toHaveBeenCalledWith(null);
 	});
 
+	test('closes via Dialog onClose (Escape) using default maxWidth', () => {
+		const callback = jest.fn();
+		renderDialog('simpleDialog', {}, callback);
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+		expect(callback).toHaveBeenCalledWith(null);
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
 });
 
 

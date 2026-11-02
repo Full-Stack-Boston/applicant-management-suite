@@ -140,4 +140,12 @@ describe('ReviewMobileDetails', () => {
 		expect(screen.getByText('No other income sources reported.')).toBeInTheDocument();
 		expect(screen.getByText('No sibling school expenses reported.')).toBeInTheDocument();
 	});
+
+	it('decrements calculated age when birthday is later in the year', () => {
+		vi.useFakeTimers({ now: new Date('2026-03-01T12:00:00.000Z') });
+		render(<ReviewProfileMobile data={{ ...rich, applicantDOB: '2000-09-15' }} />);
+		// 2026-03 vs DOB 2000-09 → age 25 after decrement from 26
+		expect(screen.getByText(/age 25/)).toBeInTheDocument();
+		vi.useRealTimers();
+	});
 });

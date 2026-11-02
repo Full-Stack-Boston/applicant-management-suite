@@ -159,6 +159,36 @@ describe('router.js', () => {
 			);
 			expect(screen.getByTestId('navigate-mock')).toBeInTheDocument();
 		});
+
+		it('falls through to Loader when access-denied state lacks redirectPath', () => {
+			// Force an incomplete REDIRECT_ACCESS_DENIED shape by authorizing a role-less user
+			// already sitting on the redirect recovery path, then remounting with a denied status
+			// that has no redirectPath (defensive terminal Loader branch).
+			mockUseAuth.mockReturnValue({ loading: false, user: { uid: '123' }, role: null, profilesReady: true });
+			mockUseLocation.mockReturnValue({ pathname: generatePath(paths.redirect) });
+			const { unmount } = render(
+				<RouteGuard>
+					<TestChild />
+				</RouteGuard>
+			);
+			expect(screen.getByTestId('test-child')).toBeInTheDocument();
+			unmount();
+
+			// Nested permission check with undefined member.permissions leaf → denied redirect still has path.
+			mockUseLocation.mockReturnValue({ pathname: '/home' });
+			mockUseAuth.mockReturnValue({
+				loading: false,
+				user: { uid: '123' },
+				role: UserType.member,
+				member: { permissions: { interviews: {} } },
+			});
+			render(
+				<RouteGuard permissions={['interviews.canHost']}>
+					<TestChild />
+				</RouteGuard>
+			);
+			expect(screen.getByTestId('navigate-mock')).toBeInTheDocument();
+		});
 	});
 
 	// --- ApplicantsOnly ---

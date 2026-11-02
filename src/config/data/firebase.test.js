@@ -1754,6 +1754,34 @@ describe('src/config/data/firebase.js', () => {
 		await expect(FirebaseConfig.getRequestData('req-1')).resolves.toBeNull();
 	});
 
+	it('getRealTimeApplicationsByIDs merges docs, errors, and cleanup', () => {
+		const cb = jest.fn();
+		const unsubs = [jest.fn(), jest.fn()];
+		let call = 0;
+		const errorHandlers = [];
+		mockOnSnapshot.mockImplementation((_ref, onNext, onError) => {
+			errorHandlers.push(onError);
+			const idx = call++;
+			if (idx === 0) {
+				onNext({ exists: () => true, id: 'app1', data: () => ({ status: 'Eligible' }) });
+				onNext({ exists: () => false, id: 'app1', data: () => ({}) });
+			} else {
+				onNext({ exists: () => true, id: 'app2', data: () => ({ status: 'Completed' }) });
+			}
+			return unsubs[idx] || jest.fn();
+		});
+		const cleanup = FirebaseConfig.getRealTimeApplicationsByIDs(['app1', 'app2'], cb);
+		expect(cb).toHaveBeenCalled();
+		errorHandlers[0]?.(new Error('apps-by-ids boom'));
+		cleanup();
+		expect(unsubs[0]).toHaveBeenCalled();
+		expect(unsubs[1]).toHaveBeenCalled();
+	});
+
+	it('getApplicationsByIDs rejects non-array input', async () => {
+		await expect(FirebaseConfig.getApplicationsByIDs(null)).rejects.toThrow(/must be an array/);
+	});
+
 	it('getRealTimeApplicantsByApplicationID cleanup unsubscribes listeners', () => {
 		const unsub = jest.fn();
 		mockOnSnapshot.mockImplementation((_ref, onNext) => {

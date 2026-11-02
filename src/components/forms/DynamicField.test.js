@@ -430,6 +430,20 @@ describe('DynamicField Component', () => {
 			expect(screen.getByText('Request sent')).toBeInTheDocument();
 			expect(screen.getByText('Simulate upload')).toBeInTheDocument();
 		});
+
+		it('deletes a pending request from the Request sent chip', () => {
+			const appData = {
+				...mockApplication,
+				testSection: {
+					attachments: {
+						academicRecommendationLetter: { requestID: 'req-1' },
+					},
+				},
+			};
+			renderField({ name: 'attachments.academicRecommendationLetter', label: 'LOR', type: 'file', allowRequest: true }, { allowEditing: true }, appData);
+			fireEvent.click(screen.getByTestId('CancelIcon'));
+			expect(mockOnFile).toHaveBeenCalledWith('delete', 'testSection.attachments.academicRecommendationLetter', { requestID: 'req-1' });
+		});
 	});
 
 	// --- 6. PERMISSION GROUP FIELD ---

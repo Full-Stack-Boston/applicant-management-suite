@@ -1,7 +1,7 @@
 import React from 'react';
 import { cleanup, render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import * as TableConfig from './tableConfig';
-import { getAttachmentLabel, getStatusIcon, parseDisplayName, getRsvpLabel, StackedDateCell, SenderSubjectCell, RecipientSubjectCell, UserLastLogin, UserLastSeen, UserActivityStack, DynamicApplicantProfilePicture, DynamicMemberProfilePicture } from './tableConfig';
+import { getAttachmentLabel, getStatusIcon, parseDisplayName, getRsvpLabel, getActionColumnWidth, createActionColumn, StackedDateCell, SenderSubjectCell, RecipientSubjectCell, UserLastLogin, UserLastSeen, UserActivityStack, DynamicApplicantProfilePicture, DynamicMemberProfilePicture } from './tableConfig';
 import {
 	ResendRequestButton,
 	InvalidateRequestButton,
@@ -222,8 +222,23 @@ describe('tableConfig.js', () => {
 			it('finds a matching label', () => {
 				expect(getAttachmentLabel('testKey')).toBe('Test Label');
 			});
+			it('strips trailing Letter of Recommendation wording', () => {
+				expect(getAttachmentLabel('academicRecommendationLetter')).toBe('Academic ');
+			});
 			it('returns the key if no match is found', () => {
 				expect(getAttachmentLabel('unknownKey')).toBe('unknownKey');
+			});
+		});
+
+		describe('getActionColumnWidth / createActionColumn', () => {
+			it('sizes action columns from button count and optional width override', () => {
+				expect(getActionColumnWidth(1)).toBe(54 + 16);
+				expect(getActionColumnWidth(5, 3)).toBe(3 * 54 + 16);
+				expect(getActionColumnWidth(2, 2)).toBe(2 * 54 + 16);
+				const auto = createActionColumn(2, () => null);
+				expect(auto.width).toBe(2 * 54 + 16);
+				const overridden = createActionColumn(2, () => null, { width: 200 });
+				expect(overridden.width).toBe(200);
 			});
 		});
 
@@ -1184,10 +1199,11 @@ describe('tableConfig.js', () => {
 		});
 
 		it('markEligible opens dialog and updates status via callback', async () => {
-			mockShowDialog.mockClear();
+			mockShowDialog.mockReset();
 			mockShowAlert.mockClear();
 			FirebaseService.updateCollectionData.mockReset();
 			FirebaseService.updateCollectionData.mockResolvedValue(true);
+			cleanup();
 			render(<TableConfig.MarkEligibleButton row={row} />);
 			fireEvent.click(screen.getByText('Evaluate'));
 			const dialogArgs = mockShowDialog.mock.calls.find((c) => c[0]?.id === 'markEligibility')?.[0];
@@ -1205,11 +1221,18 @@ describe('tableConfig.js', () => {
 			expect(mockShowAlert).toHaveBeenCalledWith(
 				expect.objectContaining({ message: expect.stringContaining('Eligible'), type: 'success' })
 			);
+
+			FirebaseService.updateCollectionData.mockClear();
+			await act(async () => {
+				await dialogArgs.callback(null);
+			});
+			expect(FirebaseService.updateCollectionData).not.toHaveBeenCalled();
 		});
 
 		it('joinInterview navigates into the interview room', () => {
 			mockNavigate.mockClear();
 			generatePath.mockReturnValue('/interviews/interview-room/row-1');
+			cleanup();
 			render(<JoinInterviewButton row={row} />);
 			fireEvent.click(screen.getByText('Enter'));
 			expect(generatePath).toHaveBeenCalled();

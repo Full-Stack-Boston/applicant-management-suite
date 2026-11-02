@@ -23,6 +23,8 @@ vi.mock('../config/ui/formConfig', () => ({
 			fields: [
 				{ name: 'applicantFirstName', validator: 'lettersOnly', required: true },
 				{ name: 'optionalField', required: false },
+				{ name: 'statusPick', validator: 'notUndefined', required: false },
+				{ name: 'place', validator: 'locationOnly', required: false },
 			],
 		},
 		history: {
@@ -341,6 +343,47 @@ describe('ApplicationContext', () => {
 			});
 
 			expect(isValid).toBe(false);
+		});
+
+		test('updateField runs notUndefined and locationOnly validators', () => {
+			Validators.notUndefined.mockReturnValue(true);
+			Validators.locationOnly.mockReturnValue(false);
+			const { result } = renderHook(() => useApplicationForm());
+
+			act(() => {
+				result.current.updateField('profileData', 'statusPick', 'chosen');
+			});
+			expect(Validators.notUndefined).toHaveBeenCalledWith('chosen');
+			expect(result.current.errors['profileData.statusPick']).toBe(false);
+
+			act(() => {
+				result.current.updateField('profileData', 'place', 'bad-place');
+			});
+			expect(Validators.locationOnly).toHaveBeenCalledWith('bad-place');
+			expect(result.current.errors['profileData.place']).toBe(true);
+		});
+
+		test('updateField resolves validators for nested array field paths', () => {
+			Validators.lettersOnly.mockReturnValue(false);
+			Validators.numbersOnly.mockReturnValue(true);
+			const { result } = renderHook(() => useApplicationForm());
+
+			act(() => {
+				result.current.updateSection('historyData', {
+					jobs: [{ title: 'Engineer', years: '3' }],
+				});
+			});
+			act(() => {
+				result.current.updateField('historyData', 'jobs.0.title', '123');
+			});
+			expect(Validators.lettersOnly).toHaveBeenCalledWith('123');
+			expect(result.current.errors['historyData.jobs.0.title']).toBe(true);
+
+			act(() => {
+				result.current.updateField('historyData', 'jobs.0.years', '5');
+			});
+			expect(Validators.numbersOnly).toHaveBeenCalledWith('5');
+			expect(result.current.errors['historyData.jobs.0.years']).toBe(false);
 		});
 	});
 });

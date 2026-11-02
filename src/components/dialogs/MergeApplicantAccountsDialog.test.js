@@ -303,6 +303,26 @@ describe('MergeApplicantAccountsDialog', () => {
 		expect(screen.getByRole('radio', { name: /Secondary.*ally@example.com/i })).toBeChecked();
 	});
 
+	it('blocks merge when primary and secondary resolve to the same account', async () => {
+		const duplicate = { ...secondaryApplicant, id: primaryApplicant.id, hasAuth: true, authEmail: 'dup@example.com' };
+		getApplicantsForMerge.mockResolvedValue({
+			data: { applicants: [primaryApplicant, duplicate] },
+		});
+		render(
+			<MergeApplicantAccountsDialog
+				applicants={[primaryApplicant, duplicate]}
+				onClose={mockOnClose}
+				onSuccess={mockOnSuccess}
+			/>,
+		);
+		await waitFor(() => expect(screen.queryByText(/Loading account details/i)).not.toBeInTheDocument());
+		fireEvent.click(screen.getByRole('button', { name: 'Merge Accounts' }));
+		expect(mockShowAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ message: expect.stringMatching(/two different accounts/i), type: 'error' }),
+		);
+		expect(mergeApplicantAccounts).not.toHaveBeenCalled();
+	});
+
 	it('uses application id fallbacks when applicationsDetail is missing', async () => {
 		const primaryIdsOnly = {
 			...primaryApplicant,
