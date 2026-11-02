@@ -60,8 +60,14 @@ describe('interviewUtils', () => {
 
 	test('access messages guide invited applicants to RSVP', () => {
 		expect(getInterviewAccessMessage(InterviewStatus.invited, 'waiting')).toMatch(/confirm your attendance/i);
+		expect(getInterviewAccessMessage(InterviewStatus.invited, 'interview')).toMatch(/not been confirmed/i);
 		expect(getInterviewAccessMessage(InterviewStatus.confirmed, 'interview')).toMatch(/waiting room/i);
 		expect(getInterviewAccessMessage(InterviewStatus.completed, 'waiting')).toMatch(/concluded/i);
+		expect(getInterviewAccessMessage(InterviewStatus.cancelled, 'waiting')).toMatch(/cancelled/i);
+		expect(getInterviewAccessMessage(InterviewStatus.missed, 'interview')).toMatch(/missed/i);
+		expect(getInterviewAccessMessage(InterviewStatus.scheduled, 'waiting')).toMatch(/scheduled/i);
+		expect(getInterviewAccessMessage(null, 'waiting')).toMatch(/could not be loaded/i);
+		expect(getInterviewAccessMessage('mystery', 'interview')).toMatch(/status: mystery/i);
 	});
 
 	test('buildInterviewRsvpUpdate confirms attendance', () => {

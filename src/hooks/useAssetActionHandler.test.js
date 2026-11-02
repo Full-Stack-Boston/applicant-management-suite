@@ -113,4 +113,27 @@ describe('useAssetActionHandler', () => {
 
 		expect(mockHandleError).toHaveBeenCalledWith(error, 'updateLoginEmail');
 	});
+
+	test('ignores changeLoginEmail callbacks without a new email', async () => {
+		const { result } = renderHook(() => useAssetActionHandler());
+		act(() => {
+			result.current({ dialogId: 'changeLoginEmail' }, { id: 'user123' });
+		});
+		const dialogCallback = mockShowDialog.mock.calls[0][0].callback;
+		await act(async () => {
+			await dialogCallback({});
+		});
+		expect(changeUserEmail).not.toHaveBeenCalled();
+	});
+
+	test('logs when an unknown dialogId is provided', () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		const { result } = renderHook(() => useAssetActionHandler());
+		act(() => {
+			result.current({ dialogId: 'mysteryDialog' }, { id: 'user123' });
+		});
+		expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/No specific handler/));
+		errorSpy.mockRestore();
+	});
 });
+

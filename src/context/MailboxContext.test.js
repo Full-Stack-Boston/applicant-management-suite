@@ -97,4 +97,42 @@ describe('MailboxContext', () => {
 		expect(screen.getByTestId('email-count')).toHaveTextContent('2');
 		expect(screen.getByText('Test Email 1')).toBeInTheDocument();
 	});
+
+	test('defaults selected folder and handles snapshot errors', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		useAuth.mockReturnValue({
+			member: {
+				alias: 'solo@example.com',
+				permissions: {
+					email: true,
+					emails: {
+						folders: { drafts: true },
+						aliases: {},
+					},
+				},
+			},
+		});
+
+		firestore.onSnapshot.mockImplementation((_q, _onNext, onError) => {
+			onError(new Error('mail boom'));
+			return jest.fn();
+		});
+
+		await act(async () => {
+			render(
+				<MailboxProvider>
+					<TestConsumer />
+				</MailboxProvider>
+			);
+		});
+
+		expect(screen.getByTestId('folder-count')).toHaveTextContent('1');
+		expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/MailboxContext/), expect.any(Error));
+		errorSpy.mockRestore();
+	});
+
+	test('throws when useMailbox is used outside provider', () => {
+		expect(() => render(<TestConsumer />)).toThrow(/MailboxProvider/);
+	});
 });
+

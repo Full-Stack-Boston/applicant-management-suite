@@ -113,6 +113,28 @@ describe('useProcessedEmailContent', () => {
 		consoleSpy.mockRestore();
 	});
 
+	test('hydrates body and inline attachments from fetchEmailContent', async () => {
+		fetchEmailContent.mockResolvedValue({
+			data: {
+				content: '<img src="cid:image1" />',
+				inlineAttachments: [{ cid: '<image1>', attachmentId: 'att1' }],
+			},
+		});
+		fetchAttachmentContent.mockResolvedValue({
+			data: { content: 'aaa', contentType: 'image/png' },
+		});
+
+		const email = { id: 'msg-10', folderId: 'inbox', inlineAttachments: [] };
+		const { result } = renderHook(() => useProcessedEmailContent(email));
+
+		await waitFor(() => {
+			expect(result.current.contentLoading).toBe(false);
+		});
+		expect(fetchAttachmentContent).toHaveBeenCalled();
+		expect(result.current.processedContent).toMatch(/data:image\/png;base64,aaa|cid:image1/);
+	});
+
+
 	test('skips inline attachments missing cid', async () => {
 		const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 		const email = {

@@ -366,4 +366,29 @@ describe('DeliberationRoom Component', () => {
 		fireEvent.click(screen.getByText('Back to Interviews'));
 		expect(mockNavigate).toHaveBeenCalled();
 	});
+
+	test('tracks remote participant join and leave events', async () => {
+		render(<DeliberationRoom />);
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('joined-meeting', expect.any(Function)));
+		const joinedCallback = mockCallObject.on.mock.calls.find((call) => call[0] === 'joined-meeting')[1];
+		await act(async () => joinedCallback());
+		await screen.findByTestId('call-ui');
+
+		await waitFor(() => expect(mockCallObject.on).toHaveBeenCalledWith('participant-joined', expect.any(Function)));
+		const joinedHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-joined')[1];
+		const leftHandler = mockCallObject.on.mock.calls.find((call) => call[0] === 'participant-left')[1];
+
+		await act(async () => {
+			joinedHandler({ participant: { local: true, session_id: 'local', user_id: 'user-1' } });
+			joinedHandler({ participant: { local: false, session_id: 'remote-1', user_id: 'member-2' } });
+		});
+		await waitFor(() => {
+			expect(getDoc).toHaveBeenCalled();
+		});
+
+		await act(async () => {
+			leftHandler({ participant: { session_id: 'remote-1' } });
+		});
+		expect(mockSetParticipantDetails).toHaveBeenCalled();
+	});
 });

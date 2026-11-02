@@ -35,4 +35,15 @@ describe('lottie resolver', () => {
 		const mod = await import('./lottie');
 		expect(mod.default).toBe(Deep);
 	});
+
+	it('falls back to the module value when defaults are not components', async () => {
+		vi.resetModules();
+		const fallback = { kind: 'not-a-component', default: { default: 123 } };
+		vi.doMock('lottie-react', () => ({
+			default: fallback,
+		}));
+		const mod = await import('./lottie');
+		expect(mod.default).toBe(fallback);
+	});
 });
+
