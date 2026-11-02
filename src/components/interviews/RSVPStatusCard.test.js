@@ -286,4 +286,27 @@ describe('RSVPStatusCard', () => {
 		expect(getRealTimeMeetings).not.toHaveBeenCalled();
 		expect(container).toBeEmptyDOMElement();
 	});
+	it('opens RSVP menu from unavailable capsule and changes to confirmed', async () => {
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([{ ...mockInterviewBase, rsvpStatus: 'no', status: InterviewStatus.invited }]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		const chip = await screen.findByRole('button', { name: 'RSVP: Unavailable' });
+		const props = chip[Object.keys(chip).find((k) => k.startsWith('__reactProps'))];
+		await act(async () => {
+			props.onClick({ currentTarget: chip, target: chip, preventDefault() {}, stopPropagation() {} });
+		});
+		const item = await screen.findByRole('menuitem', { name: /Change to Confirmed/i });
+		await act(async () => {
+			fireEvent.click(item);
+		});
+		await waitFor(() => {
+			expect(updateDoc).toHaveBeenCalledWith(
+				'mock-doc-ref',
+				expect.objectContaining({ rsvpStatus: 'yes' }),
+			);
+		});
+	});
+
 });

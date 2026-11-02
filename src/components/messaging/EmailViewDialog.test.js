@@ -90,6 +90,13 @@ describe('EmailViewDialog', () => {
 		expect(screen.getByText('Loading content...')).toBeInTheDocument();
 	});
 
+	it('calls handleReply from the menu', async () => {
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
+		fireEvent.click(screen.getByLabelText('select reply type'));
+		await userEvent.click(screen.getByRole('menuitem', { name: 'Reply' }));
+		expect(mockHandleReply).toHaveBeenCalledWith(mockEmail);
+	});
+
 	it('calls handleReplyAll from the menu', async () => {
 		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
 		fireEvent.click(screen.getByLabelText('select reply type'));

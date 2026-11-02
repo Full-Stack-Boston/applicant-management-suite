@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { EmailTemplateProvider, useEmailTemplates } from './EmailTemplateContext';
+import { EmailTemplateProvider, useEmailTemplates, applyEmailTemplatesSnapshot } from './EmailTemplateContext';
 
 const firebaseMock = vi.hoisted(() => ({
 	getRealTimeCollection: vi.fn((_col, cb) => {
@@ -64,5 +64,17 @@ describe('EmailTemplateContext', () => {
 			expect(screen.getByText('Later')).toBeInTheDocument();
 		});
 		expect(() => unmount()).not.toThrow();
+	});
+
+	it('applyEmailTemplatesSnapshot clears loading when the setter throws', () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		const setTemplates = jest.fn(() => {
+			throw new Error('template state boom');
+		});
+		const setLoading = jest.fn();
+		applyEmailTemplatesSnapshot([{ id: 'x' }], setTemplates, setLoading);
+		expect(consoleSpy).toHaveBeenCalledWith('Error setting email templates:', expect.any(Error));
+		expect(setLoading).toHaveBeenCalledWith(false);
+		consoleSpy.mockRestore();
 	});
 });

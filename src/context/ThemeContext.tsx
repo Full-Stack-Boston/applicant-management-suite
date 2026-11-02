@@ -64,7 +64,7 @@ const getInitialState = (): ThemeState => {
 
 // --- 2. State Reducer ---
 // Handles local state updates and LocalStorage synchronization
-const ThemeReducer = (state: ThemeState, action: ThemeAction): ThemeState => {
+export const ThemeReducer = (state: ThemeState, action: ThemeAction): ThemeState => {
 	const newState = { ...state };
 	let hasChanges = false;
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { ThemeProvider, useTheme } from './ThemeContext';
+import { ThemeProvider, useTheme, ThemeReducer } from './ThemeContext';
 import { useAuth } from './AuthContext';
 import { updateUserPreferences } from '../config/data/firebase';
 
@@ -172,5 +172,10 @@ describe('ThemeContext', () => {
 			return null;
 		};
 		expect(() => render(<Broken />)).toThrow(/must be used within a ThemeProvider/i);
+	});
+
+	test('ThemeReducer ignores unknown actions', () => {
+		const state = { darkMode: true, primaryColor: 'green' };
+		expect(ThemeReducer(state, { type: 'UNKNOWN' })).toBe(state);
 	});
 });
