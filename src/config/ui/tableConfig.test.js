@@ -510,6 +510,49 @@ describe('tableConfig.js', () => {
 			);
 		});
 
+		it('Request Toolbar: Contact Senders warns when requests lack applications', async () => {
+			const actions = TableConfig.getRequestToolbarActions({});
+			const contactAction = actions.find((a) => a.label === 'Contact Senders');
+			await contactAction.onClick(['req1'], [{ id: 'req1' }], {
+				showDialog: mockShowDialog,
+				handleError: mockHandleError,
+				showAlert: mockShowAlert,
+			});
+			expect(mockShowAlert).toHaveBeenCalledWith({
+				message: 'Selected requests are not linked to any applications.',
+				type: 'warning',
+			});
+			expect(FirebaseService.getDocumentsByIDs).not.toHaveBeenCalled();
+		});
+
+		it('Application Toolbar: Bulk Evaluate success and failure', async () => {
+			const actions = TableConfig.getApplicationToolbarActions({ navigate: jest.fn() });
+			const evaluate = actions.find((a) => a.label === 'Bulk Evaluate');
+
+			mockBatchCommit.mockResolvedValueOnce(undefined);
+			await evaluate.onClick(['app1', 'app2'], [], {
+				showDialog: async ({ callback }) => callback('Eligible'),
+				showAlert: mockShowAlert,
+				handleError: mockHandleError,
+			});
+			await waitFor(() => {
+				expect(mockBatchCommit).toHaveBeenCalled();
+				expect(mockShowAlert).toHaveBeenCalledWith(
+					expect.objectContaining({ message: expect.stringMatching(/marked as Eligible/) })
+				);
+			});
+
+			mockBatchCommit.mockRejectedValueOnce(new Error('batch fail'));
+			await evaluate.onClick(['app1'], [], {
+				showDialog: async ({ callback }) => callback('Denied'),
+				showAlert: mockShowAlert,
+				handleError: mockHandleError,
+			});
+			await waitFor(() => {
+				expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-mark-eligibility');
+			});
+		});
+
 		it('Request Toolbar: Resend (Bulk)', async () => {
 			const actions = TableConfig.getRequestToolbarActions({});
 			const action = actions.find((a) => a.label === 'Resend');

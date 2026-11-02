@@ -687,6 +687,55 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockHttpsCallable).toHaveBeenCalled();
 	});
 
+	it('generateICSDownloadURL returns existing storage URL', async () => {
+		mockGetDownloadURL.mockResolvedValue('https://storage.example/invite.ics');
+		await expect(
+			FirebaseConfig.generateICSDownloadURL({
+				id: 'ics-1',
+				startTime: new Date('2026-03-01T15:00:00Z'),
+				endTime: new Date('2026-03-01T16:00:00Z'),
+				title: 'Panel',
+			})
+		).resolves.toBe('https://storage.example/invite.ics');
+	});
+
+	it('generateICSDownloadURL creates ICS when missing and maps Timestamp fields', async () => {
+		mockGetDownloadURL.mockRejectedValue({ code: 'storage/object-not-found' });
+		mockHttpsCallable.mockResolvedValue({ data: { downloadUrl: 'https://storage.example/new.ics' } });
+		const url = await FirebaseConfig.generateICSDownloadURL({
+			id: 'ics-2',
+			startTime: { toDate: () => new Date('2026-04-01T12:00:00Z') },
+			endTime: { toDate: () => new Date('2026-04-01T13:00:00Z') },
+			description: 'Custom desc',
+		});
+		expect(url).toBe('https://storage.example/new.ics');
+		expect(mockHttpsCallable).toHaveBeenCalledWith(
+			expect.objectContaining({
+				interviewId: 'ics-2',
+				title: 'AMS Interview',
+				description: 'Custom desc',
+			})
+		);
+	});
+
+	it('generateICSDownloadURL rethrows non-missing storage errors', async () => {
+		const err = { code: 'storage/unauthorized' };
+		mockGetDownloadURL.mockRejectedValue(err);
+		await expect(FirebaseConfig.generateICSDownloadURL({ id: 'ics-3', startTime: new Date(), endTime: new Date() })).rejects.toEqual(err);
+	});
+
+	it('getEmailLogs falls back to unordered query then empty array', async () => {
+		mockGetDocs
+			.mockRejectedValueOnce(new Error('index missing'))
+			.mockResolvedValueOnce({
+				docs: [{ id: 'e1', data: () => ({ subject: 'Hello' }) }],
+			});
+		await expect(FirebaseConfig.getEmailLogs(1)).resolves.toEqual([{ id: 'e1', subject: 'Hello' }]);
+
+		mockGetDocs.mockRejectedValueOnce(new Error('index missing')).mockRejectedValueOnce(new Error('total fail'));
+		await expect(FirebaseConfig.getEmailLogs(1)).resolves.toEqual([]);
+	});
+
 	// --- CYCLE YEAR / REQUEST HELPERS ---
 
 	it('resolveApplicationCycleYear prefers cycleYear then window year', () => {
