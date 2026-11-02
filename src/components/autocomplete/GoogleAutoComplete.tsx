@@ -83,6 +83,11 @@ function loadScript(src: string, position: HTMLElement | null, id: string, { onL
 
 const autocompleteService: { current: google.maps.places.AutocompleteService | null } = { current: null };
 
+/** Test-only hook so suites can re-enter the AutocompleteService construction path. */
+export const __resetAutocompleteServiceForTests = (): void => {
+	autocompleteService.current = null;
+};
+
 export default function GoogleMaps({ label, location, changeLocation, disabled, error, helperText: helperTextProp }: GoogleMapsProps) {
 	const [inputValue, setInputValue] = useState(location?.description || '');
 	const [options, setOptions] = useState<PlacePrediction[]>([]);

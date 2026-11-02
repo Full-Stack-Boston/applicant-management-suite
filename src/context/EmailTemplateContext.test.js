@@ -2,11 +2,15 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { EmailTemplateProvider, useEmailTemplates } from './EmailTemplateContext';
 
-vi.mock('../config/data/firebase', () => ({
-	getRealTimeCollection: (_col, cb) => {
+const firebaseMock = vi.hoisted(() => ({
+	getRealTimeCollection: vi.fn((_col, cb) => {
 		cb([{ id: 't1', label: 'Welcome' }]);
 		return jest.fn();
-	},
+	}),
+}));
+
+vi.mock('../config/data/firebase', () => ({
+	getRealTimeCollection: firebaseMock.getRealTimeCollection,
 }));
 
 vi.mock('../config/data/collections', () => ({
@@ -20,6 +24,13 @@ const Probe = () => {
 };
 
 describe('EmailTemplateContext', () => {
+	beforeEach(() => {
+		firebaseMock.getRealTimeCollection.mockImplementation((_col, cb) => {
+			cb([{ id: 't1', label: 'Welcome' }]);
+			return jest.fn();
+		});
+	});
+
 	it('provides templates from realtime collection', async () => {
 		render(
 			<EmailTemplateProvider>
@@ -37,5 +48,21 @@ describe('EmailTemplateContext', () => {
 			return null;
 		};
 		expect(() => render(<Broken />)).toThrow(/EmailTemplateProvider/);
+	});
+
+	it('tolerates a missing unsubscribe function', async () => {
+		firebaseMock.getRealTimeCollection.mockImplementationOnce((_col, cb) => {
+			cb([{ id: 't2', label: 'Later' }]);
+			return null;
+		});
+		const { unmount } = render(
+			<EmailTemplateProvider>
+				<Probe />
+			</EmailTemplateProvider>
+		);
+		await waitFor(() => {
+			expect(screen.getByText('Later')).toBeInTheDocument();
+		});
+		expect(() => unmount()).not.toThrow();
 	});
 });

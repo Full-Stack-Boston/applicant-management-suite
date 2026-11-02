@@ -184,4 +184,20 @@ describe('src/config/ui/theme.js', () => {
 		// Check if the custom color object matches the expected (lowercase-keyed) object
 		expect(lightTheme.palette.custom).toEqual(expectedCustomPalette);
 	});
+
+	it('falls back for low-contrast accents and exposes MuiLink hover styles', async () => {
+		const themeMod = await import('./theme');
+		theme = themeMod.default;
+		const { resolveContentAccent, resolveContentLink } = themeMod;
+		expect(resolveContentAccent('light', 'not-a-real-key')).toBeTruthy();
+		expect(resolveContentLink('dark', 'not-a-real-key')).toBeTruthy();
+
+		const built = theme(false, 'green');
+		const linkOverride = built.components?.MuiLink?.styleOverrides?.root;
+		if (typeof linkOverride === 'function') {
+			const styles = linkOverride({ theme: built });
+			expect(styles['&:hover'].opacity).toBe(1);
+			expect(styles['&:hover'].color).toBe(built.palette.contentLink.main);
+		}
+	});
 });

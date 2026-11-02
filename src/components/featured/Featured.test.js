@@ -166,5 +166,17 @@ describe('Featured', () => {
 			expect(screen.getByText(/\(today\)/i)).toBeInTheDocument();
 		});
 	});
+
+	test('logs benchmark fetch failures', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		mockGetDashboardData.mockRejectedValueOnce(new Error('featured boom'));
+		await act(async () => {
+			render(<Featured />);
+		});
+		await waitFor(() => {
+			expect(errorSpy).toHaveBeenCalledWith('Error fetching featured data:', expect.any(Error));
+		});
+		errorSpy.mockRestore();
+	});
 });
 

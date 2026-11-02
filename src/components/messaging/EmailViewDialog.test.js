@@ -190,4 +190,15 @@ describe('EmailViewDialog', () => {
 			);
 		});
 	});
+
+	it('supports reply-all from the split menu and forward from the toolbar', async () => {
+		render(<MemoryRouter><EmailViewDialog email={mockEmail} onClose={mockOnClose} /></MemoryRouter>);
+		fireEvent.click(screen.getByRole('button', { name: 'select reply type' }));
+		fireEvent.click(await screen.findByText('Reply All'));
+		expect(mockHandleReplyAll).toHaveBeenCalledWith(mockEmail);
+
+		fireEvent.click(screen.getByRole('button', { name: /Forward/i }));
+		expect(mockHandleForward).toHaveBeenCalledWith(mockEmail);
+	});
 });
+

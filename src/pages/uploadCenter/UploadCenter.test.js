@@ -366,4 +366,24 @@ describe('UploadCenter Component', () => {
 		render(<UploadCenter />);
 		expect(await screen.findByText(/This Link Is Not Valid/i)).toBeInTheDocument();
 	});
+
+	test('stops upload when application lookup throws', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		validateRequest.mockResolvedValue({ result: true, id: 'req-1' });
+		getRequestData.mockResolvedValue(mockRequest);
+		getApplication.mockRejectedValueOnce(new Error('app lookup boom'));
+		render(<UploadCenter />);
+		await waitFor(() => expect(screen.queryByText(/Verifying Your Link/i)).not.toBeInTheDocument());
+		fireEvent.change(screen.getByPlaceholderText('123456'), { target: { value: '123456' } });
+		const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+		const input = screen.getByTestId('file-input');
+		Object.defineProperty(input, 'files', { value: [file] });
+		fireEvent.change(input);
+		await waitFor(() => {
+			expect(errorSpy).toHaveBeenCalledWith('Error fetching application data:', expect.any(Error));
+		});
+		expect(saveFile).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
+	});
 });
+

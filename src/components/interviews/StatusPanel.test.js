@@ -91,4 +91,40 @@ describe('InterviewStatusPanel', () => {
 
 		expect(mockNavigate).toHaveBeenCalledWith('/interviews/interview-room/in-progress-1');
 	});
+
+	it('renders upcoming-only layout and navigates to deliberation', async () => {
+		const now = Date.now();
+		getRealTimeMeetings.mockImplementation((_uid, _isMember, callback) => {
+			callback([
+				{
+					id: 'up-1',
+					status: InterviewStatus.confirmed,
+					displayName: 'Future One',
+					startTime: toDate(new Date(now + 60 * 60 * 1000).toISOString()),
+				},
+				{
+					id: 'up-2',
+					status: InterviewStatus.confirmed,
+					displayName: 'Future Two',
+					startTime: toDate(new Date(now + 2 * 60 * 60 * 1000).toISOString()),
+				},
+				{
+					id: 'up-3',
+					status: InterviewStatus.confirmed,
+					displayName: 'Future Three',
+					startTime: toDate(new Date(now + 3 * 60 * 60 * 1000).toISOString()),
+				},
+			]);
+			return () => {};
+		});
+		render(
+			<MemoryRouter>
+				<StatusPanel />
+			</MemoryRouter>
+		);
+		expect(await screen.findByText('Up Next')).toBeInTheDocument();
+		expect(screen.getByText('Following')).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: 'Join Deliberation Room' }));
+		expect(mockNavigate).toHaveBeenCalledWith('/interviews/deliberation-room');
+	});
 });

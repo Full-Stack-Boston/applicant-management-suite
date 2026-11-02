@@ -122,6 +122,28 @@ describe('ConfigContext', () => {
 		consoleSpy.mockRestore();
 	});
 
+	test('logs when config processing throws inside the realtime callback', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		getRealTimeConfigFromDb.mockImplementation((callback) => {
+			callback({
+				get APPLICATION_DEADLINE() {
+					throw new Error('bad deadline');
+				},
+			});
+			return jest.fn();
+		});
+		render(
+			<ConfigProvider>
+				<div>Ready</div>
+			</ConfigProvider>
+		);
+		await waitFor(() => {
+			expect(consoleSpy).toHaveBeenCalledWith('Error setting config:', expect.any(Error));
+		});
+		consoleSpy.mockRestore();
+	});
+
+
 	test('throws error if useConfig is used outside provider', () => {
 		// Prevent React from logging the error boundary noise to console
 		const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});

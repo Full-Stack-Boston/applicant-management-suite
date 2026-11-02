@@ -106,4 +106,23 @@ describe('TemplateManagerDialog', () => {
 		fireEvent.click(screen.getByRole('button', { name: /close/i }));
 		expect(onClose).toHaveBeenCalled();
 	});
+
+	it('updates group and required-field type while editing', async () => {
+		render(<TemplateManagerDialog onClose={jest.fn()} />);
+		fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+		expect(await screen.findByDisplayValue('Welcome')).toBeInTheDocument();
+
+		const comboboxes = screen.getAllByRole('combobox');
+		fireEvent.mouseDown(comboboxes[0]);
+		fireEvent.click(await screen.findByRole('option', { name: 'Deadline' }));
+
+		fireEvent.click(screen.getByRole('button', { name: /add required field/i }));
+		fireEvent.change(screen.getByLabelText(/Variable Name/i), { target: { value: 'amount' } });
+		fireEvent.change(screen.getByLabelText(/Display Label/i), { target: { value: 'Amount' } });
+		const typeCombo = screen.getAllByRole('combobox').at(-1);
+		fireEvent.mouseDown(typeCombo);
+		fireEvent.click(await screen.findByRole('option', { name: 'Number' }));
+		expect(screen.getByDisplayValue('amount')).toBeInTheDocument();
+	});
 });
+

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { MemoryRouter } from 'react-router-dom';
 import RSVPStatusCard from './RSVPStatusCard';
@@ -228,6 +228,29 @@ describe('RSVPStatusCard', () => {
 		renderCard(<RSVPStatusCard />);
 		expect(await screen.findByText(/rescheduling is essential/i)).toBeInTheDocument();
 		expect(screen.getByText('RSVP: Unavailable')).toBeInTheDocument();
+	});
+
+	it('opens RSVP menu from confirmed capsule and changes to unavailable', async () => {
+		getRealTimeMeetings.mockImplementation((uid, isMember, callback) => {
+			callback([{ ...mockInterviewBase, rsvpStatus: 'yes', status: InterviewStatus.confirmed }]);
+			return () => {};
+		});
+		renderCard(<RSVPStatusCard />);
+		const chip = await screen.findByRole('button', { name: 'RSVP: Confirmed' });
+		const props = chip[Object.keys(chip).find((k) => k.startsWith('__reactProps'))];
+		await act(async () => {
+			props.onClick({ currentTarget: chip, target: chip, preventDefault() {}, stopPropagation() {} });
+		});
+		const item = await screen.findByRole('menuitem', { name: /Change to Unavailable/i });
+		await act(async () => {
+			fireEvent.click(item);
+		});
+		await waitFor(() => {
+			expect(updateDoc).toHaveBeenCalledWith(
+				'mock-doc-ref',
+				expect.objectContaining({ rsvpStatus: 'no' }),
+			);
+		});
 	});
 
 	it('downloads ICS invites and surfaces calendar errors', async () => {

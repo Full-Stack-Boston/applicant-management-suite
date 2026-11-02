@@ -59,8 +59,13 @@ vi.mock('../../config/data/collections', () => ({
 		applicants: 'applicants',
 	},
 	InterviewStatus: {
+		scheduled: 'Scheduled',
+		invited: 'Invited',
 		confirmed: 'confirmed',
 		inProgress: 'in-progress',
+		completed: 'Completed',
+		cancelled: 'Cancelled',
+		missed: 'Missed',
 	},
 }));
 
@@ -86,8 +91,8 @@ vi.mock('../../utils/interviewUtils', () => ({
 	getInterviewReturnPath: () => '/apply',
 	getInterviewReturnLabel: () => 'Return to Application',
 	formatApplicantDisplayName: (data) => `${data?.firstName || ''} ${data?.lastName || ''}`.trim(),
-	getInterviewAccessMessage: () => 'Access denied',
-	isTerminalInterviewStatus: () => false,
+	getInterviewAccessMessage: (status) => (status === 'Cancelled' ? 'This interview was cancelled.' : 'Access denied'),
+	isTerminalInterviewStatus: (status) => ['Completed', 'Cancelled', 'Missed'].includes(status),
 }));
 
 vi.mock('../../hooks/useApplicantPresence', () => ({
@@ -641,4 +646,40 @@ describe('WaitingRoom Component', () => {
 		});
 		expect(await screen.findByText(/Unable to Open Waiting Room/i)).toBeInTheDocument();
 	});
+
+	test('shows connecting copy for in-progress interviews and redirects after access denial timeout', async () => {
+		vi.useFakeTimers();
+		let statusCallback;
+		getRealTimeDocument.mockImplementation((_col, _id, cb) => {
+			statusCallback = cb;
+			return jest.fn();
+		});
+		render(<WaitingRoom />);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(screen.getByText(/Interview Waiting Room/i)).toBeInTheDocument();
+
+		act(() => {
+			statusCallback({ status: 'in-progress', startTime: { toDate: () => new Date(Date.now() + 60000) } });
+		});
+		expect(screen.getByText(/Interview starting/i)).toBeInTheDocument();
+
+		act(() => {
+			statusCallback({ status: 'Cancelled' });
+		});
+		expect(screen.getByText(/This interview was cancelled/i)).toBeInTheDocument();
+
+		for (let i = 0; i < 8; i += 1) {
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1000);
+			});
+		}
+		expect(mockNavigate).toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
+
+
 });
+

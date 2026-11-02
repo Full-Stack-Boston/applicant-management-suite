@@ -197,4 +197,19 @@ describe('AlertContext', () => {
 		};
 		expect(() => render(<Outside />)).toThrow('useAlert must be used within an AlertProvider');
 	});
+
+	test('handleError logs to console in development', () => {
+		const prev = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'development';
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		render(
+			<AlertProvider>
+				<TestConsumer trigger={({ handleError }) => handleError(new Error('dev boom'), 'dev-context')} />
+			</AlertProvider>
+		);
+		expect(errorSpy).toHaveBeenCalledWith('[dev-context]', expect.any(Error));
+		errorSpy.mockRestore();
+		process.env.NODE_ENV = prev;
+	});
 });
+

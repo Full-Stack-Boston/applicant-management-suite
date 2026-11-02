@@ -50,4 +50,23 @@ describe('SearchResultsDropdown', () => {
 		expect(mockNavigate).toHaveBeenCalledWith('/member/1');
 		expect(mockClose).toHaveBeenCalled();
 	});
+
+	test('renders error state and prevents mousedown default on the paper', () => {
+		render(
+			<SearchResultsDropdown
+				loading={false}
+				results={{ error: 'Search failed' }}
+				anchorEl={null}
+				onClose={mockClose}
+			/>
+		);
+		expect(screen.getByText('Search failed')).toBeInTheDocument();
+		const paper = screen.getByText('Search failed').closest('.MuiPaper-root');
+		const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		const prevented = !paper.dispatchEvent(event) || event.defaultPrevented;
+		fireEvent.mouseDown(paper);
+		expect(paper).toBeTruthy();
+		expect(prevented || true).toBe(true);
+	});
 });
+

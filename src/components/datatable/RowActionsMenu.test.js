@@ -59,4 +59,18 @@ describe('RowActionsMenu', () => {
 		});
 		consoleSpy.mockRestore();
 	});
+
+	it('stops click propagation on the open menu', async () => {
+		const parentClick = jest.fn();
+		render(
+			<div onClick={parentClick}>
+				<RowActionsMenu row={{ id: '1' }} actionKeys={['view', 'edit']} />
+			</div>
+		);
+		fireEvent.click(screen.getByRole('button', { name: /Actions/i }));
+		const menu = await screen.findByRole('menu');
+		fireEvent.click(menu);
+		expect(parentClick).not.toHaveBeenCalled();
+	});
 });
+

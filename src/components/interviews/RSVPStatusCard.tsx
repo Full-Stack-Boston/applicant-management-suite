@@ -186,7 +186,10 @@ const RSVPStatusCard = () => {
 													</Typography>
 													<Typography
 														variant='body2'
-														component='span'
+														component='button'
+														type='button'
+														aria-haspopup='menu'
+														aria-label={rsvpLabels[rsvpStatus]}
 														onClick={(event) => handleMenuOpen(event, interview.id)}
 														sx={{
 															...getRsvpCapsuleSx(rsvpStatus),
@@ -194,6 +197,8 @@ const RSVPStatusCard = () => {
 															fontSize: '0.85rem',
 															px: 2,
 															textAlign: 'center',
+															border: 'none',
+															font: 'inherit',
 														}}>
 														{rsvpLabels[rsvpStatus]}
 													</Typography>

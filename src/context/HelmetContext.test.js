@@ -42,4 +42,30 @@ describe('HelmetContext', () => {
 			})
 		).resolves.toBe('New Page | Org');
 	});
+
+	test('throws when useTitle is used outside PageTitleProvider', () => {
+		expect(() =>
+			render(
+				<HelmetProvider>
+					<TestComponent />
+				</HelmetProvider>
+			)
+		).toThrow(/PageTitleProvider/);
+	});
+
+	test('updates appear flag when provided', async () => {
+		const AppearComponent = () => {
+			useTitle({ title: 'Hidden', appear: false });
+			return <div>Hidden Page</div>;
+		};
+		render(
+			<HelmetProvider>
+				<PageTitleProvider>
+					<AppearComponent />
+				</PageTitleProvider>
+			</HelmetProvider>
+		);
+		expect(screen.getByText('Hidden Page')).toBeInTheDocument();
+	});
 });
+

@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ManualUploader from './ManualUploader';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAlert } from '../../../context/AlertContext';
@@ -165,4 +165,22 @@ describe('ManualUploader Component', () => {
 			expect(mockHandleError.mock.calls[0][1]).toBe('manual-upload-submit');
 		});
 	});
+
+	test('reports selected-application load failures and formats large file sizes', async () => {
+		firebaseConfig.getCollectionData.mockRejectedValueOnce(new Error('application unavailable'));
+		render(<ManualUploader />);
+		await selectAutocompleteOption('Applicant', 'John Doe');
+		await selectAutocompleteOption('Application', 'New Applicant');
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'manual-upload-load-application');
+		});
+
+		const fileInput = document.querySelector('input[type="file"]');
+		const big = new File([new Uint8Array(2 * 1024 * 1024)], 'big.pdf', { type: 'application/pdf' });
+		await act(async () => {
+			fireEvent.change(fileInput, { target: { files: [big] } });
+		});
+		expect(screen.getByText(/MB/i)).toBeInTheDocument();
+	});
 });
+

@@ -120,4 +120,15 @@ describe('Edit.jsx', () => {
 
 		expect(mockNavigate).toHaveBeenCalledWith(-1);
 	});
+
+	it('logs fetch failures without crashing', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		getCollectionData.mockRejectedValueOnce(new Error('edit fetch boom'));
+		render(<Edit type='test' />);
+		await waitFor(() => {
+			expect(errorSpy).toHaveBeenCalledWith('Failed to fetch data for edit:', expect.any(Error));
+		});
+		errorSpy.mockRestore();
+	});
 });
+

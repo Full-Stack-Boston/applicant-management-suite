@@ -72,6 +72,18 @@ describe('router.js', () => {
 			expect(screen.getByTestId('navigate-mock')).toHaveAttribute('data-to', generatePath(paths.redirect));
 		});
 
+		it('renders children when already on the redirect recovery path without a role', () => {
+			mockUseLocation.mockReturnValue({ pathname: generatePath(paths.redirect) });
+			mockUseAuth.mockReturnValue({ loading: false, user: { uid: '123' }, role: null, profilesReady: true });
+			render(
+				<RouteGuard allowedRoles={[UserType.member]}>
+					<TestChild />
+				</RouteGuard>
+			);
+			expect(screen.getByTestId('test-child')).toBeInTheDocument();
+		});
+
+
 		it('renders children if roles are not required', () => {
 			mockUseAuth.mockReturnValue({ loading: false, user: { uid: '123' }, role: UserType.member });
 			render(

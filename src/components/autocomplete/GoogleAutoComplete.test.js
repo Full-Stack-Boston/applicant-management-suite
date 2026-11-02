@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import GoogleAutoComplete, { buildManualPlace, hasGooglePlacesApiKey } from './GoogleAutoComplete';
+import GoogleAutoComplete, { buildManualPlace, hasGooglePlacesApiKey, __resetAutocompleteServiceForTests } from './GoogleAutoComplete';
 
 const mockGetPlacePredictions = jest.fn();
 const mockAutocompleteService = jest.fn(function MockAutocompleteService() {
@@ -63,6 +63,7 @@ describe('GoogleAutoComplete', () => {
 		process.env.REACT_APP_googleApiKey = 'test-google-key';
 		mockGetPlacePredictions.mockReset();
 		mockChangeLocation.mockReset();
+		__resetAutocompleteServiceForTests();
 
 		global.window.google.maps.places.AutocompleteService = mockAutocompleteService;
 		globalThis.google.maps.places.AutocompleteService = mockAutocompleteService;
@@ -294,4 +295,25 @@ describe('GoogleAutoComplete', () => {
 		expect(screen.getByRole('combobox')).toBeDisabled();
 	});
 
+	test('falls back to manual entry when AutocompleteService construction fails', async () => {
+		mockAutocompleteService.mockImplementationOnce(() => {
+			throw new Error('places ctor boom');
+		});
+		render(<GoogleAutoComplete {...baseProps} />);
+		await waitFor(() => {
+			expect(screen.getByText(/Google Places is not configured/i)).toBeInTheDocument();
+		});
+	});
+
+	test('commits free-solo string values via onChange', async () => {
+		render(<GoogleAutoComplete {...baseProps} />);
+		const input = screen.getByRole('combobox');
+		fireEvent.change(input, { target: { value: 'Manual Street 1' } });
+		fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+		await waitFor(() => {
+			expect(mockChangeLocation).toHaveBeenCalled();
+		});
+	});
+
 });
+

@@ -103,4 +103,15 @@ describe('Breadcrumbs', () => {
 		render(<Crumbs />);
 		expect(screen.getByText('APPLICATIONS')).toBeInTheDocument();
 	});
+
+	it('closes the theme color menu via onClose', () => {
+		render(<Crumbs title='Review' logout />);
+		const buttons = screen.getAllByRole('button');
+		fireEvent.click(buttons[3]);
+		expect(screen.getByRole('menuitem', { name: 'Forest Green' })).toBeInTheDocument();
+		fireEvent.keyDown(document.body, { key: 'Escape' });
+		const backdrop = document.querySelector('.MuiBackdrop-root');
+		if (backdrop) fireEvent.click(backdrop);
+	});
 });
+

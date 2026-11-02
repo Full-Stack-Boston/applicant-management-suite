@@ -115,4 +115,14 @@ describe('formConfig.js', () => {
 			expect(manualUploadFormConfig.fields.some((f) => f.name === 'file')).toBe(true);
 		});
 	});
+
+	describe('memberFormConfig alias disableOn', () => {
+		it('disables alias when the user is not an admin', () => {
+			const aliasField = memberFormConfig.fields.find((field) => field.name === 'alias');
+			expect(aliasField.disableOn({})).toBe(true);
+			expect(aliasField.disableOn({ admin: false })).toBe(true);
+			expect(aliasField.disableOn({ admin: true })).toBe(false);
+		});
+	});
 });
+

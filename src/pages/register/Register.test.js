@@ -242,6 +242,18 @@ describe('Register Component', () => {
 		});
 	});
 
+	test('alerts when registerUser returns no user', async () => {
+		registerUser.mockResolvedValue({ user: null });
+		render(<Register />);
+		fillRequiredFields();
+		fireEvent.click(screen.getByRole('button', { name: /Sign Up/i }));
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith('register', 'error');
+		});
+		expect(saveApplicantData).not.toHaveBeenCalled();
+	});
+
+
 	test('navigates via secondary button and login link', () => {
 		render(<Register />);
 		fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));

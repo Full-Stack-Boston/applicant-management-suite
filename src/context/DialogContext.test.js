@@ -283,4 +283,31 @@ describe('DialogContext', () => {
 		fireEvent.click(screen.getByText('Submit'));
 		expect(callback).toHaveBeenCalledWith({ notes: 'hello' });
 	});
+
+	test('skips unknown input types without crashing', () => {
+		const callback = jest.fn();
+		renderDialog(
+			'formDialog',
+			{
+				inputs: [
+					{ name: 'username', type: 'text', label: 'Username' },
+					{ name: 'weird', type: 'unknown-type', label: 'Weird' },
+				],
+			},
+			callback
+		);
+		expect(screen.getByLabelText('Username')).toBeInTheDocument();
+		expect(screen.queryByLabelText('Weird')).not.toBeInTheDocument();
+		fireEvent.click(screen.getByText('Cancel'));
+		expect(callback).toHaveBeenCalledWith(null);
+	});
+
+	test('renders config.actions when no inputs are present', () => {
+		const callback = jest.fn();
+		renderDialog('customActionDialog', {}, callback);
+		fireEvent.click(screen.getByText('Option A'));
+		expect(callback).toHaveBeenCalledWith('A');
+	});
 });
+
+

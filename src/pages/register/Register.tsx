@@ -118,6 +118,12 @@ export default function Register() {
 			const result = await registerUser(formData.email, formData.password);
 			const user = result.user;
 
+			if (!user) {
+				showAlert('register', 'error');
+				setIsSubmitting(false);
+				return;
+			}
+
 			const applicantData = {
 				id: user.uid,
 				firstName: formData.firstName,
@@ -130,12 +136,6 @@ export default function Register() {
 				notifications: { email: true, sms: false },
 				accountCreated: serverTimestamp(),
 			};
-
-			if (!user) {
-				showAlert('register', 'error');
-				setIsSubmitting(false);
-				return;
-			}
 
 			const isApplicantSaved = await saveApplicantData(user.uid, applicantData);
 			if (!isApplicantSaved) {

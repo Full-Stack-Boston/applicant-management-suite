@@ -1663,4 +1663,35 @@ describe('src/config/data/firebase.js', () => {
 		cleanup();
 		expect(unsub).toHaveBeenCalled();
 	});
+
+	it('covers additional realtime error and empty-input edges', async () => {
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementationOnce((_q, _onNext, onError) => {
+			onError?.(new Error('apps boom'));
+			return jest.fn();
+		});
+		FirebaseConfig.getRealTimeApplicationsByStatus?.('Submitted', cb, 2026);
+
+		mockOnSnapshot.mockImplementationOnce(() => {
+			throw new Error('outlook boom');
+		});
+		expect(FirebaseConfig.getRealTimeDashboardApplicantOutlook?.(cb)).toBeNull();
+
+		mockGetDoc.mockRejectedValueOnce(new Error('parent boom'));
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{
+					id: 'n-err',
+					data: () => ({ text: 'x' }),
+					ref: { parent: { parent: { id: 'u9', path: 'applicants/u9' } } },
+				},
+			],
+		});
+		const notes = await FirebaseConfig.getNotesByAuthor('author-err');
+		expect(notes[0].parent.name).toBe('u9');
+
+		expect(await FirebaseConfig.invalidateRequest?.('')).toBeDefined();
+		mockUpdateDoc.mockRejectedValueOnce(new Error('invalidate boom'));
+		await expect(FirebaseConfig.invalidateRequest('req-x')).resolves.toBe(false);
+	});
 });
