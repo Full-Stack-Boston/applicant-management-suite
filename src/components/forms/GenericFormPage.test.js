@@ -63,6 +63,27 @@ vi.mock('./DynamicField', () => ({
 					}>
 					Bad Type
 				</button>
+				<button
+					data-testid={`trigger-upload-oversized-${fieldConfig.name}`}
+					onClick={() =>
+						onFileAction('upload', fieldPath, {
+							name: 'huge.pdf',
+							type: 'application/pdf',
+							size: 26 * 1024 * 1024,
+						})
+					}>
+					Oversized
+				</button>
+				<button
+					data-testid={`trigger-request-${fieldConfig.name}`}
+					onClick={() =>
+						onFileAction('request', fieldPath, {
+							displayName: 'Requested resume',
+							requestID: 'req-new',
+						})
+					}>
+					Request File
+				</button>
 				<button data-testid={`trigger-delete-${fieldConfig.name}`} onClick={() => onFileAction('delete', fieldPath, { refLoc: 'path/to/file' })}>
 					Delete File
 				</button>
@@ -215,6 +236,30 @@ describe('GenericFormPage Component', () => {
 
 			expect(FirebaseService.saveFile).not.toHaveBeenCalled();
 			expect(mockShowAlert).toHaveBeenCalledWith('upload', 'type');
+		});
+
+		test('handles oversized file upload', async () => {
+			render(<GenericFormPage sectionName='personal' {...baseProps} />);
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('trigger-upload-oversized-resume'));
+			});
+			expect(FirebaseService.saveFile).not.toHaveBeenCalled();
+			expect(mockShowAlert).toHaveBeenCalledWith('upload', 'size');
+		});
+
+		test('handles file request action', async () => {
+			render(<GenericFormPage sectionName='personal' {...baseProps} />);
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('trigger-request-resume'));
+			});
+			expect(mockSetApplication).toHaveBeenCalledWith(
+				expect.objectContaining({
+					personal: expect.objectContaining({
+						resume: expect.objectContaining({ requestID: 'req-new' }),
+					}),
+				})
+			);
+			expect(mockShowAlert).toHaveBeenCalledWith('upload', 'requested');
 		});
 
 		test('handles file delete (by refLoc)', async () => {
