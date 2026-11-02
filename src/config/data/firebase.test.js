@@ -1014,11 +1014,38 @@ describe('src/config/data/firebase.js', () => {
 						}),
 					},
 					{
+						id: 'a1b',
+						data: () => ({
+							cycleYear: 2026,
+							type: 'Returning Grant',
+							status: 'Eligible',
+							completedBy: 'u1b',
+						}),
+					},
+					{
+						id: 'a1c',
+						data: () => ({
+							cycleYear: 2026,
+							type: 'Scholarship Check In',
+							status: 'Invited',
+							completedBy: 'u1c',
+						}),
+					},
+					{
+						id: 'a-prior-new',
+						data: () => ({
+							cycleYear: 2025,
+							type: 'New Applicant',
+							status: 'Completed',
+							completedBy: 'u-prior',
+						}),
+					},
+					{
 						id: 'a2',
 						data: () => ({
 							cycleYear: 2025,
 							type: 'Returning Grant',
-							status: 'awarded',
+							status: 'Awarded',
 							completedBy: 'u2',
 						}),
 					},
@@ -1026,9 +1053,25 @@ describe('src/config/data/firebase.js', () => {
 						id: 'a3',
 						data: () => ({
 							cycleYear: 2024,
-							type: 'Scholarship',
-							status: 'awarded',
+							type: 'Scholarship Check In',
+							status: 'Awarded',
 							completedBy: 'u3',
+						}),
+					},
+					{
+						id: 'a4',
+						data: () => ({
+							cycleYear: 2023,
+							type: 'New Applicant',
+							status: 'Awarded',
+							completedBy: 'u4',
+						}),
+					},
+					{
+						id: 'a-skip',
+						data: () => ({
+							type: 'New Applicant',
+							status: 'Completed',
 						}),
 					},
 				],
@@ -1037,16 +1080,127 @@ describe('src/config/data/firebase.js', () => {
 				docs: [
 					{ id: 'u1', data: () => ({ gradYear: 2028 }) },
 					{ id: 'u2', data: () => ({ gradYear: 2028 }) },
-					{ id: 'u3', data: () => ({ gradYear: 2020 }) },
+					{ id: 'u3', data: () => ({ gradYear: 2027 }) },
+					{ id: 'u4', data: () => ({ gradYear: 2020 }) },
 				],
 			});
 
-		// ApplicationType values may differ — just assert shape
 		const data = await FirebaseConfig.getDashboardBenchmarkData(2026);
 		expect(data).toHaveProperty('currentCounts');
 		expect(data).toHaveProperty('benchmarkTargets');
 		expect(Array.isArray(data.awardTrends)).toBe(true);
 		expect(data.awardTrends).toHaveLength(3);
+		expect(data.currentCounts['New Applicant']).toBeGreaterThanOrEqual(1);
+		expect(data.currentCounts['Returning Grant']).toBeGreaterThanOrEqual(1);
+		expect(data.currentCounts['Scholarship Check In']).toBeGreaterThanOrEqual(1);
+		expect(data.benchmarkTargets['New Applicant']).toBeGreaterThanOrEqual(1);
+		expect(data.benchmarkTargets['Returning Grant']).toBeGreaterThanOrEqual(1);
+		expect(data.benchmarkTargets['Scholarship Check In']).toBeGreaterThanOrEqual(1);
+	});
+
+	it('getNotesByAuthor resolves applicant, application, and fallback parent names', async () => {
+		mockGetDocs.mockResolvedValueOnce({
+			docs: [
+				{
+					id: 'n1',
+					data: () => ({ text: 'applicant note' }),
+					ref: { parent: { parent: { id: 'u1', path: 'applicants/u1' } } },
+				},
+				{
+					id: 'n2',
+					data: () => ({ text: 'application note' }),
+					ref: { parent: { parent: { id: 'app1', path: 'applications/app1' } } },
+				},
+				{
+					id: 'n3',
+					data: () => ({ text: 'application without holder' }),
+					ref: { parent: { parent: { id: 'app2', path: 'applications/app2' } } },
+				},
+				{
+					id: 'n4',
+					data: () => ({ text: 'other parent' }),
+					ref: { parent: { parent: { id: 'x1', path: 'other/x1' } } },
+				},
+				{
+					id: 'n5',
+					data: () => ({ text: 'orphan note' }),
+					ref: { parent: { parent: null } },
+				},
+			],
+		});
+		mockGetDoc.mockImplementation(async (ref) => {
+			const path = ref?.path || '';
+			if (path === 'applicants/u1') {
+				return { exists: () => true, data: () => ({ firstName: 'Ada', lastName: 'Lovelace' }) };
+			}
+			if (path === 'applications/app1') {
+				return {
+					exists: () => true,
+					data: () => ({
+						completedBy: 'u2',
+						status: 'Awarded',
+						type: 'Scholarship Check In',
+						window: '2025-06-01',
+					}),
+				};
+			}
+			if (path === 'applicants/u2') {
+				return { exists: () => true, data: () => ({ firstName: 'Bob', lastName: 'Builder' }) };
+			}
+			if (path === 'applications/app2') {
+				return {
+					exists: () => true,
+					data: () => ({ status: 'Started', type: 'New Applicant', window: '2024-01-01' }),
+				};
+			}
+			if (path === 'other/x1') {
+				return { exists: () => true, data: () => ({ label: 'misc' }) };
+			}
+			return { exists: () => false, data: () => ({}) };
+		});
+
+		const notes = await FirebaseConfig.getNotesByAuthor('author-1');
+		expect(notes).toHaveLength(5);
+		const byId = Object.fromEntries(notes.map((note) => [note.id, note]));
+		expect(byId.n1.parent.name).toBe('Ada Lovelace');
+		expect(byId.n2.parent.name).toMatch(/Bob Builder's/);
+		expect(byId.n3.parent.name).toMatch(/Unknown Applicant/);
+		expect(byId.n4.parent.name).toBe('x1');
+		expect(byId.n5.parent.name).toBe('Unknown');
+	});
+
+	it('getRealTimeActiveAuthenticatedUsersCount logs snapshot errors', () => {
+		const cb = jest.fn();
+		mockOnSnapshot.mockImplementationOnce((_q, _onNext, onError) => {
+			onError(new Error('presence boom'));
+			return jest.fn();
+		});
+		const cleanup = FirebaseConfig.getRealTimeActiveAuthenticatedUsersCount(cb);
+		cleanup();
+		expect(typeof cleanup).toBe('function');
+	});
+
+	it('getRealTimeDashboardApplicantOutlook cleans up and tolerates config failures', async () => {
+		const cb = jest.fn();
+		const unsubApps = jest.fn();
+		const unsubApplicants = jest.fn();
+		mockGetDoc.mockRejectedValueOnce(new Error('config boom'));
+		mockOnSnapshot
+			.mockImplementationOnce((_q, onNext) => {
+				onNext({ docs: [{ id: 'a1', data: () => ({ cycleYear: 2026, type: 'New Applicant', status: 'Submitted', completedBy: 'u1' }) }] });
+				return unsubApps;
+			})
+			.mockImplementationOnce((_q, onNext) => {
+				onNext({ docs: [{ id: 'u1', data: () => ({ firstName: 'Ada', lastName: 'L', gradYear: 2028, accountCreated: new Date('2020-01-01') }) }] });
+				return unsubApplicants;
+			});
+		const cleanup = FirebaseConfig.getRealTimeDashboardApplicantOutlook(cb);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(typeof cleanup).toBe('function');
+		cleanup();
+		expect(unsubApps).toHaveBeenCalled();
+		expect(unsubApplicants).toHaveBeenCalled();
 	});
 
 	it('migrateDeadlinesToCycleYear backfills cycleYear and site config', async () => {

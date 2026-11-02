@@ -135,4 +135,12 @@ describe('Unsubscribe Component', () => {
 
 		expect(mockNavigate).toHaveBeenCalledWith('/home');
 	});
+
+	test('navigates home from the error screen', async () => {
+		validateLink.mockResolvedValue({ result: false, error: 'bad token' });
+		render(<Unsubscribe />);
+		await waitFor(() => expect(screen.getByText('Unsubscribe Error')).toBeInTheDocument());
+		fireEvent.click(screen.getByRole('button', { name: /go to homepage/i }));
+		expect(mockNavigate).toHaveBeenCalledWith('/home');
+	});
 });

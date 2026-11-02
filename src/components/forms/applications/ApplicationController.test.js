@@ -234,6 +234,10 @@ vi.mock('../../forms/GenericFormPage', async () => {
 								currentOrganization: '0',
 								positions: [{ role: 'Intern', organization: 'Acme' }],
 							},
+							incomes: {
+								earningsAppliedToEducation: 1200,
+								savingsAppliedToEducation: 800,
+							},
 							attachments: { testDoc: { displayName: 'doc.pdf' } },
 						}))
 					}>
@@ -688,13 +692,110 @@ describe('ApplicationController', () => {
 			renderController();
 		});
 		await screen.findByTestId('generic-form-page');
-		expect(screen.getByText('Step 1')).toBeInTheDocument();
-		const stepLabels = screen.getAllByText('Step 2');
 		await act(async () => {
-			fireEvent.click(stepLabels[0].closest('button') || stepLabels[0]);
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(mockAlert.showAlert).toHaveBeenCalledWith('application', 'updated');
+		});
+		const step1Tab = screen.getByRole('tab', { name: /Step 1/i });
+		await act(async () => {
+			fireEvent.click(step1Tab);
 		});
 		await waitFor(() => {
 			expect(screen.getByTestId('generic-form-page')).toBeInTheDocument();
 		});
+	});
+
+	test('fetches linked dataCollections when record IDs exist', async () => {
+		const { applicationConfigurations } = await import('../../../config/ui/applicationConfig');
+		const original = applicationConfigurations.scholarship.dataCollections;
+		applicationConfigurations.scholarship.dataCollections = [{ key: 'profile', collectionName: 'profiles' }];
+		firebaseConfig.getApplication.mockResolvedValue({
+			id: 'app123',
+			status: 'started',
+			type: 'Scholarship',
+			profile: 'prof-1',
+		});
+		firebaseConfig.getCollectionData.mockResolvedValue({ applicantFirstName: 'Linked' });
+
+		await act(async () => {
+			renderController();
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.getCollectionData).toHaveBeenCalledWith('user1', 'profiles', 'prof-1');
+			expect(screen.getByTestId('generic-form-page')).toBeInTheDocument();
+		});
+		applicationConfigurations.scholarship.dataCollections = original;
+	});
+
+	test('handles updateRecords failures after a successful step save', async () => {
+		firebaseConfig.saveCollectionData
+			.mockResolvedValueOnce(true)
+			.mockRejectedValueOnce(new Error('updateRecords boom'));
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(mockAlert.handleError).toHaveBeenCalledWith(expect.any(Error), 'updateRecords');
+		});
+	});
+
+	test('skips save for confirmation steps', async () => {
+		const { applicationConfigurations } = await import('../../../config/ui/applicationConfig');
+		const originalPages = applicationConfigurations.scholarship.pages;
+		applicationConfigurations.scholarship.pages = [
+			{ section: 'confirmation', component: 'GenericFormPage' },
+			{ section: 'attachments', component: 'GenericFormPage' },
+			{ section: 'profile', component: 'GenericFormPage' },
+		];
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		firebaseConfig.saveCollectionData.mockClear();
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.saveCollectionData).not.toHaveBeenCalled();
+		});
+		applicationConfigurations.scholarship.pages = originalPages;
+	});
+
+	test('syncs incomes into projections before saving', async () => {
+		const { applicationConfigurations } = await import('../../../config/ui/applicationConfig');
+		const originalPages = applicationConfigurations.scholarship.pages;
+		applicationConfigurations.scholarship.pages = [
+			{ section: 'projections', component: 'GenericFormPage' },
+			{ section: 'attachments', component: 'GenericFormPage' },
+			{ section: 'confirmation', component: 'GenericFormPage' },
+		];
+		await act(async () => {
+			renderController();
+		});
+		await screen.findByTestId('generic-form-page');
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Fill Form'));
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByText('Simulate Next'));
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.saveCollectionData).toHaveBeenCalledWith(
+				'projections',
+				expect.any(String),
+				expect.objectContaining({
+					applicantEarnings: 1200,
+					applicantSavings: 800,
+					completedBy: 'user1',
+				})
+			);
+		});
+		applicationConfigurations.scholarship.pages = originalPages;
 	});
 });

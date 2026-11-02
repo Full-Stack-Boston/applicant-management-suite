@@ -8,6 +8,10 @@ import {
 	CreateRoomButton,
 	CloseRoomButton,
 	ReplyButton,
+	ReplyAllButton,
+	ForwardButton,
+	DeleteEmailButton,
+	ContactApplicantFromInterviewButton,
 	ToggleReadButton,
 	DeleteInterviewButton,
 	ViewAppButton,
@@ -67,6 +71,7 @@ vi.mock('../data/collections', () => ({
 		requests: 'requests',
 		applications: 'applications',
 		members: 'members',
+		applicants: 'applicants',
 		interviews: 'interviews',
 		attachments: 'attachments',
 	},
@@ -427,6 +432,67 @@ describe('tableConfig.js', () => {
 			});
 			await waitFor(() => {
 				expect(mockHandleReply).toHaveBeenCalled();
+			});
+		});
+
+		it('ReplyAllButton and ForwardButton fetch content for compose actions', async () => {
+			const row = { id: 'msg2', folderId: 'inbox', folderName: 'Inbox', isRead: true, tags: ['t'] };
+			FirebaseService.fetchEmailContent.mockResolvedValue({ data: { text: 'body' } });
+
+			render(<ReplyAllButton row={row} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Reply All'));
+			});
+			await waitFor(() => {
+				expect(mockHandleReplyAll).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg2', text: 'body' }));
+			});
+
+			cleanup();
+			FirebaseService.fetchEmailContent.mockResolvedValue({ data: { text: 'forward-body' } });
+			render(<ForwardButton row={row} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Forward'));
+			});
+			await waitFor(() => {
+				expect(mockHandleForward).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg2', text: 'forward-body' }));
+			});
+		});
+
+		it('DeleteEmailButton confirms and deletes', async () => {
+			const row = { id: 'msg3', subject: 'Trash me' };
+			FirebaseService.deleteZohoEmail.mockResolvedValue({});
+			mockShowDialog.mockImplementation(({ callback }) => callback(true));
+
+			render(<DeleteEmailButton row={row} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Delete'));
+			});
+			await waitFor(() => {
+				expect(FirebaseService.deleteZohoEmail).toHaveBeenCalledWith({ messageId: 'msg3' });
+				expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Email moved to trash.', type: 'success' });
+			});
+		});
+
+		it('ContactApplicantFromInterviewButton opens contact dialog', async () => {
+			const row = { id: 'int9', applicantId: 'applicant-9' };
+			FirebaseService.getDocumentsByIDs.mockResolvedValueOnce([
+				{ id: 'applicant-9', firstName: 'Casey', lastName: 'Contact', email: 'c@test.com', cell: '555' },
+			]);
+
+			render(<ContactApplicantFromInterviewButton row={row} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Contact'));
+			});
+			await waitFor(() => {
+				expect(FirebaseService.getDocumentsByIDs).toHaveBeenCalledWith('applicants', ['applicant-9']);
+				expect(mockShowDialog).toHaveBeenCalledWith(
+					expect.objectContaining({
+						id: 'contactDialog',
+						data: expect.objectContaining({
+							recipients: [expect.objectContaining({ id: 'applicant-9', name: 'Casey Contact' })],
+						}),
+					})
+				);
 			});
 		});
 
