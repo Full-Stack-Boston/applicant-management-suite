@@ -144,6 +144,8 @@ vi.mock('../data/firebase', () => ({
 	closeInterviewRoom: jest.fn(),
 	sendInterviewInvitations: jest.fn(),
 	bulkUpdateInterviewStatus: jest.fn(),
+	createDeliberationRoom: jest.fn(),
+	deleteDeliberationRoom: jest.fn(),
 	db: {},
 	functions: {},
 }));
@@ -578,6 +580,38 @@ describe('tableConfig.js', () => {
 
 			await updateAction.onClick(['int1'], [], { showDialog: mockShowDialog, showAlert: mockShowAlert, handleError: mockHandleError });
 			expect(FirebaseService.bulkUpdateInterviewStatus).toHaveBeenCalledWith({ interviewIds: ['int1'], newStatus: 'Completed' });
+		});
+
+		it('Interview Toolbar: deliberation open/close and update failure edges', async () => {
+			FirebaseService.createDeliberationRoom.mockResolvedValue({ data: { message: 'opened' } });
+			FirebaseService.deleteDeliberationRoom.mockResolvedValue({ data: { message: 'closed' } });
+
+			const openActions = TableConfig.getInterviewToolbarActions({ deliberationRoomExists: false, navigate: jest.fn() });
+			const openAction = openActions.find((a) => a.label === 'Open Deliberation Room');
+			await openAction.onClick([], [], { showAlert: mockShowAlert, handleError: mockHandleError });
+			expect(FirebaseService.createDeliberationRoom).toHaveBeenCalled();
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'opened', type: 'success' });
+
+			FirebaseService.createDeliberationRoom.mockRejectedValueOnce(new Error('open fail'));
+			await openAction.onClick([], [], { showAlert: mockShowAlert, handleError: mockHandleError });
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'Error creating Deliberation Room.');
+
+			const closeActions = TableConfig.getInterviewToolbarActions({ deliberationRoomExists: true, navigate: jest.fn() });
+			const closeAction = closeActions.find((a) => a.label === 'Close Deliberation Room');
+			const showDialog = jest.fn(async ({ callback }) => callback(true));
+			await closeAction.onClick([], [], { showDialog, showAlert: mockShowAlert, handleError: mockHandleError });
+			expect(FirebaseService.deleteDeliberationRoom).toHaveBeenCalled();
+			expect(mockShowAlert).toHaveBeenCalledWith({ message: 'closed', type: 'success' });
+
+			FirebaseService.deleteDeliberationRoom.mockRejectedValueOnce(new Error('close fail'));
+			await closeAction.onClick([], [], { showDialog, showAlert: mockShowAlert, handleError: mockHandleError });
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'Error deleting Deliberation Room.');
+
+			const updateAction = closeActions.find((a) => a.label === 'Update Statuses');
+			FirebaseService.bulkUpdateInterviewStatus.mockRejectedValueOnce(new Error('bulk fail'));
+			const updateDialog = jest.fn(async ({ callback }) => callback({ status: 'Completed' }));
+			await updateAction.onClick(['int1'], [], { showDialog: updateDialog, showAlert: mockShowAlert, handleError: mockHandleError });
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'bulk-update-interview-status');
 		});
 
 		it('Inbox Toolbar: Delete (Batch)', async () => {
