@@ -9,7 +9,7 @@ import { useConfig } from '../../context/ConfigContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useParams } from 'react-router-dom';
 
-import { getApplication, getCollectionData, saveFile, getDownloadLinkForFile, deleteFile, saveCollectionData, updateApplicationStatus } from '../../config/data/firebase';
+import { getApplication, getCollectionData, saveFile, getDownloadLinkForFile, deleteFile, invalidateRequest, saveCollectionData, updateApplicationStatus } from '../../config/data/firebase';
 import { sendRequest } from '../../config/content/push';
 
 vi.mock('react-router-dom', () => ({
@@ -319,6 +319,130 @@ describe('Review Component', () => {
 		await waitFor(() => {
 			expect(deleteFile).toHaveBeenCalledWith('path/to/file');
 			expect(mockShowAlert).toHaveBeenCalledWith('upload', 'deleted');
+		});
+	});
+
+	test('marks not found when application fetch fails', async () => {
+		const fetchError = new Error('fetch boom');
+		getApplication.mockRejectedValue(fetchError);
+
+		render(<Review />);
+
+		await screen.findByTestId('not-found');
+		expect(mockHandleError).toHaveBeenCalledWith(fetchError, 'reviewFetch');
+	});
+
+	test('surfaces recommendation request failures', async () => {
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		fireEvent.click(screen.getAllByText('Request Letter')[0]);
+		const dialogCall = mockShowDialog.mock.calls[0][0];
+		const requestError = new Error('request boom');
+		saveCollectionData.mockRejectedValueOnce(requestError);
+
+		await act(async () => {
+			await dialogCall.callback({ name: 'Teacher', email: 'teach@school.com' });
+		});
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(requestError, 'reviewSendRequest');
+		});
+	});
+
+	test('invalidates requestID attachments on delete', async () => {
+		const pendingAttachment = {
+			...mockAttachments,
+			testDoc: { requestID: 'req-abc' },
+		};
+		getCollectionData.mockImplementation((uid, coll) => {
+			if (coll === 'attachments') return Promise.resolve(pendingAttachment);
+			if (coll === 'profiles') return Promise.resolve(mockProfile);
+			return Promise.resolve({});
+		});
+		invalidateRequest.mockResolvedValue(true);
+
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		const chip = screen.getAllByText('Request Sent')[0].closest('.MuiChip-root');
+		fireEvent.click(chip.querySelector('.MuiChip-deleteIcon'));
+
+		await waitFor(() => {
+			expect(invalidateRequest).toHaveBeenCalledWith('req-abc');
+			expect(deleteFile).not.toHaveBeenCalled();
+		});
+	});
+
+	test('reports attachment delete failures', async () => {
+		getCollectionData.mockImplementation((uid, coll) => {
+			if (coll === 'attachments') {
+				return Promise.resolve({
+					...mockAttachments,
+					testDoc: { displayName: 'boom.pdf', home: 'http://link', refLoc: 'path/boom' },
+				});
+			}
+			if (coll === 'profiles') return Promise.resolve(mockProfile);
+			return Promise.resolve({});
+		});
+		const deleteError = new Error('delete boom');
+		deleteFile.mockRejectedValue(deleteError);
+
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		const boomChip = screen.getAllByText('boom.pdf')[0].closest('.MuiChip-root');
+		fireEvent.click(boomChip.querySelector('.MuiChip-deleteIcon'));
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(deleteError, 'reviewHandleDelete');
+		});
+	});
+
+	test('marks application completed when final required attachment uploads', async () => {
+		const almostComplete = {
+			...mockAttachments,
+			recLetter: { home: 'http://rec.link', requestID: 'req-done' },
+			testDoc: null,
+		};
+		getCollectionData.mockImplementation((uid, coll) => {
+			if (coll === 'attachments') return Promise.resolve(almostComplete);
+			if (coll === 'profiles') return Promise.resolve(mockProfile);
+			return Promise.resolve({});
+		});
+
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		const file = new File(['done'], 'final.pdf', { type: 'application/pdf' });
+		fireEvent.change(screen.getByTestId('file-input-testDoc'), { target: { files: [file] } });
+
+		await waitFor(() => {
+			expect(updateApplicationStatus).toHaveBeenCalledWith(mockUser.uid, appID, 'Completed');
+			expect(mockShowAlert).toHaveBeenCalledWith('application', 'completed');
+		});
+	});
+
+	test('alerts when upload returns no download link and when save fails', async () => {
+		render(<Review />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		getDownloadLinkForFile.mockResolvedValueOnce(null);
+		const missingLinkFile = new File(['x'], 'missing.pdf', { type: 'application/pdf' });
+		fireEvent.change(screen.getByTestId('file-input-testDoc'), { target: { files: [missingLinkFile] } });
+
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith('upload', 'missing');
+		});
+
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+
+		const uploadError = new Error('upload boom');
+		saveFile.mockRejectedValueOnce(uploadError);
+		const boomFile = new File(['y'], 'boom.pdf', { type: 'application/pdf' });
+		fireEvent.change(screen.getByTestId('file-input-testDoc'), { target: { files: [boomFile] } });
+
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(uploadError, 'reviewHandleUpload');
 		});
 	});
 });
