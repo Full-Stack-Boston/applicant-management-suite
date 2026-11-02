@@ -71,8 +71,13 @@ vi.mock('../../config/content', () => ({
 		fields: [
 			{ component: 'TextField', name: 'email', label: 'Email Address', type: 'email' },
 			{ component: 'TextField', name: 'password', label: 'Password', type: 'password' },
+			{ component: 'Checkbox', name: 'rememberMe', label: 'Remember Me' },
+			{ component: 'UnknownWidget', name: 'ignored', label: 'Ignored' },
 		],
-		buttons: [{ id: 'btn-submit', label: 'Sign In', type: 'submit', variant: 'contained' }],
+		buttons: [
+			{ id: 'btn-submit', label: 'Sign In', type: 'submit', variant: 'contained' },
+			{ id: 'btn-home', label: 'Back Home', type: 'button', variant: 'outlined', navigationPath: '/home' },
+		],
 		links: [
 			{ id: 'link-reset', label: 'Forgot Password?', action: 'handlePasswordReset' },
 			{ id: 'link-register', label: 'Register', navigationPath: '/register' },
@@ -140,9 +145,14 @@ describe('Login Component', () => {
 		expect(screen.getByText('Test Login')).toBeInTheDocument();
 		expect(screen.getByLabelText(/Email Address/i)).toBeInTheDocument();
 		expect(screen.getByLabelText(/Password/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/Remember Me/i)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
 		expect(screen.getByText('Forgot Password?')).toBeInTheDocument();
 		expect(screen.getByText(/Demo staff access/i)).toBeInTheDocument();
+
+		fireEvent.click(screen.getByLabelText(/Remember Me/i));
+		fireEvent.click(screen.getByRole('button', { name: /Back Home/i }));
+		expect(mockNavigate).toHaveBeenCalledWith('/home');
 	});
 
 	test('hides board registration link when member onboarding is disabled', () => {

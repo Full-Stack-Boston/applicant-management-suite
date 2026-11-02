@@ -550,6 +550,11 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockUpdateDoc).toHaveBeenCalled();
 	});
 
+	it('invalidateRequest returns false when update fails', async () => {
+		mockUpdateDoc.mockRejectedValueOnce(new Error('invalidate boom'));
+		await expect(FirebaseConfig.invalidateRequest('1')).resolves.toBe(false);
+	});
+
 	it('getAwardsData fetches docs', async () => {
 		await FirebaseConfig.getAwardsData('u1', ['1']);
 		expect(mockGetDoc).toHaveBeenCalled();
@@ -589,9 +594,20 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockUploadBytes).toHaveBeenCalled();
 	});
 
+	it('saveFile rejects missing inputs and upload failures', async () => {
+		await expect(FirebaseConfig.saveFile('type', null, 'name', new Blob())).rejects.toThrow(/No file or asset/);
+		mockUploadBytes.mockRejectedValueOnce(new Error('upload boom'));
+		await expect(FirebaseConfig.saveFile('type', 'id', 'name', new Blob())).rejects.toThrow('upload boom');
+	});
+
 	it('deleteFile deletes object', async () => {
 		await FirebaseConfig.deleteFile('path/to/file');
 		expect(mockDeleteObject).toHaveBeenCalled();
+	});
+
+	it('deleteFile returns false for empty locations', async () => {
+		await expect(FirebaseConfig.deleteFile('')).resolves.toBe(false);
+		expect(mockDeleteObject).not.toHaveBeenCalled();
 	});
 
 	it('deleteFile returns false when storage delete fails', async () => {
@@ -1038,6 +1054,12 @@ describe('src/config/data/firebase.js', () => {
 			docs: [
 				{ id: 'app1', data: () => ({ window: '2025-07-01' }) },
 				{ id: 'app2', data: () => ({ cycleYear: 2024, deadline: '2024-12-01' }) },
+				{
+					id: 'app3',
+					data: () => ({
+						deadline: { toDate: () => new Date('2023-01-15') },
+					}),
+				},
 			],
 		});
 		mockGetDoc.mockResolvedValue({
@@ -1051,17 +1073,31 @@ describe('src/config/data/firebase.js', () => {
 		expect(mockBatchCommit).toHaveBeenCalled();
 	});
 
+	it('migrateDeadlinesToCycleYear records application and siteConfig errors', async () => {
+		mockGetDocs.mockRejectedValueOnce(new Error('apps boom'));
+		const results = await FirebaseConfig.migrateDeadlinesToCycleYear();
+		expect(results.errors.some((e) => /Applications/.test(e))).toBe(true);
+	});
+
 	it('backfillApplicantGradYears normalizes grad years', async () => {
 		mockGetDocs.mockResolvedValueOnce({
 			docs: [
 				{ id: 'u1', data: () => ({ gradYear: '2028' }) },
 				{ id: 'u2', data: () => ({ gradYear: 2027 }) },
 				{ id: 'u3', data: () => ({ gradYear: 'bad' }) },
+				{ id: 'u4', data: () => ({ gradYear: { toDate: () => new Date('2030-06-01') } }) },
+				{ id: 'u5', data: () => ({ gradYear: 'June 2029' }) },
 			],
 		});
 		mockBatchCommit.mockResolvedValue(true);
 		const results = await FirebaseConfig.backfillApplicantGradYears();
 		expect(results.updated + results.skipped).toBeGreaterThan(0);
+	});
+
+	it('backfillApplicantGradYears records query failures', async () => {
+		mockGetDocs.mockRejectedValueOnce(new Error('grad boom'));
+		const results = await FirebaseConfig.backfillApplicantGradYears();
+		expect(results.errors.length).toBeGreaterThan(0);
 	});
 
 	it('purgeUserRecords requires userId and can clear applications', async () => {
