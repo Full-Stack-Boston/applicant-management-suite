@@ -162,4 +162,53 @@ describe('NotesSection Component', () => {
 		expect(screen.getByText(/Note redacted on/)).toBeInTheDocument();
 		expect(screen.queryByText('Secret')).not.toBeInTheDocument();
 	});
+
+	test('handles add note failure', async () => {
+		const handleError = jest.fn();
+		useAlert.mockReturnValue({ showAlert: jest.fn(), handleError });
+		firebaseConfig.addNote.mockRejectedValue(new Error('add failed'));
+
+		render(<NotesSection targetId='1' targetCollection='apps' />);
+		fireEvent.change(screen.getByLabelText('Add a new note...'), { target: { value: 'Boom' } });
+		fireEvent.click(screen.getByText('Add Note'));
+
+		await waitFor(() => {
+			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'add-note');
+		});
+	});
+
+	test('handles update note failure', async () => {
+		const handleError = jest.fn();
+		useAlert.mockReturnValue({ showAlert: jest.fn(), handleError });
+		firebaseConfig.updateNote.mockRejectedValue(new Error('update failed'));
+
+		render(<NotesSection targetId='1' targetCollection='apps' />);
+		fireEvent.click(screen.getAllByTestId('EditIcon')[0].closest('button'));
+		fireEvent.click(screen.getByText('Save'));
+
+		await waitFor(() => {
+			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'update-note');
+		});
+	});
+
+	test('handles redact note failure', async () => {
+		const handleError = jest.fn();
+		useAlert.mockReturnValue({ showAlert: jest.fn(), handleError });
+		window.confirm = jest.fn(() => true);
+		firebaseConfig.redactNote.mockRejectedValue(new Error('redact failed'));
+
+		render(<NotesSection targetId='1' targetCollection='apps' />);
+		fireEvent.click(screen.getAllByTestId('DeleteIcon')[0].closest('button'));
+
+		await waitFor(() => {
+			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'redact-note');
+		});
+	});
+
+	test('does not redact when confirm is cancelled', async () => {
+		window.confirm = jest.fn(() => false);
+		render(<NotesSection targetId='1' targetCollection='apps' />);
+		fireEvent.click(screen.getAllByTestId('DeleteIcon')[0].closest('button'));
+		expect(firebaseConfig.redactNote).not.toHaveBeenCalled();
+	});
 });

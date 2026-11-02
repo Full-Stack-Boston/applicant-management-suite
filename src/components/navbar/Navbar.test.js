@@ -115,6 +115,26 @@ describe('Navbar Component', () => {
 			render(<Navbar />);
 			expect(screen.queryByTestId('VoiceChatOutlinedIcon')).not.toBeInTheDocument();
 		});
+
+		it('navigates to interview dash when Meeting icon is clicked', () => {
+			render(<Navbar />);
+			fireEvent.click(screen.getByTestId('VoiceChatOutlinedIcon').closest('.item'));
+			expect(mockNavigate).toHaveBeenCalled();
+		});
+
+		it('navigates to inbox when email icon is clicked with permission', () => {
+			render(<Navbar />);
+			fireEvent.click(screen.getByTestId('MarkEmailUnreadIcon').closest('.item'));
+			expect(mockNavigate).toHaveBeenCalled();
+		});
+
+		it('does not navigate to inbox without email permission', () => {
+			const noEmailMember = { ...defaultMember, permissions: { email: false, interviews: { canAccess: true } } };
+			useMailbox.mockReturnValue({ member: noEmailMember, unreadCount: 0 });
+			render(<Navbar />);
+			fireEvent.click(screen.getByTestId('EmailIcon').closest('.item'));
+			expect(mockNavigate).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('Search Functionality', () => {
@@ -250,6 +270,13 @@ describe('Navbar Component', () => {
 				member: { ...defaultMember, picture: null },
 				unreadCount: 0,
 			});
+			render(<Navbar />);
+			expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'default.jpg');
+		});
+
+		it('uses default avatar when logged out', () => {
+			useAuth.mockReturnValue({ user: null, role: null });
+			useMailbox.mockReturnValue({ member: null, unreadCount: 0 });
 			render(<Navbar />);
 			expect(screen.getByAltText('Profile')).toHaveAttribute('src', 'default.jpg');
 		});
