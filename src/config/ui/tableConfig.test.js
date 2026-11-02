@@ -12,6 +12,10 @@ import {
 	ForwardButton,
 	DeleteEmailButton,
 	ContactApplicantFromInterviewButton,
+	SendInvitationButton,
+	UpdateRsvpButton,
+	ChangeStatusButton,
+	ViewApplicantFromInterviewButton,
 	ToggleReadButton,
 	DeleteInterviewButton,
 	ViewAppButton,
@@ -149,6 +153,7 @@ vi.mock('../data/firebase', () => ({
 	closeInterviewRoom: jest.fn(),
 	sendInterviewInvitations: jest.fn(),
 	bulkUpdateInterviewStatus: jest.fn(),
+	updateInterviewStatus: jest.fn(),
 	createDeliberationRoom: jest.fn(),
 	deleteDeliberationRoom: jest.fn(),
 	bulkDeleteInterviews: jest.fn(),
@@ -494,6 +499,59 @@ describe('tableConfig.js', () => {
 					})
 				);
 			});
+		});
+
+		it('SendInvitationButton queues invitations when confirmed', async () => {
+			const row = { id: 'int-invite', applicantName: 'Pat Applicant', status: 'Scheduled' };
+			mockShowDialog.mockImplementation(({ callback }) => callback(true));
+			FirebaseService.sendInterviewInvitations.mockResolvedValue({});
+
+			render(<SendInvitationButton row={row} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Invite'));
+			});
+			await waitFor(() => {
+				expect(FirebaseService.sendInterviewInvitations).toHaveBeenCalledWith({ interviewIds: ['int-invite'] });
+				expect(mockShowAlert).toHaveBeenCalledWith({ message: 'Invitation queued successfully!', type: 'success' });
+			});
+		});
+
+		it('UpdateRsvpButton and ChangeStatusButton persist dialog form data', async () => {
+			FirebaseService.updateCollectionData = FirebaseService.updateCollectionData || jest.fn();
+			FirebaseService.updateCollectionData.mockResolvedValue(true);
+			FirebaseService.updateInterviewStatus = FirebaseService.updateInterviewStatus || jest.fn();
+			FirebaseService.updateInterviewStatus.mockResolvedValue({});
+
+			mockShowDialog.mockImplementation(({ id, callback }) => {
+				if (id === 'updateRsvpStatus') callback({ rsvpStatus: 'yes' });
+				if (id === 'changeInterviewStatus') callback({ status: 'Confirmed' });
+			});
+
+			render(<UpdateRsvpButton row={{ id: 'int-rsvp', rsvpStatus: 'unknown' }} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('RSVP'));
+			});
+			await waitFor(() => {
+				expect(FirebaseService.updateCollectionData).toHaveBeenCalledWith('interviews', 'int-rsvp', { rsvpStatus: 'yes' });
+			});
+
+			cleanup();
+			render(<ChangeStatusButton row={{ id: 'int-status', status: 'Confirmed' }} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText(/Status|Change/i));
+			});
+			await waitFor(() => {
+				expect(FirebaseService.updateInterviewStatus).toHaveBeenCalledWith({ interviewId: 'int-status', newStatus: 'Confirmed' });
+			});
+		});
+
+		it('ViewApplicantFromInterviewButton navigates to applicant', async () => {
+			generatePath.mockReturnValue('/view-applicant/applicant-1');
+			render(<ViewApplicantFromInterviewButton row={{ id: 'int1', applicantId: 'applicant-1' }} />);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Applicant'));
+			});
+			expect(mockNavigate).toHaveBeenCalledWith('/view-applicant/applicant-1');
 		});
 
 		it('ToggleReadButton: Toggles status', async () => {
