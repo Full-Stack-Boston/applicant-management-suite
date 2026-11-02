@@ -311,6 +311,16 @@ describe('tableConfig.js', () => {
 				expect(avatar).toHaveAttribute('src', expect.any(String));
 				expect(FirebaseService.getCollectionData).not.toHaveBeenCalled();
 			});
+
+			it('falls back when picture lookup rejects', async () => {
+				TableConfig.clearPictureUrlCache();
+				FirebaseService.getCollectionData.mockRejectedValueOnce(new Error('picture lookup fail'));
+				render(<DynamicApplicantProfilePicture user='broken-user' />);
+				const avatar = await screen.findByAltText('avatar');
+				await waitFor(() => {
+					expect(avatar).toHaveAttribute('src', expect.any(String));
+				});
+			});
 		});
 
 		describe('UserLastLogin', () => {
