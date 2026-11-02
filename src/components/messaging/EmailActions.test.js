@@ -102,4 +102,13 @@ describe('EmailActions', () => {
 
 		expect(mockOnDownload).toHaveBeenCalledWith(emailWithAttachments.attachments[0]);
 	});
+
+	it('calls onForward and supports embedded layout', () => {
+		const { rerender } = render(<EmailActions {...mockProps} />);
+		fireEvent.click(screen.getByRole('button', { name: /Forward/i }));
+		expect(mockOnForward).toHaveBeenCalledWith(baseEmail);
+
+		rerender(<EmailActions {...mockProps} embedded />);
+		expect(screen.getByRole('button', { name: /Forward/i })).toBeInTheDocument();
+	});
 });

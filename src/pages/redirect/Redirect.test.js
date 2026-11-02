@@ -185,7 +185,19 @@ describe('Redirect Component', () => {
 		expect(screen.getByText(/No profile found/i)).toBeInTheDocument();
 		expect(screen.getByTestId('public-page-layout')).toBeInTheDocument();
 		expect(mockNavigate).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole('button', { name: /Go Home/i }));
+		expect(mockNavigate).toHaveBeenCalledWith(paths.home);
 		fireEvent.click(screen.getByRole('button', { name: /Logout/i }));
 		expect(logout).toHaveBeenCalled();
+	});
+
+	test('renders loader when unauthenticated with no role yet', () => {
+		useAuth.mockReturnValue({
+			loading: false,
+			user: null,
+			role: null,
+		});
+		render(<Redirect />);
+		expect(screen.getByTestId('loader')).toBeInTheDocument();
 	});
 });
