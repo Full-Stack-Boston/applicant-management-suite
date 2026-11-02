@@ -52,4 +52,9 @@ describe('MeetingContext', () => {
 		expect(successElement).toBeInTheDocument();
 		expect(DailyIframe.createCallObject).toHaveBeenCalled();
 	});
+
+	test('throws when useMeeting is used outside MeetingProvider', () => {
+		expect(() => render(<TestConsumer />)).toThrow(/MeetingProvider/);
+	});
 });
+

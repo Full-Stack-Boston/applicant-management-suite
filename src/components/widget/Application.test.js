@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Application from './Application';
 import { useTheme } from '../../context/ThemeContext';
@@ -106,4 +106,19 @@ describe('Application Widget Component', () => {
 		const deleteBox = screen.getByTestId('DeleteIcon').closest('div');
 		fireEvent.click(deleteBox);
 	});
+
+	it('logs fetch failures without crashing', async () => {
+		const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		getApplication.mockRejectedValueOnce(new Error('widget boom'));
+		render(
+			<MemoryRouter>
+				<Application id='app-err' />
+			</MemoryRouter>
+		);
+		await waitFor(() => {
+			expect(errorSpy).toHaveBeenCalledWith('widget boom');
+		});
+		errorSpy.mockRestore();
+	});
 });
+
