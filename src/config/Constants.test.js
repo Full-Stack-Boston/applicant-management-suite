@@ -1,4 +1,4 @@
-import { generate6DigitNumber, generateSecurePin, unsubscribeLink, generateUploadLink, validateRequest, validatePin, validateLink, capitalize, convertPDFBlobToImages, createBlobUrl, revokeBlobUrl } from './Constants';
+import { generate6DigitNumber, generateSecurePin, unsubscribeLink, generateUploadLink, validateRequest, validatePin, validateLink, capitalize, convertPDFBlobToImages, createBlobUrl, revokeBlobUrl, emailFooter } from './Constants';
 import { getConfigFromDb } from './data/firebase';
 import CryptoJS from 'crypto-js';
 // FIX 1: Import from the exact same path as the source file so they share the mock
@@ -122,6 +122,32 @@ describe('Constants.js', () => {
 
 		revokeBlobUrl(url);
 		expect(global.URL.revokeObjectURL).toHaveBeenCalledWith(url);
+	});
+
+	it('returns false/error objects when pin and link validation fails', async () => {
+		const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+		global.atob.mockImplementationOnce(() => {
+			throw new Error('bad pin');
+		});
+		await expect(validatePin('broken')).resolves.toBe(false);
+
+		global.atob.mockImplementationOnce(() => {
+			throw new Error('bad request');
+		});
+		await expect(validateRequest('broken')).resolves.toEqual({ result: false, error: 'bad request' });
+
+		global.atob.mockImplementationOnce(() => {
+			throw new Error('bad unsub');
+		});
+		await expect(validateLink('broken')).resolves.toEqual({ result: false, error: 'bad unsub' });
+		expect(consoleSpy).toHaveBeenCalled();
+		consoleSpy.mockRestore();
+	});
+
+	it('emailFooter injects the unsubscribe URL', () => {
+		const html = emailFooter('https://example.com/unsub');
+		expect(html).toContain('https://example.com/unsub');
+		expect(html).toContain('Unsubscribe');
 	});
 
 	it('convertPDFBlobToImages should process a PDF', async () => {
