@@ -287,4 +287,35 @@ describe('MemberDash Component', () => {
 			expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'Dashboard Data Fetch');
 		});
 	});
+
+	test('cleans up async promise-based subscriptions', async () => {
+		const asyncCustomUnsub = jest.fn();
+		const asyncWidgetUnsub = jest.fn();
+		const asyncComparisonUnsub = jest.fn();
+
+		customFetcher.mockImplementation((cb) => {
+			customCallback = cb;
+			return Promise.resolve(asyncCustomUnsub);
+		});
+		eligibleFetcher.mockImplementation(() => Promise.resolve(asyncWidgetUnsub));
+		comparisonFetcher.mockImplementation((_year, cb) => {
+			comparisonCallback = cb;
+			return Promise.resolve(asyncComparisonUnsub);
+		});
+
+		const { unmount } = render(<MemberDash />);
+		await waitFor(() => expect(screen.queryByTestId('loader')).not.toBeInTheDocument());
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		unmount();
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		expect(asyncCustomUnsub).toHaveBeenCalled();
+		expect(asyncWidgetUnsub).toHaveBeenCalled();
+		expect(asyncComparisonUnsub).toHaveBeenCalled();
+	});
 });
