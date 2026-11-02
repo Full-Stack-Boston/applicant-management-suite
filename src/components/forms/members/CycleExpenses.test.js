@@ -375,5 +375,268 @@ describe('CycleExpenses', () => {
 		});
 		expect(screen.getByLabelText('Total allotted disbursement')).toHaveValue(2500);
 		expect(screen.getByLabelText(/Prior year clawback/)).toHaveValue(75);
+		await act(async () => {
+			fireEvent.change(screen.getByLabelText('Total allotted disbursement'), { target: { value: '' } });
+			fireEvent.change(screen.getByLabelText(/Prior year clawback/), { target: { value: '' } });
+		});
+		expect(screen.getByLabelText('Total allotted disbursement')).toHaveValue(null);
+		expect(screen.getByLabelText(/Prior year clawback/)).toHaveValue(null);
+	});
+
+	it('navigates back from the header', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByLabelText('Go back'));
+		});
+		expect(mockNavigate).toHaveBeenCalledWith(-1);
+	});
+
+	it('disables add while an expense row is already editing', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Unlock expense row to edit')[0]);
+		});
+		await waitFor(() => expect(screen.getByText('Add program expense')).toBeDisabled());
+	});
+
+	it('cancels a blank new expense row and removes it', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getByText('Add program expense')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Add program expense'));
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Cancel expense edit').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Cancel expense edit')[0]);
+		});
+		await waitFor(() => {
+			expect(screen.queryByLabelText('Save expense row')).not.toBeInTheDocument();
+			expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(0);
+		});
+	});
+
+	it('handles save year failure', async () => {
+		firebaseConfig.saveYearlyFinancesDoc.mockResolvedValue(false);
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getByText('Save year')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Save year'));
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalled();
+		});
+	});
+
+	it('handles save expense row failure', async () => {
+		firebaseConfig.saveYearlyFinancesDoc.mockResolvedValue(false);
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Unlock expense row to edit')[0]);
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Save expense row')[0]);
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalled();
+		});
+	});
+
+	it('handles remove expense failure', async () => {
+		firebaseConfig.saveYearlyFinancesDoc.mockResolvedValue(false);
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Unlock expense row to edit')[0]);
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Remove expense').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Remove expense')[0]);
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalled();
+		});
+	});
+
+	it('shows partial missing awards warning', async () => {
+		firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+			handler([
+				{
+					id: '2026',
+					cycleYear: 2026,
+					programExpenseItems: [],
+					awardIDs: ['award-1', 'award-missing'],
+					total_allotted_disbursement: 1000,
+					prior_year_clawback: 0,
+				},
+			]);
+			return () => {};
+		});
+		firebaseConfig.getAwardsByIds.mockResolvedValue([
+			{ id: 'award-1', type: 'Grant', amount: 500, applicationID: 'app-1', applicantId: 'applicant-1' },
+		]);
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => {
+			expect(screen.getAllByText(/1 of 2 award ID\(s\) are indexed/i).length).toBeGreaterThan(0);
+		});
+	});
+
+	it('shows warning when indexed award IDs resolve to none', async () => {
+		firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+			handler([
+				{
+					id: '2026',
+					cycleYear: 2026,
+					programExpenseItems: [],
+					awardIDs: ['ghost-1'],
+					total_allotted_disbursement: 1000,
+					prior_year_clawback: 0,
+				},
+			]);
+			return () => {};
+		});
+		firebaseConfig.getAwardsByIds.mockResolvedValue([]);
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => {
+			expect(screen.getAllByText(/1 of 1 award ID\(s\) are indexed/i).length).toBeGreaterThan(0);
+		});
+	});
+
+	it('handles enrich awards failure', async () => {
+		firebaseConfig.getApplicationsByIds.mockRejectedValue(new Error('apps down'));
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'cycle-expenses-enrich-awards');
+		});
+	});
+
+	it('groups multiple awards for the same applicant', async () => {
+		firebaseConfig.getAwardsByIds.mockResolvedValue([
+			{ id: 'award-1', type: 'Grant', amount: 500, applicationID: 'app-1', applicantId: 'applicant-1' },
+			{ id: 'award-2', type: 'Scholarship', amount: 250, applicationID: 'app-1', applicantId: 'applicant-1' },
+		]);
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByText('Casey Scout').length).toBeGreaterThan(0));
+		expect(screen.getAllByText('Grant').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('Scholarship').length).toBeGreaterThan(0);
+	});
+
+	it('shows legacy embedded scholarship warning', async () => {
+		firebaseConfig.getRealTimeYearlyFinances.mockImplementation((handler) => {
+			handler([
+				{
+					id: '2026',
+					cycleYear: 2026,
+					programExpenseItems: [],
+					awardIDs: [],
+					renewable_scholarships: [{ id: 'legacy-1' }],
+					non_renewable_grants: [{ id: 'legacy-g' }],
+					total_allotted_disbursement: 1000,
+					prior_year_clawback: 0,
+				},
+			]);
+			return () => {};
+		});
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/historical embedded scholarship\/grant rows/i)).toBeInTheDocument();
+		});
+	});
+
+	it('closes the council dialog with Done', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getByText('Disbursement email')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Disbursement email'));
+		});
+		await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Done'));
+		});
+		await waitFor(() => {
+			expect(screen.queryByRole('heading', { name: 'Disbursement email' })).not.toBeInTheDocument();
+		});
+	});
+
+	it('handles council PDF download failure', async () => {
+		const yearly = await import('../../../config/data/yearlyFinances');
+		yearly.downloadCouncilDisbursementPdf.mockImplementation(() => {
+			throw new Error('pdf failed');
+		});
+
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getByText('Disbursement email')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Disbursement email'));
+		});
+		await waitFor(() => expect(screen.getByText('Download PDF')).toBeInTheDocument());
+		await act(async () => {
+			fireEvent.click(screen.getByText('Download PDF'));
+		});
+		await waitFor(() => {
+			expect(mockHandleError).toHaveBeenCalledWith(expect.any(Error), 'cycle-expenses-council-pdf');
+		});
+	});
+
+	it('edits expense request and disbursement while unlocked', async () => {
+		await act(async () => {
+			renderPage();
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Unlock expense row to edit').length).toBeGreaterThan(0));
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Unlock expense row to edit')[0]);
+		});
+		await waitFor(() => expect(screen.getAllByLabelText('Save expense row').length).toBeGreaterThan(0));
+
+		expect(screen.getAllByText('campership').length).toBeGreaterThan(0);
+
+		await act(async () => {
+			const requestInputs = screen.getAllByDisplayValue('100');
+			fireEvent.change(requestInputs[0], { target: { value: '150' } });
+			const disbursementInputs = screen.getAllByDisplayValue('100');
+			if (disbursementInputs[0]) {
+				fireEvent.change(disbursementInputs[0], { target: { value: '125' } });
+			}
+		});
+
+		await act(async () => {
+			fireEvent.click(screen.getAllByLabelText('Save expense row')[0]);
+		});
+		await waitFor(() => {
+			expect(firebaseConfig.saveYearlyFinancesDoc).toHaveBeenCalled();
+		});
 	});
 });

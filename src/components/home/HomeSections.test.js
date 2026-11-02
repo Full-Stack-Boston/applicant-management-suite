@@ -10,6 +10,7 @@ import HomeSupportSection from './HomeSupportSection';
 import HomeContactSection from './HomeContactSection';
 import SectionHeading from './SectionHeading';
 import ApplicantApplicationCard from './ApplicantApplicationCard';
+import { homePageContent } from '../../config/content/content';
 
 const mockNavigate = jest.fn();
 const mockOnLearnMore = jest.fn();
@@ -101,6 +102,20 @@ describe('Home marketing sections', () => {
 		expect(document.getElementById('support')).toBeTruthy();
 		expect(document.getElementById('contact')).toBeTruthy();
 		expect(screen.getByTestId('contact-form')).toBeInTheDocument();
+	});
+
+	it('renders contact address block when enabled in content', () => {
+		const contactContent = homePageContent.information.tabs[2].content;
+		const previousAddress = contactContent.address;
+		contactContent.address = { enabled: true, title: 'HQ', lines: ['1 Demo St', 'Boston, MA'] };
+		try {
+			wrap(<HomeContactSection sectionId='contact-address' />);
+			expect(screen.getByText('HQ')).toBeInTheDocument();
+			expect(screen.getByText('1 Demo St')).toBeInTheDocument();
+			expect(screen.getByText('Open in Maps')).toBeInTheDocument();
+		} finally {
+			contactContent.address = previousAddress;
+		}
 	});
 
 	it('renders ApplicantApplicationCard summary', () => {
