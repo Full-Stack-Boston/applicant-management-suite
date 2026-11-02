@@ -1,11 +1,17 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import Home from './Home';
 import { useTheme } from '../../context/ThemeContext';
 import { useTitle } from '../../context/HelmetContext';
 
 vi.mock('../../components/home/HomeNav', () => ({ default: () => <div data-testid='home-nav'>Nav</div> }));
-vi.mock('../../components/home/HomeHero', () => ({ default: () => <div data-testid='home-hero'>Hero</div> }));
+vi.mock('../../components/home/HomeHero', () => ({
+	default: ({ onLearnMore }) => (
+		<button type='button' data-testid='home-hero' onClick={() => onLearnMore?.()}>
+			Hero
+		</button>
+	),
+}));
 vi.mock('../../components/home/HomeTrustStats', () => ({ default: () => <div data-testid='home-trust'>Trust</div> }));
 vi.mock('../../components/home/HomeAboutSection', () => ({ default: () => <div data-testid='home-about'>About</div> }));
 vi.mock('../../components/home/HomeRequirementsSection', () => ({ default: () => <div data-testid='home-requirements'>Requirements</div> }));
@@ -62,6 +68,8 @@ describe('Home Component', () => {
 		expect(screen.getByTestId('home-support')).toBeInTheDocument();
 		expect(screen.getByTestId('home-footer')).toBeInTheDocument();
 		expect(useTitle).toHaveBeenCalledWith({ title: 'Home', appear: true });
+		fireEvent.click(screen.getByTestId('home-hero'));
+		expect(mockScrollToSection).toHaveBeenCalledWith('about');
 	});
 
 	it('scrolls to a matching hash section on mount', () => {

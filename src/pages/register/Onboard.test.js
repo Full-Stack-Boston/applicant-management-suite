@@ -266,4 +266,54 @@ describe('Onboard Component', () => {
 			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/valid image/i) }));
 		});
 	});
+
+	test('rejects oversized profile pictures and missing download links', async () => {
+		render(<Onboard />);
+		const huge = new File([new Uint8Array(26 * 1024 * 1024)], 'big.png', { type: 'image/png' });
+		fireEvent.change(screen.getByTestId('file-input'), { target: { files: [huge] } });
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/25MB/i) }));
+		});
+
+		getDownloadLinkForFile.mockResolvedValueOnce(null);
+		const ok = new File(['img'], 'pic.png', { type: 'image/png' });
+		fireEvent.change(screen.getByTestId('file-input'), { target: { files: [ok] } });
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: expect.stringMatching(/download link/i) })
+			);
+		});
+	});
+
+	test('alerts when auth returns no user credential', async () => {
+		getAuthUserByEmail.mockResolvedValue(null);
+		registerUser.mockResolvedValue({ user: null });
+
+		render(<Onboard />);
+		fireEvent.change(screen.getByLabelText(/First Name/i), { target: { value: 'Jane' } });
+		fireEvent.change(screen.getByLabelText(/Last Name/i), { target: { value: 'Doe' } });
+		fireEvent.change(screen.getByLabelText(/Position/i), { target: { value: 'Chair' } });
+		fireEvent.change(screen.getByLabelText(/Since/i), { target: { value: '2020' } });
+		fireEvent.change(screen.getByLabelText(/Email/i), { target: { value: 'jane@example.com' } });
+		fireEvent.change(screen.getByLabelText(/Cell/i), { target: { value: '555-0123' } });
+		fireEvent.change(screen.getByLabelText(/^Password/i), { target: { value: 'password' } });
+		fireEvent.change(screen.getByLabelText(/Confirm Password/i), { target: { value: 'password' } });
+		fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
+
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(
+				expect.objectContaining({ message: 'Error creating or authenticating user.', type: 'error' })
+			);
+		});
+	});
+
+	test('alerts when profile picture upload throws', async () => {
+		saveFile.mockRejectedValueOnce(new Error('upload boom'));
+		render(<Onboard />);
+		const file = new File(['x'], 'pic.png', { type: 'image/png' });
+		fireEvent.change(screen.getByTestId('file-input'), { target: { files: [file] } });
+		await waitFor(() => {
+			expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({ message: 'upload boom' }));
+		});
+	});
 });
